@@ -63,7 +63,7 @@ export default function MenuPage() {
 
   // Fetch emoji map from platform settings (one-time on mount)
   useEffect(() => {
-    getPublicSetting('category_emojis')
+    getPublicSetting('category_emoji_map')
       .then((res) => {
         if (res.data.value && typeof res.data.value === 'object') {
           setEmojiMap(res.data.value);

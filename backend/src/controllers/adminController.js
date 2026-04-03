@@ -423,23 +423,20 @@ exports.updateSetting = asyncHandler(async (req, res) => {
     return fail(res, 'value is required');
   }
 
-  // Ensure value is a string (JSON will be stringified)
-  let valueStr = value;
-  if (typeof value === 'object') {
-    valueStr = JSON.stringify(value);
-  }
+  // Store value as JSONB; PostgreSQL handles JSON encoding
+  const valueToStore = typeof value === 'object' ? value : JSON.parse(value);
 
   const result = await db.query(
     `INSERT INTO platform_settings (key, value, description, is_public, updated_by, updated_at)
-     VALUES ($1, $2, $3, COALESCE($4, false), $5, NOW())
+     VALUES ($1, $2::JSONB, $3, COALESCE($4, false), $5, NOW())
      ON CONFLICT (key) DO UPDATE SET
-       value = $2,
+       value = $2::JSONB,
        description = COALESCE($3, platform_settings.description),
        is_public = COALESCE($4, platform_settings.is_public),
        updated_by = $5,
        updated_at = NOW()
      RETURNING key, value, description, is_public, updated_at`,
-    [key, valueStr, description || null, is_public || null, req.adminId]
+    [key, valueToStore, description || null, is_public || null, req.adminId]
   );
 
   logger.info('Admin updated setting: %s', key);
