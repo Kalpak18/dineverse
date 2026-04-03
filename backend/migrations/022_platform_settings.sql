@@ -2,14 +2,14 @@
 -- Allows admin to change category emojis, announcements, etc. without code changes.
 
 CREATE TABLE IF NOT EXISTS platform_settings (
-  key        VARCHAR(100) PRIMARY KEY,
-  value      JSONB        NOT NULL,
-  label      VARCHAR(200),
+  key         VARCHAR(100) PRIMARY KEY,
+  value       JSONB        NOT NULL,
+  label       VARCHAR(200),
   description VARCHAR(500),
-  is_public  BOOLEAN      DEFAULT false,
-  updated_by UUID,
-  created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+  is_public   BOOLEAN      DEFAULT false,
+  updated_by  UUID,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 -- Seed: default category emoji map

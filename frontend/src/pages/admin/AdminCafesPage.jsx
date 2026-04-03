@@ -3,7 +3,6 @@ import { adminGetCafes, adminUpdateCafe } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import AdminCafeDetailsModal from '../../components/AdminCafeDetailsModal';
 
 const PLAN_STYLES = {
   free_trial: 'bg-amber-900/40 text-amber-400',
@@ -16,7 +15,6 @@ export default function AdminCafesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState('');
-  const [selectedCafeId, setSelectedCafeId] = useState(null);
   const searchTimer = useRef(null);
 
   const load = (q = search, p = plan) => {
@@ -123,12 +121,6 @@ export default function AdminCafesPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => setSelectedCafeId(cafe.id)}
-                          className="text-xs bg-blue-700 hover:bg-blue-600 text-white px-2.5 py-1 rounded-lg transition-colors"
-                        >
-                          Details
-                        </button>
-                        <button
                           onClick={() => handleExtend(cafe)}
                           className="text-xs bg-brand-700 hover:bg-brand-600 text-white px-2.5 py-1 rounded-lg transition-colors"
                         >
@@ -156,11 +148,6 @@ export default function AdminCafesPage() {
           )}
         </div>
       )}
-
-      {/* Cafe Details Modal */}
-      {selectedCafeId && (
-        <AdminCafeDetailsModal
-          cafeId={selectedCafeId}
-          onClose={() => setSelectedCafeId(null)}
-        />
-      )}
+    </div>
+  );
+}

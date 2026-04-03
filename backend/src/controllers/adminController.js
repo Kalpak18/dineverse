@@ -404,11 +404,13 @@ exports.getPublicSetting = asyncHandler(async (req, res) => {
     return fail(res, 'Setting not found or not public', 404);
   }
   let value = result.rows[0].value;
-  // Try to parse as JSON for structured data (category_emojis, etc.)
-  try {
-    value = JSON.parse(value);
-  } catch (e) {
-    // If not JSON, return as string
+  // If value is a string, parse JSON; otherwise it is already JSON object/value
+  if (typeof value === 'string') {
+    try {
+      value = JSON.parse(value);
+    } catch (e) {
+      // Keep as string
+    }
   }
   ok(res, { key, value });
 });
