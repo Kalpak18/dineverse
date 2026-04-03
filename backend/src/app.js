@@ -35,15 +35,26 @@ const server = http.createServer(app);
 
 // ─── CORS ─────────────────────────────────────────────────────
 // Supports comma-separated CLIENT_URL for multiple origins
-const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+// Allows localhost for development, Vercel for staging, and custom domains for production
+const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173,http://localhost:3000';
+const allowedOrigins = clientUrl
   .split(',')
-  .map((o) => o.trim());
+  .map((o) => o.trim())
+  .filter(Boolean); // Remove empty strings
 
 const corsOptions = {
   origin: (origin, cb) => {
-    // allow requests with no origin (mobile apps, Postman, server-to-server)
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS blocked for origin: ${origin}`));
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) return cb(null, true);
+
+    // Check if origin is in allowed list
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+
+    // Allow all Vercel preview deployments (*.vercel.app)
+    if (origin.endsWith('.vercel.app')) return cb(null, true);
+
+    // Block everything else
+    cb(new Error(`CORS blocked for origin: ${origin}. Allowed origins: ${allowedOrigins.join(', ')}`));
   },
   credentials: true,
 };
