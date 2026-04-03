@@ -21,7 +21,12 @@ const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 // ─── Send OTP (registration) ──────────────────────────────────
 exports.sendOtp = asyncHandler(async (req, res) => {
   const { email } = req.body;
-  if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
+  logger.info('Send OTP request received:', { email, hasEmail: !!email, emailType: typeof email });
+
+  if (!email || !isValidEmail(email)) {
+    logger.warn('Email validation failed:', { email, isEmpty: !email, isValid: isValidEmail(email || '') });
+    return fail(res, 'Valid email is required');
+  }
 
   // Check if SMTP is configured
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
