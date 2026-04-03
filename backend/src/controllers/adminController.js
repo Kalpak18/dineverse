@@ -342,6 +342,13 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return fail(res, 'Valid email is required');
   }
+
+  // Check if SMTP is configured
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    logger.error('SMTP not configured - cannot send admin password reset email');
+    return fail(res, 'Email service is not configured. Please contact support.');
+  }
+
   const result = await db.query(
     'SELECT id FROM developers WHERE email = $1 AND is_active = true',
     [email.toLowerCase()]
@@ -349,9 +356,15 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   if (result.rows.length === 0) {
     return fail(res, 'No admin account found with this email', 404);
   }
-  const otp = await createOtp(email, 'admin_reset');
-  await sendPasswordResetEmail(email, otp);
-  ok(res, {}, 'Reset code sent to your admin email');
+
+  try {
+    const otp = await createOtp(email, 'admin_reset');
+    await sendPasswordResetEmail(email, otp);
+    ok(res, {}, 'Reset code sent to your admin email');
+  } catch (error) {
+    logger.error('Failed to send admin password reset email:', error.message);
+    return fail(res, 'Failed to send password reset email. Please try again later.');
+  }
 });
 
 // ─── POST /api/admin/reset-password ───────────────────────────

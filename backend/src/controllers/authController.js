@@ -22,9 +22,21 @@ const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 exports.sendOtp = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
-  const otp = await createOtp(email, 'register');
-  await sendOtpEmail(email, otp);
-  ok(res, {}, 'Verification code sent');
+
+  // Check if SMTP is configured
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    logger.error('SMTP not configured - cannot send OTP email');
+    return fail(res, 'Email service is not configured. Please contact support.');
+  }
+
+  try {
+    const otp = await createOtp(email, 'register');
+    await sendOtpEmail(email, otp);
+    ok(res, {}, 'Verification code sent');
+  } catch (error) {
+    logger.error('Failed to send OTP email:', error.message);
+    return fail(res, 'Failed to send verification email. Please try again later.');
+  }
 });
 
 // ─── Register ─────────────────────────────────────────────────
@@ -395,6 +407,12 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
 
+  // Check if SMTP is configured
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    logger.error('SMTP not configured - cannot send password reset email');
+    return fail(res, 'Email service is not configured. Please contact support.');
+  }
+
   // Check both cafes (owners) and cafe_staff
   const ownerRes = await db.query(
     'SELECT id FROM cafes WHERE email = $1 AND is_active = true',
@@ -408,9 +426,14 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
     return fail(res, 'No account found with this email address', 404);
   }
 
-  const otp = await createOtp(email, 'reset');
-  await sendPasswordResetEmail(email, otp);
-  ok(res, {}, 'Password reset code sent to your email');
+  try {
+    const otp = await createOtp(email, 'reset');
+    await sendPasswordResetEmail(email, otp);
+    ok(res, {}, 'Password reset code sent to your email');
+  } catch (error) {
+    logger.error('Failed to send password reset email:', error.message);
+    return fail(res, 'Failed to send password reset email. Please try again later.');
+  }
 });
 
 // ─── Reset Password — verify OTP + set new password ───────────
