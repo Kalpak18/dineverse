@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
@@ -72,7 +73,7 @@ export default function MyOrdersPage() {
     }
 
     // Socket setup
-    const socket = io(window.location.origin, {
+    const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
     });

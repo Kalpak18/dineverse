@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { getOrders, updateOrderStatus, getOwnerMessages, postOwnerMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -122,7 +123,7 @@ export default function OrdersPage() {
   // Connect socket for receiving customer messages on the orders page
   useEffect(() => {
     if (!cafe?.id) return;
-    const socket = io(window.location.origin, { transports: ['websocket', 'polling'], reconnection: true });
+    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));

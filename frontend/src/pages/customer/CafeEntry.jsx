@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeTables, createReservation } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
@@ -69,7 +70,7 @@ export default function CafeEntry() {
     setMyBookings(loadReservations(slug));
 
     // Connect socket to track reservation status updates
-    const socket = io(window.location.origin, {
+    const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
     });

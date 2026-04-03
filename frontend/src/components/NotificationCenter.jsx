@@ -11,6 +11,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../utils/socketUrl';
 import { useNavigate } from 'react-router-dom';
 import { playNotificationSound } from '../hooks/useSocketIO';
 
@@ -85,7 +86,7 @@ export default function NotificationCenter({ cafeId }) {
     if (!cafeId) return;
 
     if (!globalSocket) {
-      globalSocket = io(window.location.origin, {
+      globalSocket = io(SOCKET_URL, {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,

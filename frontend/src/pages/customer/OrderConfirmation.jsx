@@ -1,6 +1,7 @@
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage } from '../../services/api';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
@@ -89,7 +90,7 @@ export default function OrderConfirmation() {
     getCafeBySlug(slug).then(({ data }) => setCafeInfo(data.cafe)).catch(() => {});
 
     // 3. Connect socket.io
-    const socket = io(window.location.origin, {
+    const socket = io(SOCKET_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,

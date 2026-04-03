@@ -4,7 +4,6 @@ validateEnv(); // crash early if config is incomplete
 
 const express = require('express');
 const http = require('http');
-const path = require('path');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -143,19 +142,8 @@ app.get('/health', async (_req, res) => {
   }
 });
 
-// Serve React frontend in production (must come after /api routes)
-if (process.env.NODE_ENV === 'production') {
-  const distPath = path.join(__dirname, '../../frontend/dist');
-  app.use(express.static(distPath));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
-
-// 404 handler (dev only — in prod the SPA catch-all above handles unknown paths)
-if (process.env.NODE_ENV !== 'production') {
-  app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
-}
+// 404 handler for unknown API routes
+app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 
 // Global error handler — catches anything forwarded via next(err)
 app.use((err, _req, res, _next) => {

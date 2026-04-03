@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../utils/socketUrl';
 
 // Singleton AudioContext — browsers limit simultaneous contexts; reuse avoids leaks
 let audioCtx = null;
@@ -30,7 +31,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
     if (!cafeId) return;
 
     if (!socketRef.current) {
-      socketRef.current = io(window.location.origin, {
+      socketRef.current = io(SOCKET_URL, {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
