@@ -66,7 +66,16 @@ app.use(helmet({ contentSecurityPolicy: false }));
 
 // ─── Socket.io Setup ──────────────────────────────────────────
 const io = new Server(server, {
-  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
+   cors: {
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      if (origin.endsWith('.vercel.app')) return cb(null, true);
+      cb(new Error(`Socket CORS blocked: ${origin}`));
+    },
+    methods: ['GET', 'POST'],
+    credentials: true
+  },
 });
 
 // Redis adapter: shares socket rooms across multiple backend instances.
@@ -143,15 +152,13 @@ app.use('/api/offers', offerRoutes);
 app.use('/api/reservations', reservationRoutes);
 
 // Health check — includes DB ping so load balancers detect real outages
-app.get('/health', async (_req, res) => {
-  try {
-    await db.query('SELECT 1');
-    res.json({ status: 'ok', timestamp: new Date() });
-  } catch (err) {
-    logger.error('Health check DB ping failed: %s', err.message);
-    res.status(503).json({ status: 'error', message: 'Database unreachable' });
-  }
-});
+app.get('/health', (_req, res) => {
+   res.json({
+     status: 'ok',
+     uptime: process.uptime(),
+     timestamp: new Date()
+   });
+ });
 
 // 404 handler for unknown API routes
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
@@ -166,11 +173,28 @@ app.use((err, _req, res, _next) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  logger.info('DineVerse backend running on port %d [%s]', PORT, process.env.NODE_ENV || 'development');
-  initReportScheduler();
-});
+ const PORT = process.env.PORT || 5000;
+ const startServer = async () => {
+   try {
+     // 🔥 Ensure DB is reachable BEFORE starting server
+     await db.query('SELECT 1');
+     logger.info('Database connected successfully');
+
+     server.listen(PORT, () => {
+       logger.info('DineVerse backend running on port %d [%s]', PORT, process.env.NODE_ENV || 'development');
+
+       // ⚠️ Only run scheduler in primary instance (Render safe)
+       if (process.env.INSTANCE_ROLE !== 'worker') {
+         initReportScheduler();
+       }
+     });
+   } catch (err) {
+     logger.error('Failed to connect to database. Exiting... %s', err.message);
+     process.exit(1);
+   }
+ };
+
+ startServer();
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
@@ -187,6 +211,10 @@ const gracefulShutdown = (signal) => {
   server.close(async () => {
     try {
       await db.pool.end();
+
+     // 🔥 Close Redis connections if exist
+     if (pubClient) await pubClient.quit();
+     if (subClient) await subClient.quit();
       logger.info('Database pool closed. Goodbye.');
     } catch (e) {
       logger.error('Error closing DB pool: %s', e.message);
