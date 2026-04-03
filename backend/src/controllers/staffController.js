@@ -1,0 +1,56 @@
+const bcrypt = require('bcryptjs');
+const { body, validationResult } = require('express-validator');
+const db = require('../config/database');
+const { ok, fail, validationFail } = require('../utils/respond');
+const asyncHandler = require('../utils/asyncHandler');
+
+exports.validateStaff = [
+  body('name').trim().notEmpty().withMessage('Name is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+];
+
+// Owner: list all staff for this café
+exports.getStaff = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    'SELECT id, name, email, is_active, created_at FROM cafe_staff WHERE cafe_id = $1 ORDER BY created_at ASC',
+    [req.cafeId]
+  );
+  ok(res, { staff: result.rows });
+});
+
+// Owner: create a staff account
+exports.createStaff = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return validationFail(res, errors.array());
+
+  const { name, email, password } = req.body;
+
+  const existing = await db.query(
+    'SELECT id FROM cafe_staff WHERE email = $1 AND cafe_id = $2',
+    [email, req.cafeId]
+  );
+  if (existing.rows.length > 0) {
+    return fail(res, 'A staff account with this email already exists', 409);
+  }
+
+  const password_hash = await bcrypt.hash(password, 12);
+  const result = await db.query(
+    `INSERT INTO cafe_staff (cafe_id, name, email, password_hash)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, name, email, is_active, created_at`,
+    [req.cafeId, name, email, password_hash]
+  );
+  ok(res, { staff: result.rows[0] }, 'Staff account created', 201);
+});
+
+// Owner: delete a staff account
+exports.deleteStaff = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const result = await db.query(
+    'DELETE FROM cafe_staff WHERE id = $1 AND cafe_id = $2 RETURNING id',
+    [id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Staff member not found', 404);
+  ok(res, {}, 'Staff account deleted');
+});

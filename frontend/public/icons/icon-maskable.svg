@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Full bleed background for maskable icon (safe area = center 80%) -->
+  <rect width="512" height="512" fill="#f97316"/>
+  <text x="256" y="310" font-family="system-ui,sans-serif" font-weight="900" font-size="190" text-anchor="middle" fill="white">DV</text>
+</svg>

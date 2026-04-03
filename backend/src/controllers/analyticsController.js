@@ -1,0 +1,117 @@
+const db = require('../config/database');
+const { ok } = require('../utils/respond');
+const asyncHandler = require('../utils/asyncHandler');
+
+exports.getAnalytics = asyncHandler(async (req, res) => {
+  const { period = 'daily', from, to } = req.query;
+
+  // Compute date range
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  let startDate, endDate;
+
+  if (from && to) {
+    startDate = from;
+    endDate = to;
+  } else {
+    endDate = today;
+    if (period === 'weekly') {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      startDate = d.toISOString().split('T')[0];
+    } else if (period === 'monthly') {
+      startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+    } else if (period === 'yearly') {
+      startDate = `${now.getFullYear()}-01-01`;
+    } else {
+      startDate = today; // daily
+    }
+  }
+
+  const [summaryRes, expensesRes, topItemsRes, dailyRes, orderTypeRes] = await Promise.all([
+    // Order counts — total_orders = ALL orders received (including cancelled)
+    // paid_orders = only paid (matches History tab count)
+    db.query(
+      `SELECT
+         COUNT(*)                                          AS total_orders,
+         COUNT(*) FILTER (WHERE status = 'cancelled')     AS cancelled_orders,
+         COUNT(*) FILTER (WHERE status = 'paid')          AS paid_orders,
+         COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue
+       FROM orders
+       WHERE cafe_id = $1 AND DATE(created_at) BETWEEN $2 AND $3`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Expenses
+    db.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total_expenses,
+              json_agg(json_build_object(
+                'id', id, 'name', name, 'amount', amount,
+                'expense_date', expense_date, 'category', category
+              ) ORDER BY expense_date DESC) AS expense_list
+       FROM expenses
+       WHERE cafe_id = $1 AND expense_date BETWEEN $2 AND $3`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Top selling items
+    db.query(
+      `SELECT oi.item_name,
+              SUM(oi.quantity) AS total_qty,
+              COALESCE(SUM(oi.subtotal) FILTER (WHERE o.status = 'paid'), 0) AS total_revenue
+       FROM order_items oi
+       JOIN orders o ON oi.order_id = o.id
+       WHERE o.cafe_id = $1
+         AND DATE(o.created_at) BETWEEN $2 AND $3
+         AND o.status != 'cancelled'
+       GROUP BY oi.item_name
+       ORDER BY total_qty DESC
+       LIMIT 10`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Daily breakdown for chart
+    db.query(
+      `SELECT DATE(created_at) AS date,
+              COUNT(*) FILTER (WHERE status != 'cancelled') AS orders,
+              COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS revenue
+       FROM orders
+       WHERE cafe_id = $1 AND DATE(created_at) BETWEEN $2 AND $3
+       GROUP BY DATE(created_at)
+       ORDER BY date ASC`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Order type breakdown
+    db.query(
+      `SELECT order_type, COUNT(*) AS count
+       FROM orders
+       WHERE cafe_id = $1
+         AND DATE(created_at) BETWEEN $2 AND $3
+         AND status != 'cancelled'
+       GROUP BY order_type`,
+      [req.cafeId, startDate, endDate]
+    ),
+  ]);
+
+  const totalRevenue  = parseFloat(summaryRes.rows[0].total_revenue);
+  const totalExpenses = parseFloat(expensesRes.rows[0].total_expenses);
+
+  ok(res, {
+    period,
+    startDate,
+    endDate,
+    summary: {
+      total_orders:     parseInt(summaryRes.rows[0].total_orders),
+      cancelled_orders: parseInt(summaryRes.rows[0].cancelled_orders),
+      paid_orders:      parseInt(summaryRes.rows[0].paid_orders),
+      total_revenue:    totalRevenue,
+      total_expenses:   totalExpenses,
+      profit:           parseFloat((totalRevenue - totalExpenses).toFixed(2)),
+    },
+    topItems:           topItemsRes.rows,
+    dailyBreakdown:     dailyRes.rows,
+    orderTypeBreakdown: orderTypeRes.rows,
+    expenses:           expensesRes.rows[0].expense_list || [],
+  });
+});

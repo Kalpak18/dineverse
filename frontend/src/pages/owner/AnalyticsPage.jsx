@@ -1,0 +1,319 @@
+import { useState, useEffect, useCallback } from 'react';
+import { getAnalytics, createExpense, deleteExpense } from '../../services/api';
+import { getApiError } from '../../utils/apiError';
+import { fmtCurrency } from '../../utils/formatters';
+import toast from 'react-hot-toast';
+
+const PERIODS = [
+  { key: 'daily',   label: 'Today' },
+  { key: 'weekly',  label: 'This Week' },
+  { key: 'monthly', label: 'This Month' },
+  { key: 'yearly',  label: 'This Year' },
+];
+
+function SummaryCard({ label, value, icon, color, sub }) {
+  const colors = {
+    blue:   'bg-blue-50 text-blue-600',
+    green:  'bg-green-50 text-green-600',
+    red:    'bg-red-50 text-red-600',
+    purple: 'bg-purple-50 text-purple-600',
+  };
+  return (
+    <div className="card">
+      <div className={`w-10 h-10 rounded-lg ${colors[color]} flex items-center justify-center text-xl mb-3`}>
+        {icon}
+      </div>
+      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+    </div>
+  );
+}
+
+function AddExpenseForm({ onAdded }) {
+  const [form, setForm] = useState({ name: '', amount: '', category: '', expense_date: '', notes: '' });
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim() || !form.amount) return;
+    setSaving(true);
+    try {
+      await createExpense({
+        name: form.name.trim(),
+        amount: parseFloat(form.amount),
+        category: form.category.trim() || undefined,
+        expense_date: form.expense_date || undefined,
+        notes: form.notes.trim() || undefined,
+      });
+      setForm({ name: '', amount: '', category: '', expense_date: '', notes: '' });
+      toast.success('Expense added');
+      onAdded();
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="card space-y-3">
+      <h3 className="font-semibold text-gray-800">Add Expense</h3>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Name *</label>
+          <input
+            className="input"
+            placeholder="e.g. Milk, Gas, Salary"
+            value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Amount (₹) *</label>
+          <input
+            type="number"
+            min="0.01"
+            step="0.01"
+            className="input"
+            placeholder="0.00"
+            value={form.amount}
+            onChange={(e) => setForm({ ...form, amount: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Category</label>
+          <input
+            className="input"
+            placeholder="e.g. Ingredients"
+            value={form.category}
+            onChange={(e) => setForm({ ...form, category: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Date</label>
+          <input
+            type="date"
+            className="input"
+            value={form.expense_date}
+            onChange={(e) => setForm({ ...form, expense_date: e.target.value })}
+          />
+        </div>
+      </div>
+      <button
+        type="submit"
+        disabled={saving || !form.name.trim() || !form.amount}
+        className="btn-primary disabled:opacity-50"
+      >
+        {saving ? 'Saving…' : '+ Add Expense'}
+      </button>
+    </form>
+  );
+}
+
+export default function AnalyticsPage() {
+  const [period, setPeriod] = useState('monthly');
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data: res } = await getAnalytics({ period });
+      setData(res);
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDeleteExpense = async (id) => {
+    try {
+      await deleteExpense(id);
+      toast.success('Expense removed');
+      load();
+    } catch (err) {
+      toast.error(getApiError(err));
+    }
+  };
+
+  // Simple inline bar chart using CSS widths
+  const maxRevenue = data?.dailyBreakdown?.length
+    ? Math.max(...data.dailyBreakdown.map((d) => parseFloat(d.revenue)), 1)
+    : 1;
+
+  return (
+    <div className="max-w-4xl space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
+        <button onClick={load} className="btn-secondary text-sm">↻ Refresh</button>
+      </div>
+
+      {/* Period selector */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {PERIODS.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setPeriod(key)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              period === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="card text-center py-12 text-gray-400">Loading analytics…</div>
+      ) : data && (
+        <>
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <SummaryCard
+              label="Orders Received"
+              value={data.summary.total_orders}
+              icon="📋"
+              color="blue"
+              sub={data.summary.cancelled_orders > 0
+                ? `${data.summary.cancelled_orders} cancelled · ${data.summary.paid_orders} paid`
+                : `${data.summary.paid_orders} paid`}
+            />
+            <SummaryCard
+              label="Revenue Collected"
+              value={fmtCurrency(data.summary.total_revenue)}
+              icon="💰"
+              color="green"
+              sub="From paid orders only"
+            />
+            <SummaryCard
+              label="Expenses"
+              value={fmtCurrency(data.summary.total_expenses)}
+              icon="🧾"
+              color="red"
+            />
+            <SummaryCard
+              label="Profit"
+              value={fmtCurrency(data.summary.profit)}
+              icon={data.summary.profit >= 0 ? '📈' : '📉'}
+              color={data.summary.profit >= 0 ? 'purple' : 'red'}
+              sub="Revenue − Expenses"
+            />
+          </div>
+
+          {/* Order type breakdown */}
+          {data.orderTypeBreakdown.length > 0 && (
+            <div className="card">
+              <h2 className="font-semibold text-gray-900 mb-3">Order Type</h2>
+              <div className="flex gap-4">
+                {data.orderTypeBreakdown.map((t) => (
+                  <div key={t.order_type} className="flex-1 bg-gray-50 rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-gray-900">{t.count}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 capitalize">
+                      {t.order_type === 'dine-in' ? '🍽️ Dine In' : '🥡 Takeaway'}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* Top items */}
+            <div className="card">
+              <h2 className="font-semibold text-gray-900 mb-4">Top Selling Items</h2>
+              {data.topItems.length === 0 ? (
+                <p className="text-gray-400 text-sm">No data yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.topItems.map((item, i) => (
+                    <div key={item.item_name} className="flex items-center gap-3 text-sm">
+                      <span className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 font-medium text-gray-800 truncate">{item.item_name}</span>
+                      <span className="text-gray-400">{item.total_qty} sold</span>
+                      <span className="font-medium text-gray-900">{fmtCurrency(item.total_revenue)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Daily revenue chart */}
+            <div className="card">
+              <h2 className="font-semibold text-gray-900 mb-4">Revenue Breakdown</h2>
+              {data.dailyBreakdown.length === 0 ? (
+                <p className="text-gray-400 text-sm">No data yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.dailyBreakdown.map((day) => (
+                    <div key={day.date} className="flex items-center gap-3 text-xs">
+                      <span className="text-gray-500 w-20 flex-shrink-0">
+                        {new Date(day.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </span>
+                      <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="h-full bg-brand-500 rounded-full transition-all"
+                          style={{ width: `${(parseFloat(day.revenue) / maxRevenue) * 100}%` }}
+                        />
+                      </div>
+                      <span className="font-medium text-gray-700 w-16 text-right">
+                        {fmtCurrency(day.revenue)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Expenses section */}
+          <AddExpenseForm onAdded={load} />
+
+          <div className="card">
+            <h2 className="font-semibold text-gray-900 mb-4">
+              Expenses
+              {data.expenses.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-gray-400">
+                  {data.expenses.length} item{data.expenses.length !== 1 ? 's' : ''}
+                  {' · '}Total {fmtCurrency(data.summary.total_expenses)}
+                </span>
+              )}
+            </h2>
+            {data.expenses.length === 0 ? (
+              <p className="text-gray-400 text-sm">No expenses recorded for this period.</p>
+            ) : (
+              <div className="space-y-2">
+                {data.expenses.map((exp) => (
+                  <div key={exp.id} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{exp.name}</p>
+                      <p className="text-xs text-gray-400">
+                        {new Date(exp.expense_date).toLocaleDateString('en-IN')}
+                        {exp.category && ` · ${exp.category}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 ml-3">
+                      <span className="font-semibold text-gray-900">{fmtCurrency(exp.amount)}</span>
+                      <button
+                        onClick={() => handleDeleteExpense(exp.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none"
+                        title="Delete expense"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,497 @@
+import { useState, useEffect } from 'react';
+import { useAuth } from '../../context/AuthContext';
+import { updateProfile, getOutlets, createOutlet, switchOutlet } from '../../services/api';
+import ImageUpload from '../../components/ImageUpload';
+import MapPicker from '../../components/MapPicker';
+import toast from 'react-hot-toast';
+
+const toSlug = (str) => str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+const INDIAN_STATES = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
+  'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
+  'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan',
+  'Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
+  'Andaman & Nicobar Islands','Chandigarh','Dadra & Nagar Haveli and Daman & Diu',
+  'Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
+];
+
+const NAME_STYLES = [
+  { value: 'normal',      label: 'Normal',      style: {} },
+  { value: 'bold',        label: 'Bold',        style: { fontWeight: 'bold' } },
+  { value: 'italic',      label: 'Italic',      style: { fontStyle: 'italic' } },
+  { value: 'bold-italic', label: 'Bold Italic', style: { fontWeight: 'bold', fontStyle: 'italic' } },
+];
+
+export default function ProfilePage() {
+  const { cafe, updateCafe } = useAuth();
+  const [form, setForm] = useState({
+    name:            cafe?.name || '',
+    description:     cafe?.description || '',
+    address:         cafe?.address || '',
+    address_line2:   cafe?.address_line2 || '',
+    city:            cafe?.city || '',
+    state:           cafe?.state || '',
+    pincode:         cafe?.pincode || '',
+    phone:           cafe?.phone || '',
+    logo_url:        cafe?.logo_url || '',
+    cover_image_url: cafe?.cover_image_url || '',
+    name_style:      cafe?.name_style || 'normal',
+    latitude:        cafe?.latitude  || null,
+    longitude:       cafe?.longitude || null,
+    gst_number:      cafe?.gst_number  || '',
+    gst_rate:        cafe?.gst_rate ?? 5,
+    fssai_number:    cafe?.fssai_number || '',
+    upi_id:          cafe?.upi_id    || '',
+    bill_prefix:     cafe?.bill_prefix || 'INV',
+    bill_footer:     cafe?.bill_footer || '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Outlets
+  const [outlets, setOutlets]         = useState([]);
+  const [showOutletForm, setShowOutletForm] = useState(false);
+  const [outletForm, setOutletForm]   = useState({ name: '', slug: '', address: '', address_line2: '', city: '', state: '', pincode: '', phone: '' });
+  const [savingOutlet, setSavingOutlet] = useState(false);
+  const [switchingId, setSwitchingId] = useState(null);
+
+  useEffect(() => {
+    getOutlets().then(({ data }) => setOutlets(data.outlets || [])).catch(() => {});
+  }, []);
+
+  const handleOutletSlugSuggest = (name) => {
+    setOutletForm((f) => ({ ...f, name, slug: toSlug(name) }));
+  };
+
+  const handleCreateOutlet = async (e) => {
+    e.preventDefault();
+    if (!outletForm.name.trim()) return toast.error('Outlet name is required');
+    if (!outletForm.slug.trim()) return toast.error('Slug is required');
+    setSavingOutlet(true);
+    try {
+      const { data } = await createOutlet(outletForm);
+      setOutlets((prev) => [...prev, data.outlet]);
+      setShowOutletForm(false);
+      setOutletForm({ name: '', slug: '', address: '', address_line2: '', city: '', state: '', pincode: '', phone: '' });
+      toast.success('Outlet created!');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to create outlet');
+    } finally {
+      setSavingOutlet(false);
+    }
+  };
+
+  const handleSwitch = async (id) => {
+    setSwitchingId(id);
+    try {
+      const { data } = await switchOutlet(id);
+      localStorage.setItem('dineverse_token', data.token);
+      updateCafe({ id: data.cafe_id, slug: data.slug, name: data.name });
+      window.location.href = '/owner/dashboard'; // full reload to re-init with new token
+    } catch {
+      toast.error('Could not switch outlet');
+    } finally {
+      setSwitchingId(null);
+    }
+  };
+
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleMapChange = ({ lat, lng, address }) => {
+    setForm((f) => ({ ...f, latitude: lat, longitude: lng, address }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
+    setSaving(true);
+    try {
+      const { data } = await updateProfile(form);
+      updateCafe(data.cafe);
+      toast.success('Profile updated successfully');
+    } catch {
+      toast.error('Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const activeStyle = NAME_STYLES.find((s) => s.value === form.name_style) || NAME_STYLES[0];
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Café Profile</h1>
+
+      <form onSubmit={handleSubmit} className="space-y-6">
+
+        {/* ── Basic Info ── */}
+        <div className="card space-y-4">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Basic Info</h2>
+
+          {/* Café Name + style toggles */}
+          <div>
+            <label className="label">Café Name</label>
+            <input
+              className="input"
+              value={form.name}
+              onChange={set('name')}
+              style={activeStyle.style}
+              required
+            />
+            {/* Style toggles */}
+            <div className="flex gap-2 mt-2">
+              {NAME_STYLES.map((s) => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, name_style: s.value }))}
+                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
+                    form.name_style === s.value
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                  }`}
+                  style={s.style}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            {/* Live name preview */}
+            <p
+              className="mt-2 text-base text-gray-800 px-3 py-2 bg-gray-50 rounded-lg"
+              style={activeStyle.style}
+            >
+              {form.name || 'Your Café Name'}
+            </p>
+          </div>
+
+          {/* URL slug (read-only) */}
+          <div>
+            <label className="label">Your URL Slug</label>
+            <div className="input bg-gray-50 text-gray-500 select-all">
+              {window.location.origin}/cafe/{cafe?.slug}
+            </div>
+            <p className="text-xs text-gray-400 mt-1">Slug cannot be changed after registration.</p>
+          </div>
+
+          <div>
+            <label className="label">Description</label>
+            <textarea
+              className="input resize-none"
+              rows={3}
+              value={form.description}
+              onChange={set('description')}
+              placeholder="Tell customers about your café..."
+            />
+          </div>
+
+          {/* Phone — mandatory */}
+          <div>
+            <label className="label">Phone <span className="text-red-500">*</span></label>
+            <input
+              className="input"
+              value={form.phone}
+              onChange={set('phone')}
+              placeholder="+91 98765 43210"
+              required
+            />
+            <p className="text-xs text-gray-400 mt-1">Can be used to login instead of email.</p>
+          </div>
+
+          {/* Structured address */}
+          <div className="space-y-3">
+            <div>
+              <label className="label">Address Line 1 <span className="text-gray-400 font-normal">(Shop/Building, Street)</span></label>
+              <input className="input" value={form.address} onChange={set('address')}
+                placeholder="e.g. Shop 4, Sunrise Complex, MG Road" />
+            </div>
+            <div>
+              <label className="label">Address Line 2 <span className="text-gray-400 font-normal">(optional)</span></label>
+              <input className="input" value={form.address_line2} onChange={set('address_line2')}
+                placeholder="e.g. Near Kotak Bank, Andheri West" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">City</label>
+                <input className="input" value={form.city} onChange={set('city')} placeholder="Mumbai" />
+              </div>
+              <div>
+                <label className="label">Pincode</label>
+                <input className="input" value={form.pincode} onChange={set('pincode')} placeholder="400001" maxLength={10} />
+              </div>
+            </div>
+            <div>
+              <label className="label">State</label>
+              <select className="input" value={form.state} onChange={set('state')}>
+                <option value="">Select state...</option>
+                {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <MapPicker
+              lat={form.latitude}
+              lng={form.longitude}
+              address={[form.address, form.city].filter(Boolean).join(', ')}
+              onChange={handleMapChange}
+            />
+          </div>
+
+          {/* Logo only (cover image in separate section) */}
+          <div>
+            <label className="label">Café Logo</label>
+            <ImageUpload
+              value={form.logo_url}
+              onChange={(url) => setForm((f) => ({ ...f, logo_url: url }))}
+              uploadType="logo"
+              label=""
+              aspectClass="aspect-square"
+            />
+          </div>
+
+          <div>
+            <label className="label">Cover Image</label>
+            <ImageUpload
+              value={form.cover_image_url}
+              onChange={(url) => setForm((f) => ({ ...f, cover_image_url: url }))}
+              uploadType="cover"
+              label=""
+              aspectClass="aspect-video"
+            />
+          </div>
+        </div>
+
+        {/* ── Billing Details ── */}
+        <div className="card space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Billing Details</h2>
+            <p className="text-xs text-gray-400 mt-0.5">These details appear on every printed bill/receipt.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">GST Number</label>
+              <input
+                className="input uppercase"
+                value={form.gst_number}
+                onChange={set('gst_number')}
+                placeholder="22AAAAA0000A1Z5"
+                maxLength={15}
+              />
+              <p className="text-xs text-gray-400 mt-1">Optional. Printed on bill if provided.</p>
+            </div>
+            <div>
+              <label className="label">GST Rate</label>
+              <select
+                className="input"
+                value={form.gst_rate}
+                onChange={(e) => setForm((f) => ({ ...f, gst_rate: parseInt(e.target.value) }))}
+              >
+                <option value={0}>0% — Not registered / Composition</option>
+                <option value={5}>5% — Standard restaurant</option>
+                <option value={18}>18% — AC restaurant / liquor / 5-star</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">FSSAI License No.</label>
+              <input
+                className="input"
+                value={form.fssai_number}
+                onChange={set('fssai_number')}
+                placeholder="10020012345678"
+                maxLength={20}
+              />
+            </div>
+            <div>
+              <label className="label">UPI ID</label>
+              <input
+                className="input"
+                value={form.upi_id}
+                onChange={set('upi_id')}
+                placeholder="yourcafe@upi"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Invoice Prefix</label>
+              <input
+                className="input uppercase"
+                value={form.bill_prefix}
+                onChange={set('bill_prefix')}
+                placeholder="INV"
+                maxLength={10}
+              />
+              <p className="text-xs text-gray-400 mt-1">e.g. INV → INV-0001</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Bill Footer / Thank-you Message</label>
+            <textarea
+              className="input resize-none"
+              rows={2}
+              value={form.bill_footer}
+              onChange={set('bill_footer')}
+              placeholder="Thank you for visiting! Come back soon."
+              maxLength={200}
+            />
+          </div>
+
+          {/* Live bill header preview */}
+          <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl px-4 py-3 text-xs text-gray-500 space-y-0.5">
+            <p className="font-semibold text-gray-700 mb-1">Bill header preview</p>
+            <p
+              className="text-sm text-center text-gray-900 uppercase tracking-wide"
+              style={activeStyle.style}
+            >
+              {form.name || 'Your Café Name'}
+            </p>
+            {form.address    && <p className="text-center">{form.address}</p>}
+            {form.address_line2 && <p className="text-center">{form.address_line2}</p>}
+            {(form.city || form.state || form.pincode) && (
+              <p className="text-center">
+                {[form.city, form.state, form.pincode].filter(Boolean).join(', ')}
+              </p>
+            )}
+            {form.phone      && <p className="text-center">Ph: {form.phone}</p>}
+            {form.gst_number && <p className="text-center">GSTIN: {form.gst_number.toUpperCase()}</p>}
+            {form.gst_number && form.gst_rate > 0 && (
+              <p className="text-center">GST {form.gst_rate}% (CGST {form.gst_rate/2}% + SGST {form.gst_rate/2}%)</p>
+            )}
+            {form.fssai_number && <p className="text-center">FSSAI No: {form.fssai_number}</p>}
+            {form.upi_id       && <p className="text-center">UPI: {form.upi_id}</p>}
+            <p className="mt-1 text-center text-gray-400 italic">{form.bill_footer || '(footer message)'}</p>
+          </div>
+        </div>
+
+        <button type="submit" disabled={saving} className="btn-primary">
+          {saving ? 'Saving...' : 'Save Changes'}
+        </button>
+      </form>
+
+      {/* ── Outlets Section ── */}
+      {!cafe?.parent_cafe_id && (
+        <div className="card space-y-4 mt-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Outlets / Branches</h2>
+              <p className="text-xs text-gray-400 mt-0.5">Add multiple locations under the same brand account</p>
+            </div>
+            <button
+              onClick={() => setShowOutletForm((v) => !v)}
+              className="btn-primary text-sm px-4"
+            >
+              {showOutletForm ? 'Cancel' : '+ Add Outlet'}
+            </button>
+          </div>
+
+          {showOutletForm && (
+            <form onSubmit={handleCreateOutlet} className="bg-gray-50 rounded-xl p-4 space-y-3 border border-gray-200">
+              <p className="text-xs font-semibold text-gray-600">New Outlet Details</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <label className="label">Outlet Name *</label>
+                  <input className="input" placeholder="e.g. The Coffee House — Bandra"
+                    value={outletForm.name}
+                    onChange={(e) => handleOutletSlugSuggest(e.target.value)} />
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Slug *</label>
+                  <div className="flex">
+                    <span className="bg-gray-100 border border-r-0 border-gray-300 rounded-l-lg px-3 flex items-center text-xs text-gray-500 whitespace-nowrap">/cafe/</span>
+                    <input className="input rounded-l-none text-sm" placeholder="coffee-house-bandra"
+                      value={outletForm.slug}
+                      onChange={(e) => setOutletForm((f) => ({ ...f, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') }))} />
+                  </div>
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Address Line 1</label>
+                  <input className="input" placeholder="Shop no., Street" value={outletForm.address}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, address: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Address Line 2 (optional)</label>
+                  <input className="input" placeholder="Landmark, Area" value={outletForm.address_line2}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, address_line2: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">City</label>
+                  <input className="input" placeholder="Mumbai" value={outletForm.city}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, city: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="label">Pincode</label>
+                  <input className="input" placeholder="400001" value={outletForm.pincode}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, pincode: e.target.value }))} />
+                </div>
+                <div className="col-span-2">
+                  <label className="label">State</label>
+                  <select className="input" value={outletForm.state}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, state: e.target.value }))}>
+                    <option value="">Select state...</option>
+                    {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="label">Outlet Phone</label>
+                  <input className="input" placeholder="+91 98765 43210" value={outletForm.phone}
+                    onChange={(e) => setOutletForm((f) => ({ ...f, phone: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <p className="text-xs text-blue-700">
+                  The outlet will share your current subscription and inherit your menu automatically.
+                  Each outlet gets its own orders, tables, staff, and reservations.
+                </p>
+              </div>
+
+              <button type="submit" disabled={savingOutlet} className="btn-primary text-sm w-full">
+                {savingOutlet ? 'Creating...' : 'Create Outlet'}
+              </button>
+            </form>
+          )}
+
+          {/* Outlets list */}
+          {outlets.length > 0 ? (
+            <div className="space-y-2">
+              {outlets.map((o) => {
+                const isCurrent = o.id === cafe?.id;
+                const isMain    = !o.parent_cafe_id;
+                return (
+                  <div key={o.id} className={`flex items-center justify-between p-3 rounded-xl border ${isCurrent ? 'bg-brand-50 border-brand-200' : 'bg-white border-gray-200'}`}>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-sm text-gray-900">{o.name}</p>
+                        {isMain  && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Main</span>}
+                        {isCurrent && <span className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">Active</span>}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5">/{o.slug}{o.city ? ` · ${o.city}` : ''}</p>
+                    </div>
+                    {!isCurrent && (
+                      <button
+                        onClick={() => handleSwitch(o.id)}
+                        disabled={!!switchingId}
+                        className="text-xs font-semibold text-brand-600 hover:text-brand-800 px-3 py-1.5 rounded-lg border border-brand-200 hover:bg-brand-50 transition-colors disabled:opacity-50"
+                      >
+                        {switchingId === o.id ? 'Switching...' : 'Switch'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400 text-center py-4">
+              No outlets yet. Add your first branch above.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

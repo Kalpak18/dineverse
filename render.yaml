@@ -1,0 +1,73 @@
+# Render.com deployment configuration
+# Deploy at: https://dashboard.render.com/select-repo
+# Docs: https://render.com/docs/infrastructure-as-code
+#
+# DATABASE: Using Neon (neon.tech) instead of Render's managed DB.
+# Neon is free forever and doesn't expire like Render's 90-day free plan.
+# Set DATABASE_URL manually in the Render dashboard from your Neon connection string.
+
+services:
+  - type: web
+    name: dineverse-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && cd ../frontend && npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+
+      # ── Database (paste from Neon dashboard) ──────────────────
+      - key: DATABASE_URL
+        sync: false           # Set in Render dashboard → Environment
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        value: false
+
+      # ── Auth ──────────────────────────────────────────────────
+      - key: JWT_SECRET
+        generateValue: true   # Render auto-generates a secure random value
+      - key: JWT_EXPIRES_IN
+        value: 7d
+
+      # ── App URL (set after first deploy — use your Render URL) ─
+      - key: CLIENT_URL
+        sync: false           # e.g. https://dineverse-backend.onrender.com
+
+      # ── Email / OTP (Brevo SMTP) ──────────────────────────────
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_SECURE
+        value: false
+      - key: SMTP_USER
+        sync: false           # Your Brevo login email
+      - key: SMTP_PASS
+        sync: false           # Brevo SMTP key (NOT your account password)
+      - key: SMTP_FROM
+        sync: false           # e.g. noreply@dine-verse.com
+
+      # ── File Uploads (AWS S3) ─────────────────────────────────
+      - key: AWS_REGION
+        sync: false           # e.g. ap-south-1
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_BUCKET_NAME
+        sync: false           # e.g. dineverse-uploads
+      - key: S3_PUBLIC_URL
+        sync: false           # e.g. https://dineverse-uploads.s3.ap-south-1.amazonaws.com
+
+      # ── Payments (Razorpay) ───────────────────────────────────
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      # ── Redis (leave blank for Phase 1, add Upstash URL for Phase 2) ──
+      - key: REDIS_URL
+        sync: false

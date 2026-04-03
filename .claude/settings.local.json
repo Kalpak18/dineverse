@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(psql \"postgresql://postgres:psql%40123@localhost:5432/foodie_db\" -f migrations/002_add_staff.sql)",
+      "Bash(cmd /c \"netstat -ano | findstr :5000 | findstr LISTENING\")",
+      "Bash(cmd /c \"netstat -ano | findstr :5000\")",
+      "Bash(cmd /c \"for /f \"\"tokens=5\"\" %a in \\(''netstat -aon ^| findstr :5000 ^| findstr LISTENING''\\) do echo %a\")",
+      "Bash(cmd /c \"netstat -aon | findstr \"\"5000\"\"\")",
+      "Bash(cmd /c \"wmic process where name=''node.exe'' get ProcessId,CommandLine 2>nul\")",
+      "Bash(cmd /c \"taskkill /F /IM node.exe /T 2>&1 & echo done\")",
+      "Bash(psql \"postgresql://postgres:psql%40123@localhost:5432/foodie_db\" -f migrations/003_add_paid_status.sql)",
+      "Bash(ls -la /c/Users/kalpa/Desktop/foodie/backend/migrations/*.sql)",
+      "Bash(psql \"postgresql://postgres:psql%40123@localhost:5432/foodie_db\" -f migrations/010_customer_phone_city.sql)",
+      "Bash(find /c/Users/kalpa/Desktop/foodie -name \"Dockerfile\" -exec cat {} \\\\;)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); require\\('./src/utils/validateEnv'\\)\\(\\)\")",
+      "Bash(node -e \"require\\('./src/app.js'\\)\")",
+      "Bash(curl -s http://localhost:5000/health)",
+      "Bash(kill %1)",
+      "Bash(node scripts/migrate.js)",
+      "Bash(npm run:*)",
+      "Bash(node -e ':*)"
+    ]
+  }
+}

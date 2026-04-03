@@ -1,0 +1,193 @@
+const db = require('../config/database');
+const { ok, fail } = require('../utils/respond');
+const asyncHandler = require('../utils/asyncHandler');
+
+// ─── GET /api/tables/areas ────────────────────────────────────
+// Owner: get all areas + their tables
+exports.getAreas = asyncHandler(async (req, res) => {
+  const [areasRes, tablesRes] = await Promise.all([
+    db.query(
+      'SELECT id, name, sort_order, is_active FROM areas WHERE cafe_id = $1 ORDER BY sort_order ASC, name ASC',
+      [req.cafeId]
+    ),
+    db.query(
+      'SELECT id, area_id, label, is_active FROM cafe_tables WHERE cafe_id = $1 ORDER BY label ASC',
+      [req.cafeId]
+    ),
+  ]);
+
+  const areas = areasRes.rows.map((a) => ({
+    ...a,
+    tables: tablesRes.rows.filter((t) => t.area_id === a.id),
+  }));
+  // Tables not assigned to any area
+  const unassigned = tablesRes.rows.filter((t) => !t.area_id);
+
+  ok(res, { areas, unassigned });
+});
+
+// ─── POST /api/tables/areas ───────────────────────────────────
+exports.createArea = asyncHandler(async (req, res) => {
+  const { name, sort_order = 0 } = req.body;
+  if (!name || !name.trim()) return fail(res, 'Area name is required');
+
+  const result = await db.query(
+    'INSERT INTO areas (cafe_id, name, sort_order) VALUES ($1, $2, $3) RETURNING id, name, sort_order, is_active',
+    [req.cafeId, name.trim(), parseInt(sort_order)]
+  );
+  ok(res, { area: { ...result.rows[0], tables: [] } }, 'Area created', 201);
+});
+
+// ─── PATCH /api/tables/areas/:id ─────────────────────────────
+exports.updateArea = asyncHandler(async (req, res) => {
+  const { name, sort_order, is_active } = req.body;
+  const result = await db.query(
+    `UPDATE areas
+     SET name       = COALESCE($1, name),
+         sort_order = COALESCE($2, sort_order),
+         is_active  = COALESCE($3, is_active)
+     WHERE id = $4 AND cafe_id = $5
+     RETURNING id, name, sort_order, is_active`,
+    [name?.trim() || null, sort_order != null ? parseInt(sort_order) : null, is_active ?? null, req.params.id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Area not found', 404);
+  ok(res, { area: result.rows[0] });
+});
+
+// ─── DELETE /api/tables/areas/:id ────────────────────────────
+exports.deleteArea = asyncHandler(async (req, res) => {
+  // Unassign tables before deleting area
+  await db.query('UPDATE cafe_tables SET area_id = NULL WHERE area_id = $1 AND cafe_id = $2', [req.params.id, req.cafeId]);
+  const result = await db.query('DELETE FROM areas WHERE id = $1 AND cafe_id = $2', [req.params.id, req.cafeId]);
+  if (result.rowCount === 0) return fail(res, 'Area not found', 404);
+  ok(res, {}, 'Area deleted');
+});
+
+// ─── POST /api/tables ─────────────────────────────────────────
+exports.createTable = asyncHandler(async (req, res) => {
+  const { label, area_id } = req.body;
+  if (!label || !label.trim()) return fail(res, 'Table label is required');
+
+  // Verify area belongs to this cafe (if provided)
+  if (area_id) {
+    const areaCheck = await db.query('SELECT id FROM areas WHERE id = $1 AND cafe_id = $2', [area_id, req.cafeId]);
+    if (areaCheck.rows.length === 0) return fail(res, 'Area not found', 404);
+  }
+
+  const result = await db.query(
+    'INSERT INTO cafe_tables (cafe_id, area_id, label) VALUES ($1, $2, $3) RETURNING id, area_id, label, is_active',
+    [req.cafeId, area_id || null, label.trim()]
+  );
+  ok(res, { table: result.rows[0] }, 'Table created', 201);
+});
+
+// ─── PATCH /api/tables/:id ────────────────────────────────────
+exports.updateTable = asyncHandler(async (req, res) => {
+  const { label, area_id, is_active } = req.body;
+  const result = await db.query(
+    `UPDATE cafe_tables
+     SET label     = COALESCE($1, label),
+         area_id   = COALESCE($2, area_id),
+         is_active = COALESCE($3, is_active)
+     WHERE id = $4 AND cafe_id = $5
+     RETURNING id, area_id, label, is_active`,
+    [label?.trim() || null, area_id !== undefined ? area_id : null, is_active ?? null, req.params.id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Table not found', 404);
+  ok(res, { table: result.rows[0] });
+});
+
+// ─── DELETE /api/tables/:id ───────────────────────────────────
+exports.deleteTable = asyncHandler(async (req, res) => {
+  const result = await db.query('DELETE FROM cafe_tables WHERE id = $1 AND cafe_id = $2', [req.params.id, req.cafeId]);
+  if (result.rowCount === 0) return fail(res, 'Table not found', 404);
+  ok(res, {}, 'Table deleted');
+});
+
+// ─── Public: GET /api/cafes/:slug/tables?date=&time= ──────────
+// Returns active areas + their active tables.
+// If ?date=YYYY-MM-DD&time=HH:MM are provided, each table gets:
+//   is_reserved: bool   — blocked by an active reservation at that moment
+//   reserved_until: "HH:MM" | null   — when the table becomes free
+// A pending reservation auto-expires 15 min after reserved_time.
+// A confirmed reservation holds for its full duration_minutes.
+exports.getPublicTables = asyncHandler(async (req, res) => {
+  const cafeRes = await db.query('SELECT id FROM cafes WHERE slug = $1 AND is_active = true', [req.params.slug]);
+  if (cafeRes.rows.length === 0) return fail(res, 'Café not found', 404);
+  const cafeId = cafeRes.rows[0].id;
+
+  const { date, time } = req.query;
+  const checkAvailability = date && time;
+
+  const areasRes = await db.query(
+    'SELECT id, name, sort_order FROM areas WHERE cafe_id = $1 AND is_active = true ORDER BY sort_order ASC, name ASC',
+    [cafeId]
+  );
+
+  let tablesRows;
+  if (checkAvailability) {
+    // First check if migration 015 has been applied (table_id + duration_minutes exist)
+    const colCheck = await db.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'reservations' AND column_name = 'table_id'`
+    );
+    const migrationApplied = colCheck.rows.length > 0;
+
+    if (migrationApplied) {
+      const result = await db.query(
+        `SELECT ct.id, ct.area_id, ct.label,
+                r.id AS res_id,
+                TO_CHAR(
+                  r.reserved_time + (COALESCE(r.duration_minutes, 90) || ' minutes')::INTERVAL,
+                  'HH24:MI'
+                ) AS reserved_until
+         FROM cafe_tables ct
+         LEFT JOIN LATERAL (
+           SELECT id, reserved_time, reserved_date, duration_minutes, status
+           FROM reservations
+           WHERE table_id = ct.id
+             AND cafe_id  = $1
+             AND reserved_date = $2::DATE
+             AND status IN ('pending', 'confirmed')
+             AND $3::TIME >= reserved_time
+             AND $3::TIME <  reserved_time + (COALESCE(duration_minutes, 90) || ' minutes')::INTERVAL
+             AND NOT (
+               status = 'pending'
+               AND ($2::DATE + reserved_time + INTERVAL '15 minutes') < NOW()
+             )
+           LIMIT 1
+         ) r ON true
+         WHERE ct.cafe_id = $1 AND ct.is_active = true
+         ORDER BY ct.label ASC`,
+        [cafeId, date, time]
+      );
+      tablesRows = result.rows.map((t) => ({
+        id:             t.id,
+        area_id:        t.area_id,
+        label:          t.label,
+        is_reserved:    !!t.res_id,
+        reserved_until: t.reserved_until || null,
+      }));
+    } else {
+      // Migration not yet applied — return tables without availability info
+      const result = await db.query(
+        'SELECT id, area_id, label FROM cafe_tables WHERE cafe_id = $1 AND is_active = true ORDER BY label ASC',
+        [cafeId]
+      );
+      tablesRows = result.rows.map((t) => ({ ...t, is_reserved: false, reserved_until: null }));
+    }
+  } else {
+    const result = await db.query(
+      'SELECT id, area_id, label FROM cafe_tables WHERE cafe_id = $1 AND is_active = true ORDER BY label ASC',
+      [cafeId]
+    );
+    tablesRows = result.rows.map((t) => ({ ...t, is_reserved: false, reserved_until: null }));
+  }
+
+  const areas = areasRes.rows.map((a) => ({
+    ...a,
+    tables: tablesRows.filter((t) => t.area_id === a.id),
+  }));
+
+  ok(res, { areas, has_tables: tablesRows.length > 0 });
+});

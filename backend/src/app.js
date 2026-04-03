@@ -1,0 +1,218 @@
+require('dotenv').config();
+const validateEnv = require('./utils/validateEnv');
+validateEnv(); // crash early if config is incomplete
+
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
+const logger = require('./utils/logger');
+const db = require('./config/database');
+const { apiLimiter } = require('./middleware/rateLimiter');
+const { createRedisAdapter, pubClient, subClient } = require('./config/redis');
+
+const authRoutes = require('./routes/auth');
+const cafeRoutes = require('./routes/cafe');
+const menuRoutes = require('./routes/menu');
+const orderRoutes = require('./routes/orders');
+const uploadRoutes = require('./routes/uploads');
+const staffRoutes = require('./routes/staff');
+const expenseRoutes = require('./routes/expenses');
+const analyticsRoutes = require('./routes/analytics');
+const paymentRoutes = require('./routes/payments');
+const supportRoutes = require('./routes/support');
+const adminRoutes = require('./routes/admin');
+const tableRoutes = require('./routes/tables');
+const ratingRoutes = require('./routes/ratings');
+const offerRoutes = require('./routes/offers');
+const reservationRoutes = require('./routes/reservations');
+const initReportScheduler = require('./services/reportScheduler');
+
+const app = express();
+const server = http.createServer(app);
+
+// ─── CORS ─────────────────────────────────────────────────────
+// Supports comma-separated CLIENT_URL for multiple origins
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim());
+
+const corsOptions = {
+  origin: (origin, cb) => {
+    // allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+// Security headers: XSS protection, clickjacking, MIME sniffing, etc.
+// contentSecurityPolicy disabled — the print-bill popup writes inline HTML
+app.use(helmet({ contentSecurityPolicy: false }));
+
+// ─── Socket.io Setup ──────────────────────────────────────────
+const io = new Server(server, {
+  cors: { origin: allowedOrigins, methods: ['GET', 'POST'] },
+});
+
+// Redis adapter: shares socket rooms across multiple backend instances.
+// If REDIS_URL is not set (local dev / Phase 1), falls back to in-memory.
+if (process.env.REDIS_URL) {
+  createRedisAdapter(io).catch((err) =>
+    logger.warn('Redis adapter failed — falling back to in-memory socket: %s', err.message)
+  );
+}
+
+io.on('connection', (socket) => {
+  logger.debug('Socket connected: %s', socket.id);
+
+  socket.on('join_cafe', (cafeId) => {
+    socket.join(`cafe:${cafeId}`);
+    logger.debug('Socket %s joined cafe:%s', socket.id, cafeId);
+  });
+
+  socket.on('leave_cafe', (cafeId) => {
+    socket.leave(`cafe:${cafeId}`);
+  });
+
+  socket.on('track_order', (orderId) => {
+    socket.join(`order:${orderId}`);
+  });
+
+  socket.on('track_reservation', (reservationId) => {
+    socket.join(`reservation:${reservationId}`);
+  });
+
+  // Admin joins a dedicated room to receive real-time ticket notifications
+  socket.on('join_admin', () => {
+    socket.join('admin_room');
+    logger.debug('Socket %s joined admin_room', socket.id);
+  });
+
+  socket.on('disconnect', () => {
+    logger.debug('Socket disconnected: %s', socket.id);
+  });
+});
+
+// ─── Middleware ────────────────────────────────────────────────
+app.use(express.json({ limit: '10kb' })); // limit body size
+
+// HTTP request logging (skip in test env)
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan('[:date[clf]] :method :url :status :response-time ms'));
+}
+
+// Attach io to every request so controllers can emit events
+app.use((req, _res, next) => {
+  req.io = io;
+  next();
+});
+
+// Global rate limiter (per-route overrides for auth are in routes/auth.js)
+app.use('/api', apiLimiter);
+
+// ─── Routes ───────────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/cafes', cafeRoutes);
+app.use('/api/menu', menuRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/uploads', uploadRoutes);
+app.use('/api/staff', staffRoutes);
+app.use('/api/expenses', expenseRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/support', supportRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/tables', tableRoutes);
+app.use('/api/ratings', ratingRoutes);
+app.use('/api/offers', offerRoutes);
+app.use('/api/reservations', reservationRoutes);
+
+// Health check — includes DB ping so load balancers detect real outages
+app.get('/health', async (_req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.json({ status: 'ok', timestamp: new Date() });
+  } catch (err) {
+    logger.error('Health check DB ping failed: %s', err.message);
+    res.status(503).json({ status: 'error', message: 'Database unreachable' });
+  }
+});
+
+// Serve React frontend in production (must come after /api routes)
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '../../frontend/dist');
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
+// 404 handler (dev only — in prod the SPA catch-all above handles unknown paths)
+if (process.env.NODE_ENV !== 'production') {
+  app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
+}
+
+// Global error handler — catches anything forwarded via next(err)
+app.use((err, _req, res, _next) => {
+  logger.error('Unhandled error: %s', err.stack || err.message);
+  const status = err.status || err.statusCode || 500;
+  // Don't leak internal error messages to clients for 5xx
+  const message = status < 500 ? err.message : 'Internal server error';
+  res.status(status).json({ success: false, message });
+});
+
+// ─── Start Server ─────────────────────────────────────────────
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+  logger.info('DineVerse backend running on port %d [%s]', PORT, process.env.NODE_ENV || 'development');
+  initReportScheduler();
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    logger.error('Port %d is already in use. Kill the existing process and restart.', PORT);
+    process.exit(1);
+  } else {
+    throw err;
+  }
+});
+
+// ─── Graceful Shutdown ────────────────────────────────────────
+const gracefulShutdown = (signal) => {
+  logger.info('%s received — shutting down gracefully', signal);
+  server.close(async () => {
+    try {
+      await db.pool.end();
+      logger.info('Database pool closed. Goodbye.');
+    } catch (e) {
+      logger.error('Error closing DB pool: %s', e.message);
+    }
+    process.exit(0);
+  });
+  // Force-kill if shutdown takes more than 30 s
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000).unref();
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+// ─── Safety nets ──────────────────────────────────────────────
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled Promise Rejection: %s', reason?.stack || reason);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception: %s', err.stack || err.message);
+  process.exit(1);
+});
+
+module.exports = { app, server, io };

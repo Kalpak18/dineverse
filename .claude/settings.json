@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx vite:*)",
+      "Bash(node -e ':*)",
+      "Bash(node -e \"require\\('node-cron'\\); console.log\\('node-cron OK'\\)\")",
+      "Bash(xargs grep:*)",
+      "Read(//c/Users/kalpa/AppData/Local/Temp/claude/c--Users-kalpa-Desktop-foodie/6b05aae2-4cc7-4495-a6b7-5f33913c28e7/tasks/**)"
+    ]
+  }
+}

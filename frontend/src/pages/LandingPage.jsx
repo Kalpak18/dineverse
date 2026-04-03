@@ -1,0 +1,389 @@
+import { useNavigate } from 'react-router-dom';
+
+export default function LandingPage() {
+  const navigate = useNavigate();
+
+  return (
+    <div className="min-h-screen bg-white font-sans">
+      {/* ── Navbar ─────────────────────────────────────────────── */}
+      <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100 px-6 py-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">D</div>
+            <span className="font-bold text-gray-900 text-lg">DineVerse</span>
+          </div>
+          <div className="hidden md:flex items-center gap-8 text-sm text-gray-600">
+            <a href="#how-it-works" className="hover:text-brand-600 transition-colors">How It Works</a>
+            <a href="#features" className="hover:text-brand-600 transition-colors">Features</a>
+            <a href="#pricing" className="hover:text-brand-600 transition-colors">Pricing</a>
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => navigate('/owner/login')}
+              className="text-sm text-gray-600 hover:text-gray-900 font-medium"
+            >
+              Login
+            </button>
+            <button
+              onClick={() => navigate('/owner/register')}
+              className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+            >
+              Start Free
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── Hero ────────────────────────────────────────────────── */}
+      <section className="relative bg-gradient-to-br from-brand-50 via-orange-50 to-white overflow-hidden">
+        <div className="max-w-6xl mx-auto px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
+          {/* Text */}
+          <div className="flex-1 text-center md:text-left">
+            <span className="inline-block text-xs font-semibold bg-brand-100 text-brand-700 px-3 py-1 rounded-full mb-5 tracking-wide uppercase">
+              India's Smart Café OS
+            </span>
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-5">
+              Your Café,<br />
+              <span className="text-brand-500">Running Itself</span>
+            </h1>
+            <p className="text-lg text-gray-500 mb-8 max-w-md mx-auto md:mx-0">
+              QR-based digital ordering, real-time kitchen updates, GST-ready billing —
+              all in one platform. No apps needed for customers.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center md:justify-start">
+              <button
+                onClick={() => navigate('/owner/register')}
+                className="px-7 py-3.5 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-xl text-base transition-colors shadow-lg shadow-brand-200"
+              >
+                Start 30-Day Free Trial
+              </button>
+              <button
+                onClick={() => navigate('/explore')}
+                className="px-7 py-3.5 bg-white hover:bg-gray-50 text-gray-800 font-bold rounded-xl text-base transition-colors border border-gray-200 shadow-sm"
+              >
+                Explore Cafés Near You →
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · ₹2,999/year after trial</p>
+          </div>
+
+          {/* Mockup */}
+          <div className="flex-1 flex justify-center md:justify-end">
+            <div className="relative">
+              {/* Phone frame */}
+              <div className="w-56 bg-gray-900 rounded-[2.5rem] p-3 shadow-2xl shadow-gray-400">
+                <div className="bg-white rounded-[2rem] overflow-hidden h-[440px] flex flex-col">
+                  {/* Status bar */}
+                  <div className="bg-brand-500 px-4 py-3 flex items-center justify-between">
+                    <span className="text-white font-bold text-sm">DineVerse</span>
+                    <span className="text-white/80 text-xs">9:41</span>
+                  </div>
+                  {/* Cafe header */}
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="font-semibold text-gray-900 text-sm">The Brew House</p>
+                    <p className="text-xs text-gray-400">Table 5 · Dine In</p>
+                  </div>
+                  {/* Menu items */}
+                  <div className="flex-1 px-3 py-2 space-y-2 overflow-hidden">
+                    {[
+                      { name: 'Cappuccino', price: '₹180', veg: true },
+                      { name: 'Croissant', price: '₹120', veg: true },
+                      { name: 'Club Sandwich', price: '₹220', veg: false },
+                    ].map((item) => (
+                      <div key={item.name} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-3 h-3 rounded-sm border flex-shrink-0 ${item.veg ? 'border-green-500' : 'border-red-500'}`}>
+                            <span className={`block w-1.5 h-1.5 rounded-full m-0.5 ${item.veg ? 'bg-green-500' : 'bg-red-500'}`} />
+                          </span>
+                          <span className="text-xs font-medium text-gray-800">{item.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500">{item.price}</span>
+                          <button className="w-5 h-5 rounded-full bg-brand-500 text-white text-xs flex items-center justify-center font-bold">+</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Cart bar */}
+                  <div className="bg-brand-500 mx-3 mb-3 rounded-xl px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-white text-xs font-medium">3 items · ₹520</span>
+                    <span className="text-white text-xs font-bold">Place Order →</span>
+                  </div>
+                </div>
+              </div>
+              {/* Floating badge */}
+              <div className="absolute -top-3 -right-6 bg-white border border-gray-200 shadow-lg rounded-2xl px-4 py-2.5">
+                <p className="text-xs font-bold text-gray-900">🔔 New Order!</p>
+                <p className="text-xs text-gray-500">Table 5 · ₹520</p>
+              </div>
+              <div className="absolute -bottom-3 -left-6 bg-white border border-gray-200 shadow-lg rounded-2xl px-4 py-2.5">
+                <p className="text-xs font-bold text-green-700">✅ Ready</p>
+                <p className="text-xs text-gray-500">Order #0042</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Social Proof Bar ────────────────────────────────────── */}
+      <section className="bg-gray-50 border-y border-gray-100 py-8">
+        <div className="max-w-4xl mx-auto px-6 flex flex-wrap justify-center gap-8 text-center">
+          {[
+            { value: '500+', label: 'Cafés & Restaurants' },
+            { value: '1L+', label: 'Orders Processed' },
+            { value: '4.9★', label: 'Average Rating' },
+            { value: '30 days', label: 'Free Trial' },
+          ].map((stat) => (
+            <div key={stat.label}>
+              <p className="text-2xl font-extrabold text-brand-600">{stat.value}</p>
+              <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── How It Works ────────────────────────────────────────── */}
+      <section id="how-it-works" className="py-20 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Simple & Powerful</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">How DineVerse Works</h2>
+          </div>
+          <div className="grid md:grid-cols-2 gap-12">
+            {/* Customer flow */}
+            <div className="bg-orange-50 rounded-3xl p-8">
+              <h3 className="font-bold text-gray-900 text-lg mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-orange-400 flex items-center justify-center text-white text-sm">👤</span>
+                For Customers
+              </h3>
+              <ol className="space-y-5">
+                {[
+                  ['📱', 'Scan QR code at table', 'No app download required'],
+                  ['🍽️', 'Browse menu & add to cart', 'Rich photos, veg/non-veg filters'],
+                  ['✅', 'Place order instantly', 'Name + table, that\'s all'],
+                  ['🔔', 'Track in real-time', 'Pending → Preparing → Ready → Served'],
+                ].map(([icon, title, sub]) => (
+                  <li key={title} className="flex items-start gap-4">
+                    <span className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-lg flex-shrink-0">{icon}</span>
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Owner flow */}
+            <div className="bg-brand-50 rounded-3xl p-8">
+              <h3 className="font-bold text-gray-900 text-lg mb-6 flex items-center gap-2">
+                <span className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center text-white text-sm">🏪</span>
+                For Owners
+              </h3>
+              <ol className="space-y-5">
+                {[
+                  ['🚀', 'Register & set up in minutes', 'Add menu, areas, tables'],
+                  ['📋', 'Live orders dashboard', 'New orders ping instantly'],
+                  ['🖨️', 'Print GST-ready bill', 'CGST + SGST breakdown, UPI QR'],
+                  ['📈', 'Analytics & insights', 'Revenue, top items, daily reports'],
+                ].map(([icon, title, sub]) => (
+                  <li key={title} className="flex items-start gap-4">
+                    <span className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-lg flex-shrink-0">{icon}</span>
+                    <div>
+                      <p className="font-semibold text-gray-900 text-sm">{title}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{sub}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Features ────────────────────────────────────────────── */}
+      <section id="features" className="py-20 px-6 bg-gray-50">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-14">
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Everything You Need</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Built for Indian F&B</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {[
+              {
+                icon: '⚡',
+                name: 'DineFlow™',
+                color: 'bg-yellow-50 border-yellow-200',
+                iconBg: 'bg-yellow-100 text-yellow-700',
+                desc: 'Instant QR ordering. Customers order from their phone — no waiter needed for taking orders.',
+                points: ['Zero app installs', 'Real-time kitchen updates', 'Multi-table support'],
+              },
+              {
+                icon: '🧑‍🍳',
+                name: 'DineServe™',
+                color: 'bg-green-50 border-green-200',
+                iconBg: 'bg-green-100 text-green-700',
+                desc: 'Staff & kitchen management that keeps your team in sync automatically.',
+                points: ['Staff roles & login', 'Kitchen display system', 'Area-wise table management'],
+              },
+              {
+                icon: '📊',
+                name: 'DineInsights™',
+                color: 'bg-blue-50 border-blue-200',
+                iconBg: 'bg-blue-100 text-blue-700',
+                desc: 'Know your best-sellers, peak hours, and daily revenue at a glance.',
+                points: ['Revenue analytics', 'Top items report', 'Expense tracking'],
+              },
+              {
+                icon: '💰',
+                name: 'DinePay™',
+                color: 'bg-purple-50 border-purple-200',
+                iconBg: 'bg-purple-100 text-purple-700',
+                desc: 'GST-compliant thermal bills with UPI QR. Accept cash, card, or UPI seamlessly.',
+                points: ['TAX INVOICE format', 'CGST + SGST split', 'UPI ID on bill'],
+              },
+            ].map((feat) => (
+              <div key={feat.name} className={`rounded-2xl border p-6 ${feat.color}`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4 ${feat.iconBg}`}>
+                  {feat.icon}
+                </div>
+                <h3 className="font-bold text-gray-900 mb-2">{feat.name}</h3>
+                <p className="text-sm text-gray-600 mb-4">{feat.desc}</p>
+                <ul className="space-y-1.5">
+                  {feat.points.map((pt) => (
+                    <li key={pt} className="text-xs text-gray-600 flex items-center gap-1.5">
+                      <span className="text-green-500 font-bold">✓</span> {pt}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Pricing ─────────────────────────────────────────────── */}
+      <section id="pricing" className="py-20 px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Transparent Pricing</span>
+          <h2 className="text-3xl font-extrabold text-gray-900 mt-2 mb-12">Simple & Affordable</h2>
+          <div className="grid sm:grid-cols-2 gap-6">
+            {/* Free Trial */}
+            <div className="border-2 border-gray-200 rounded-3xl p-8 text-left">
+              <p className="font-bold text-gray-900 text-lg mb-1">Free Trial</p>
+              <p className="text-4xl font-extrabold text-gray-900 mb-1">₹0</p>
+              <p className="text-sm text-gray-400 mb-6">30 days, no credit card</p>
+              <ul className="space-y-2.5 mb-8">
+                {['Full access to all features', 'Unlimited orders', 'QR menu + billing', 'Analytics & reports'].map((f) => (
+                  <li key={f} className="text-sm text-gray-700 flex items-center gap-2">
+                    <span className="text-green-500">✓</span> {f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={() => navigate('/owner/register')}
+                className="w-full py-3 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors"
+              >
+                Start Free Trial
+              </button>
+            </div>
+            {/* Yearly */}
+            <div className="border-2 border-brand-500 rounded-3xl p-8 text-left relative bg-brand-50">
+              <span className="absolute -top-3.5 left-6 bg-brand-500 text-white text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>
+              <p className="font-bold text-gray-900 text-lg mb-1">Yearly Plan</p>
+              <p className="text-4xl font-extrabold text-gray-900 mb-1">₹2,999</p>
+              <p className="text-sm text-gray-400 mb-6">per year · ₹250/month</p>
+              <ul className="space-y-2.5 mb-8">
+                {['Everything in Free Trial', 'Priority support', 'Data never deleted', 'Invoice for GST input credit'].map((f) => (
+                  <li key={f} className="text-sm text-gray-700 flex items-center gap-2">
+                    <span className="text-green-500">✓</span> {f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={() => navigate('/owner/register')}
+                className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors"
+              >
+                Get Started
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Final CTA ───────────────────────────────────────────── */}
+      <section className="py-20 px-6 bg-gradient-to-br from-brand-500 to-orange-500">
+        <div className="max-w-2xl mx-auto text-center">
+          <h2 className="text-3xl font-extrabold text-white mb-4">Ready to Transform Your Café?</h2>
+          <p className="text-white/80 mb-8">
+            Join 500+ restaurants already using DineVerse. Get started in under 5 minutes.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => navigate('/owner/register')}
+              className="px-8 py-4 bg-white hover:bg-gray-50 text-brand-600 font-bold rounded-xl transition-colors shadow-lg"
+            >
+              Start Free Trial — No Card Needed
+            </button>
+            <a
+              href="mailto:hello@dine-verse.com"
+              className="px-8 py-4 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl transition-colors border border-white/30"
+            >
+              Book a Demo
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Footer ──────────────────────────────────────────────── */}
+      <footer className="bg-gray-900 text-gray-400 py-12 px-6">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid sm:grid-cols-4 gap-8 mb-8">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-xs">D</div>
+                <span className="font-bold text-white">DineVerse</span>
+              </div>
+              <p className="text-xs leading-relaxed">
+                Smart café management platform built for India. QR ordering, real-time kitchen, GST billing.
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-white text-sm mb-3">Product</p>
+              <ul className="space-y-2 text-sm">
+                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
+                <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
+                <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-white text-sm mb-3">For Customers</p>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <button onClick={() => navigate('/explore')} className="hover:text-white transition-colors">
+                    Explore Cafés
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <p className="font-semibold text-white text-sm mb-3">Contact</p>
+              <ul className="space-y-2 text-sm">
+                <li><a href="mailto:hello@dine-verse.com" className="hover:text-white transition-colors">hello@dine-verse.com</a></li>
+                <li>
+                  <button onClick={() => navigate('/owner/login')} className="hover:text-white transition-colors">
+                    Owner Login
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <p className="text-xs">© 2025 DineVerse. All rights reserved.</p>
+            <p className="text-xs">Powered by <span className="text-brand-400 font-medium">DineVerse</span></p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
