@@ -4,7 +4,7 @@
 
 -- ── Payments (Razorpay subscription receipts) ────────────────
 CREATE TABLE IF NOT EXISTS payments (
-  id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cafe_id              UUID NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
   razorpay_order_id    VARCHAR(100) NOT NULL UNIQUE,
   razorpay_payment_id  VARCHAR(100),
@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_status  ON payments(status);
 
 -- ── Support Tickets ──────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS support_tickets (
-  id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cafe_id      UUID REFERENCES cafes(id) ON DELETE SET NULL,
   cafe_name    VARCHAR(255) NOT NULL,
   cafe_email   VARCHAR(255) NOT NULL,
@@ -44,7 +44,7 @@ CREATE TRIGGER update_support_tickets_updated_at
 
 -- ── Developers (Admin accounts) ──────────────────────────────
 CREATE TABLE IF NOT EXISTS developers (
-  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name          VARCHAR(255) NOT NULL,
   email         VARCHAR(255) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,

@@ -1,6 +1,6 @@
 -- Migration 014: Table reservations
 CREATE TABLE IF NOT EXISTS reservations (
-  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   cafe_id         UUID NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
   customer_name   VARCHAR(100) NOT NULL,
   customer_phone  VARCHAR(20) NOT NULL,

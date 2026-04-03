@@ -2,7 +2,7 @@
 -- Run: psql $DATABASE_URL -f migrations/002_add_staff.sql
 
 CREATE TABLE IF NOT EXISTS cafe_staff (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     cafe_id UUID NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,

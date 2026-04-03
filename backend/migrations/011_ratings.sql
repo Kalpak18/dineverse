@@ -1,6 +1,6 @@
 -- Migration 011: Customer order ratings
 CREATE TABLE IF NOT EXISTS order_ratings (
-  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   order_id    UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   cafe_id     UUID NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
   rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
