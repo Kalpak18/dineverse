@@ -4,8 +4,6 @@ const REQUIRED = [
   'DATABASE_URL',
   'JWT_SECRET',
   'CLIENT_URL',
-  'SMTP_USER',
-  'SMTP_PASS',
 ];
 
 module.exports = function validateEnv() {
@@ -25,5 +23,11 @@ module.exports = function validateEnv() {
   const hasRazorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
   if (!hasRazorpay) {
     logger.warn('[STARTUP] RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — online payments will fail');
+  }
+
+  // SMTP is optional (OTP can be disabled), but warn if missing
+  const hasSMTP = process.env.SMTP_USER && process.env.SMTP_PASS;
+  if (!hasSMTP) {
+    logger.warn('[STARTUP] SMTP_USER / SMTP_PASS not set — email OTP verification will fail');
   }
 };
