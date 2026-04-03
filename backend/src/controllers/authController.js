@@ -122,48 +122,63 @@ exports.login = asyncHandler(async (req, res) => {
   const { identifier, password } = req.body;
   const id = identifier.trim().toLowerCase();
 
-  // 1. Check owner accounts — match by email OR phone
-  const ownerResult = await db.query(
-    `SELECT id, name, slug, email, password_hash, description, address, phone, logo_url
-     FROM cafes WHERE (email = $1 OR phone = $1) AND is_active = true`,
-    [id]
-  );
+  try {
+    // 1. Check owner accounts — match by email OR phone
+    const ownerResult = await db.query(
+      `SELECT id, name, slug, email, password_hash, description, address, phone, logo_url
+       FROM cafes WHERE (email = $1 OR phone = $1) AND is_active = true`,
+      [id]
+    );
 
-  if (ownerResult.rows.length > 0) {
-    const cafe = ownerResult.rows[0];
-    const isValid = await bcrypt.compare(password, cafe.password_hash);
-    if (!isValid) return fail(res, 'Invalid credentials', 401);
+    if (ownerResult.rows.length > 0) {
+      const cafe = ownerResult.rows[0];
+      if (!cafe.password_hash) {
+        logger.warn('Login failed - missing password_hash for cafe id %s', cafe.id);
+        return fail(res, 'Invalid credentials', 401);
+      }
 
-    const { password_hash, ...cafeData } = cafe;
-    const token = generateToken(cafe.id, cafe.slug, 'OWNER');
-    return ok(res, { token, cafe: cafeData, role: 'OWNER' }, 'Login successful');
+      const isValid = await bcrypt.compare(password, cafe.password_hash);
+      if (!isValid) return fail(res, 'Invalid credentials', 401);
+
+      const { password_hash, ...cafeData } = cafe;
+      const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+      return ok(res, { token, cafe: cafeData, role: 'OWNER' }, 'Login successful');
+    }
+
+    // 2. Check staff accounts — match by email OR phone
+    const staffResult = await db.query(
+      `SELECT cs.id AS staff_id, cs.name, cs.email, cs.password_hash,
+              c.id AS cafe_id, c.slug, c.name AS cafe_name
+       FROM cafe_staff cs
+       JOIN cafes c ON cs.cafe_id = c.id
+       WHERE (cs.email = $1 OR cs.phone = $1) AND cs.is_active = true AND c.is_active = true`,
+      [id]
+    );
+
+    if (staffResult.rows.length > 0) {
+      const staff = staffResult.rows[0];
+      if (!staff.password_hash) {
+        logger.warn('Login failed - missing password_hash for staff id %s', staff.staff_id);
+        return fail(res, 'Invalid credentials', 401);
+      }
+
+      const isValid = await bcrypt.compare(password, staff.password_hash);
+      if (!isValid) return fail(res, 'Invalid credentials', 401);
+
+      const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id);
+      return ok(res, {
+        token,
+        cafe: { id: staff.cafe_id, slug: staff.slug, name: staff.cafe_name },
+        role: 'STAFF',
+        staff: { id: staff.staff_id, name: staff.name, email: staff.email },
+      }, 'Login successful');
+    }
+
+    return fail(res, 'Invalid credentials', 401);
+  } catch (err) {
+    logger.error('Login handler error: %s', err.stack || err.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
-
-  // 2. Check staff accounts — match by email OR phone
-  const staffResult = await db.query(
-    `SELECT cs.id AS staff_id, cs.name, cs.email, cs.password_hash,
-            c.id AS cafe_id, c.slug, c.name AS cafe_name
-     FROM cafe_staff cs
-     JOIN cafes c ON cs.cafe_id = c.id
-     WHERE (cs.email = $1 OR cs.phone = $1) AND cs.is_active = true AND c.is_active = true`,
-    [id]
-  );
-
-  if (staffResult.rows.length > 0) {
-    const staff = staffResult.rows[0];
-    const isValid = await bcrypt.compare(password, staff.password_hash);
-    if (!isValid) return fail(res, 'Invalid credentials', 401);
-
-    const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id);
-    return ok(res, {
-      token,
-      cafe: { id: staff.cafe_id, slug: staff.slug, name: staff.cafe_name },
-      role: 'STAFF',
-      staff: { id: staff.staff_id, name: staff.name, email: staff.email },
-    }, 'Login successful');
-  }
-
-  return fail(res, 'Invalid credentials', 401);
 });
 
 // ─── Check Slug ───────────────────────────────────────────────
