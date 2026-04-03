@@ -38,6 +38,11 @@ exports.sendOtpEmail = async (toEmail, otp) => {
   });
 };
 
+exports.sendBroadcastEmail = async (toEmail, subject, htmlBody) => {
+  const from = process.env.SMTP_FROM || `"DineVerse" <${process.env.SMTP_USER}>`;
+  await getTransporter().sendMail({ from, to: toEmail, subject, html: htmlBody });
+};
+
 exports.sendPasswordResetEmail = async (toEmail, otp) => {
   const from = process.env.SMTP_FROM || `"DineVerse" <${process.env.SMTP_USER}>`;
 

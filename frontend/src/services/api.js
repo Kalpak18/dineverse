@@ -88,7 +88,12 @@ export const adminUpdateCafe = (id, data) => adminApi.patch(`/admin/cafes/${id}`
 export const adminGetRevenue = (params) => adminApi.get('/admin/revenue', { params });
 export const adminGetTickets = (params) => adminApi.get('/admin/tickets', { params });
 export const adminReplyTicket = (id, data) => adminApi.patch(`/admin/tickets/${id}`, data);
-export const adminGetAnalytics = () => adminApi.get('/admin/analytics');
+export const adminGetAnalytics    = () => adminApi.get('/admin/analytics');
+export const adminGetCafeStats    = (id) => adminApi.get(`/admin/cafes/${id}/stats`);
+export const adminGetSettings     = () => adminApi.get('/admin/settings');
+export const adminUpdateSetting   = (key, value) => adminApi.put(`/admin/settings/${key}`, { value });
+export const adminBroadcast       = (data) => adminApi.post('/admin/broadcast', data);
+export const getPublicSetting     = (key) => api.get(`/admin/public-settings/${key}`);
 
 // ─── Public (Customer) ────────────────────────────────────────
 export const getCafeBySlug      = (slug) => api.get(`/cafes/${slug}`);

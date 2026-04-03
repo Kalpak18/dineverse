@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getCafeBySlug, getCafeMenu, getPublicOffers } from '../../services/api';
+import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
 
-// Map common category name keywords → emoji for built-in thumbnails
-const EMOJI_MAP = {
+// Fallback emoji map (used if API fetch fails)
+const FALLBACK_EMOJI_MAP = {
   momos: '🥟', pizza: '🍕', burger: '🍔', biryani: '🍚',
   rice: '🍚', noodle: '🍜', pasta: '🍝', soup: '🥣',
   salad: '🥗', chicken: '🍗', fish: '🐟', seafood: '🦐',
@@ -20,12 +20,14 @@ const EMOJI_MAP = {
   paneer: '🧀', veg: '🥦', egg: '🥚', mutton: '🍖',
 };
 
-function getCategoryEmoji(name) {
+const DEFAULT_EMOJI = '🍽️';
+
+function getCategoryEmoji(name, emojiMap = FALLBACK_EMOJI_MAP) {
   const lower = name.toLowerCase();
-  for (const [key, emoji] of Object.entries(EMOJI_MAP)) {
+  for (const [key, emoji] of Object.entries(emojiMap)) {
     if (lower.includes(key)) return emoji;
   }
-  return '🍽️';
+  return DEFAULT_EMOJI;
 }
 
 // Standard food-app veg/non-veg indicator (square border + circle dot)
@@ -46,6 +48,7 @@ export default function MenuPage() {
   const [cafe, setCafe] = useState(null);
   const [menu, setMenu] = useState([]);
   const [offers, setOffers] = useState([]);
+  const [emojiMap, setEmojiMap] = useState(FALLBACK_EMOJI_MAP);
   const [loading, setLoading] = useState(true);
   const [foodFilter, setFoodFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -57,6 +60,20 @@ export default function MenuPage() {
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
   // If all past orders are terminal and no active ones, the session is stale — force re-enrollment
   const sessionStale = session && allOrders.length > 0 && activeOrders.length === 0;
+
+  // Fetch emoji map from platform settings (one-time on mount)
+  useEffect(() => {
+    getPublicSetting('category_emojis')
+      .then((res) => {
+        if (res.data.value && typeof res.data.value === 'object') {
+          setEmojiMap(res.data.value);
+        }
+      })
+      .catch(() => {
+        // Use fallback if fetch fails
+        console.log('Using fallback emoji map');
+      });
+  }, []);
 
   useEffect(() => {
     if (!session || sessionStale) {
@@ -255,7 +272,7 @@ export default function MenuPage() {
         <aside className="w-[76px] bg-gray-50 border-r border-gray-100 overflow-y-auto flex-shrink-0">
           {categories.map((cat) => {
             const isActive = cat.id === selectedCatId && !isSearching;
-            const emoji = getCategoryEmoji(cat.name);
+            const emoji = getCategoryEmoji(cat.name, emojiMap);
 
             return (
               <button

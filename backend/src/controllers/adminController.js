@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { createOtp, verifyOtp } = require('../utils/otpStore');
-const { sendPasswordResetEmail } = require('../services/emailService');
+const { sendPasswordResetEmail, sendBroadcastEmail } = require('../services/emailService');
 
 const generateAdminToken = (adminId) =>
   jwt.sign({ adminId, role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -378,4 +378,210 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
   logger.info('Admin password reset: %s', email);
   ok(res, {}, 'Password updated — you can now log in');
+});
+
+// ─── GET /api/admin/settings ──────────────────────────────────
+// Get all platform settings (admin only)
+exports.getSettings = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT key, value, description, is_public, updated_at, updated_by
+     FROM platform_settings
+     ORDER BY updated_at DESC`
+  );
+  ok(res, { settings: result.rows });
+});
+
+// ─── GET /api/admin/public-settings/:key ──────────────────────
+// Public endpoint — retrieve public settings by key (no auth)
+exports.getPublicSetting = asyncHandler(async (req, res) => {
+  const { key } = req.params;
+  const result = await db.query(
+    `SELECT value FROM platform_settings
+     WHERE key = $1 AND is_public = true`,
+    [key]
+  );
+  if (result.rows.length === 0) {
+    return fail(res, 'Setting not found or not public', 404);
+  }
+  let value = result.rows[0].value;
+  // Try to parse as JSON for structured data (category_emojis, etc.)
+  try {
+    value = JSON.parse(value);
+  } catch (e) {
+    // If not JSON, return as string
+  }
+  ok(res, { key, value });
+});
+
+// ─── PUT /api/admin/settings/:key ────────────────────────────
+// Update a platform setting by key
+exports.updateSetting = asyncHandler(async (req, res) => {
+  const { key } = req.params;
+  const { value, description, is_public } = req.body;
+
+  if (!value) {
+    return fail(res, 'value is required');
+  }
+
+  // Ensure value is a string (JSON will be stringified)
+  let valueStr = value;
+  if (typeof value === 'object') {
+    valueStr = JSON.stringify(value);
+  }
+
+  const result = await db.query(
+    `INSERT INTO platform_settings (key, value, description, is_public, updated_by, updated_at)
+     VALUES ($1, $2, $3, COALESCE($4, false), $5, NOW())
+     ON CONFLICT (key) DO UPDATE SET
+       value = $2,
+       description = COALESCE($3, platform_settings.description),
+       is_public = COALESCE($4, platform_settings.is_public),
+       updated_by = $5,
+       updated_at = NOW()
+     RETURNING key, value, description, is_public, updated_at`,
+    [key, valueStr, description || null, is_public || null, req.adminId]
+  );
+
+  logger.info('Admin updated setting: %s', key);
+  ok(res, { setting: result.rows[0] }, 'Setting updated');
+});
+
+// ─── GET /api/admin/cafes/:id/stats ───────────────────────────
+// Deep-dive statistics for a specific cafe
+exports.getCafeStats = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  const [cafe, orders, revenue, menuStats, ratings] = await Promise.all([
+    // Cafe details
+    db.query(
+      `SELECT id, name, email, slug, phone, is_active, plan_type, plan_start_date, plan_expiry_date, created_at
+       FROM cafes WHERE id = $1`,
+      [id]
+    ),
+    // Orders: total count + status breakdown
+    db.query(
+      `SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE status = 'pending') AS pending,
+        COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
+        COUNT(*) FILTER (WHERE status = 'preparing') AS preparing,
+        COUNT(*) FILTER (WHERE status = 'ready') AS ready,
+        COUNT(*) FILTER (WHERE status = 'picked_up') AS picked_up,
+        COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
+       FROM orders WHERE cafe_id = $1`,
+      [id]
+    ),
+    // Revenue: total + breakdown by status
+    db.query(
+      `SELECT
+        COALESCE(SUM(total_amount), 0) AS total_revenue,
+        COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS revenue_paid,
+        COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0) AS revenue_pending,
+        COUNT(*) FILTER (WHERE status = 'paid') AS completed_orders
+       FROM orders WHERE cafe_id = $1`,
+      [id]
+    ),
+    // Menu: categories and item count
+    db.query(
+      `SELECT
+        COUNT(*) FILTER (WHERE m.is_available = true) AS available_items,
+        COUNT(*) AS total_items,
+        COUNT(DISTINCT m.category_id) AS total_categories
+       FROM menu_items m WHERE m.cafe_id = $1`,
+      [id]
+    ),
+    // Ratings: average + count
+    db.query(
+      `SELECT
+        COALESCE(AVG(rating), 0)::numeric(3,2) AS avg_rating,
+        COUNT(*) AS total_ratings
+       FROM ratings WHERE cafe_id = $1`,
+      [id]
+    ),
+  ]);
+
+  if (cafe.rows.length === 0) {
+    return fail(res, 'Café not found', 404);
+  }
+
+  const o = orders.rows[0];
+  const r = revenue.rows[0];
+  const m = menuStats.rows[0];
+  const rat = ratings.rows[0];
+
+  ok(res, {
+    cafe: cafe.rows[0],
+    orders: {
+      total: parseInt(o.total),
+      pending: parseInt(o.pending),
+      confirmed: parseInt(o.confirmed),
+      preparing: parseInt(o.preparing),
+      ready: parseInt(o.ready),
+      picked_up: parseInt(o.picked_up),
+      cancelled: parseInt(o.cancelled),
+    },
+    revenue: {
+      total: parseFloat(r.total_revenue),
+      paid: parseFloat(r.revenue_paid),
+      pending: parseFloat(r.revenue_pending),
+      completed_orders: parseInt(r.completed_orders),
+    },
+    menu: {
+      available_items: parseInt(m.available_items),
+      total_items: parseInt(m.total_items),
+      total_categories: parseInt(m.total_categories),
+    },
+    ratings: {
+      avg_rating: parseFloat(rat.avg_rating),
+      total_ratings: parseInt(rat.total_ratings),
+    },
+  });
+});
+
+// ─── POST /api/admin/broadcast ────────────────────────────────
+// Send announcement email to all active cafes
+exports.broadcastEmail = asyncHandler(async (req, res) => {
+  const { subject, htmlBody, cafeIds } = req.body;
+
+  if (!subject || !htmlBody) {
+    return fail(res, 'subject and htmlBody are required');
+  }
+
+  // Get list of cafes to send to (all active, or specific list)
+  let cafesResult;
+  if (cafeIds && Array.isArray(cafeIds) && cafeIds.length > 0) {
+    cafesResult = await db.query(
+      `SELECT id, email FROM cafes WHERE id = ANY($1) AND is_active = true`,
+      [cafeIds]
+    );
+  } else {
+    cafesResult = await db.query(`SELECT id, email FROM cafes WHERE is_active = true`);
+  }
+
+  const cafes = cafesResult.rows;
+  if (cafes.length === 0) {
+    return fail(res, 'No cafes to broadcast to', 400);
+  }
+
+  // Send emails
+  const { sendBroadcastEmail } = require('../services/emailService');
+  let successCount = 0;
+  let failedEmails = [];
+
+  for (const cafe of cafes) {
+    try {
+      await sendBroadcastEmail(cafe.email, subject, htmlBody);
+      successCount++;
+    } catch (err) {
+      logger.error('Failed to send broadcast to café %s: %s', cafe.email, err.message);
+      failedEmails.push(cafe.email);
+    }
+  }
+
+  logger.info('Admin broadcast email sent to %d cafes (failed: %d)', successCount, failedEmails.length);
+  ok(res, {
+    sent: successCount,
+    failed: failedEmails.length,
+    failed_emails: failedEmails,
+  }, `Broadcast sent to ${successCount} café(s)`);
 });

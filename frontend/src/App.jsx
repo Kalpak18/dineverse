@@ -39,6 +39,7 @@ import AdminCafesPage from './pages/admin/AdminCafesPage';
 import AdminRevenuePage from './pages/admin/AdminRevenuePage';
 import AdminTicketsPage from './pages/admin/AdminTicketsPage';
 import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
+import AdminSettingsPage from './pages/admin/AdminSettingsPage';
 
 // Shared
 import OwnerLayout from './components/OwnerLayout';
@@ -120,6 +121,7 @@ export default function App() {
         <Route path="revenue" element={<AdminRevenuePage />} />
         <Route path="tickets" element={<AdminTicketsPage />} />
         <Route path="analytics" element={<AdminAnalyticsPage />} />
+        <Route path="settings" element={<AdminSettingsPage />} />
       </Route>
 
       {/* Redirects */}
