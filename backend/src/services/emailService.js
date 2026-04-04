@@ -12,6 +12,18 @@ function getTransporter() {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+       tls: {
+       rejectUnauthorized: false // 🔥 IMPORTANT for Brevo on Render
+     }
+    });
+
+    // 🔥 Verify connection once
+    transporter.verify((err, success) => {
+      if (err) {
+        console.error('❌ SMTP CONNECTION FAILED:', err);
+      } else {
+        console.log('✅ SMTP READY');
+      }
     });
   }
   return transporter;
@@ -38,8 +50,8 @@ exports.sendOtpEmail = async (toEmail, otp) => {
       `,
     });
   } catch (error) {
-    console.error('Email sending failed:', error.message);
-    throw new Error(`Failed to send verification email: ${error.message}`);
+    console.error('❌ FULL EMAIL ERROR:', error);
+    throw error;
   }
 };
 

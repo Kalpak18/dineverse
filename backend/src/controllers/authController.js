@@ -39,7 +39,7 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     await sendOtpEmail(email, otp);
     ok(res, {}, 'Verification code sent');
   } catch (error) {
-    logger.error('Failed to send OTP email:', error.message);
+    logger.error('❌ FULL OTP ERROR:', error);
     return fail(res, 'Failed to send verification email. Please try again later.');
   }
 });

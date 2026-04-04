@@ -31,6 +31,8 @@ const reservationRoutes = require('./routes/reservations');
 const initReportScheduler = require('./services/reportScheduler');
 
 const app = express();
+// 🔥 REQUIRED for Render / Vercel / proxies
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // ─── CORS ─────────────────────────────────────────────────────
