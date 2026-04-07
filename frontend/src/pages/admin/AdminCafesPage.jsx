@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { adminGetCafes, adminUpdateCafe } from '../../services/api';
+import { adminGetCafes, adminUpdateCafe, adminGetCafeStats } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -9,12 +9,122 @@ const PLAN_STYLES = {
   yearly:     'bg-green-900/40 text-green-400',
 };
 
+function StatBox({ label, value, sub }) {
+  return (
+    <div className="bg-gray-800 rounded-xl p-4">
+      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-xs text-gray-400 mt-0.5">{label}</p>
+      {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function CafeStatsModal({ cafe, onClose }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    adminGetCafeStats(cafe.id)
+      .then(({ data }) => setStats(data))
+      .catch(() => toast.error('Failed to load café stats'))
+      .finally(() => setLoading(false));
+  }, [cafe.id]);
+
+  const expired = cafe.plan_expiry_date && new Date(cafe.plan_expiry_date) < new Date();
+  const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+      <div
+        className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between p-6 border-b border-gray-800">
+          <div>
+            <h2 className="text-lg font-bold text-white">{cafe.name}</h2>
+            <p className="text-sm text-gray-400">{cafe.email} · /{cafe.slug}</p>
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PLAN_STYLES[cafe.plan_type] || 'bg-gray-700 text-gray-300'}`}>
+                {cafe.plan_type === 'free_trial' ? 'Free Trial' : 'Yearly'}
+              </span>
+              {cafe.plan_expiry_date && (
+                <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
+                  {expired ? '⚠️ Expired ' : 'Expires '}
+                  {new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              )}
+              <span className={`text-xs ${cafe.is_active ? 'text-green-400' : 'text-red-400'}`}>
+                {cafe.is_active ? '● Active' : '● Inactive'}
+              </span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-2xl leading-none p-1">×</button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16"><LoadingSpinner /></div>
+        ) : stats ? (
+          <div className="p-6 space-y-6">
+            {/* Orders */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Orders</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatBox label="Total Orders" value={stats.orders.total} />
+                <StatBox label="Pending" value={stats.orders.pending} />
+                <StatBox label="Preparing" value={stats.orders.preparing} />
+                <StatBox label="Cancelled" value={stats.orders.cancelled} />
+              </div>
+            </div>
+
+            {/* Revenue */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Revenue</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <StatBox label="Total Revenue" value={fmt(stats.revenue.total)} />
+                <StatBox label="Paid Revenue" value={fmt(stats.revenue.paid)} sub={`${stats.revenue.completed_orders} completed`} />
+                <StatBox label="Pending Revenue" value={fmt(stats.revenue.pending)} />
+              </div>
+            </div>
+
+            {/* Menu + Ratings */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Menu</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatBox label="Total Items" value={stats.menu.total_items} />
+                  <StatBox label="Available" value={stats.menu.available_items} sub={`${stats.menu.total_categories} categories`} />
+                </div>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">Ratings</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatBox label="Avg Rating" value={`${stats.ratings.avg_rating}★`} />
+                  <StatBox label="Total Reviews" value={stats.ratings.total_ratings} />
+                </div>
+              </div>
+            </div>
+
+            {/* Registered */}
+            <p className="text-xs text-gray-600">
+              Registered {new Date(stats.cafe.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
+          </div>
+        ) : (
+          <p className="text-center text-gray-500 py-10">No data available.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminCafesPage() {
   const [cafes, setCafes] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState('');
+  const [selectedCafe, setSelectedCafe] = useState(null);
   const searchTimer = useRef(null);
 
   const load = (q = search, p = plan) => {
@@ -58,6 +168,7 @@ export default function AdminCafesPage() {
 
   return (
     <div className="space-y-5">
+      {selectedCafe && <CafeStatsModal cafe={selectedCafe} onClose={() => setSelectedCafe(null)} />}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Cafes</h1>
@@ -120,6 +231,12 @@ export default function AdminCafesPage() {
                     <td className="px-4 py-3 text-gray-400">{cafe.total_orders}</td>
                     <td className="px-4 py-3">
                       <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedCafe(cafe)}
+                          className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1 rounded-lg transition-colors"
+                        >
+                          Stats
+                        </button>
                         <button
                           onClick={() => handleExtend(cafe)}
                           className="text-xs bg-brand-700 hover:bg-brand-600 text-white px-2.5 py-1 rounded-lg transition-colors"

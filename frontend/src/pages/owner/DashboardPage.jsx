@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getDashboardStats, getMenuItems } from '../../services/api';
+import { getDashboardStats, getMenuItems, getPublicSetting } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SetupWizard from '../../components/SetupWizard';
 import { Link } from 'react-router-dom';
@@ -13,24 +13,33 @@ export default function DashboardPage() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
+  const [announcement, setAnnouncement] = useState(null);
+  const [dismissedAnnouncement, setDismissedAnnouncement] = useState(
+    () => localStorage.getItem('dineverse_announcement_dismissed') || ''
+  );
 
   useEffect(() => {
     Promise.all([
       getDashboardStats(),
       getMenuItems(),
+      getPublicSetting('announcement').catch(() => null),
     ])
-      .then(([statsRes, itemsRes]) => {
+      .then(([statsRes, itemsRes, annRes]) => {
         setStats(statsRes.data);
         // Show wizard only once — if no menu items AND not already seen
         const wizardKey = `dineverse_setup_done_${cafe?.id}`;
         if (itemsRes.data.items.length === 0 && !localStorage.getItem(wizardKey)) {
-          localStorage.setItem(wizardKey, '1'); // mark immediately so navigating away won't re-show it
+          localStorage.setItem(wizardKey, '1');
           setShowWizard(true);
+        }
+        // Set announcement if active
+        if (annRes?.data?.value?.active && annRes.data.value.text) {
+          setAnnouncement(annRes.data.value);
         }
       })
       .catch(() => toast.error('Failed to load dashboard'))
       .finally(() => setLoading(false));
-  }, []);
+  }, []); // eslint-disable-line
 
   if (loading) return <LoadingSpinner />;
 
@@ -40,6 +49,31 @@ export default function DashboardPage() {
     <>
       {showWizard && <SetupWizard onComplete={() => setShowWizard(false)} />}
       <div className="space-y-6 max-w-4xl">
+
+      {/* Platform announcement banner */}
+      {announcement && dismissedAnnouncement !== announcement.text && (
+        <div className={`rounded-xl px-4 py-3 flex items-start gap-3 text-sm border ${
+          announcement.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+          announcement.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
+                                            'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <span className="text-base flex-shrink-0 mt-0.5">
+            {announcement.type === 'warning' ? '⚠️' : announcement.type === 'success' ? '✅' : 'ℹ️'}
+          </span>
+          <span className="flex-1">{announcement.text}</span>
+          <button
+            onClick={() => {
+              localStorage.setItem('dineverse_announcement_dismissed', announcement.text);
+              setDismissedAnnouncement(announcement.text);
+            }}
+            className="flex-shrink-0 opacity-60 hover:opacity-100 font-bold text-lg leading-none"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Subscription warning */}
       {cafe?.plan_expiry_date && (() => {
         const daysLeft = Math.ceil(
