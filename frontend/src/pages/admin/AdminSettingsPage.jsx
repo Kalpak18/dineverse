@@ -270,7 +270,12 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     adminGetSettings()
-      .then(({ data }) => setSettings(data.settings))
+      .then(({ data }) => {
+        // API returns array of rows; convert to keyed object for easy lookup
+        const map = {};
+        for (const s of data.settings) map[s.key] = s;
+        setSettings(map);
+      })
       .catch(() => toast.error('Failed to load settings'))
       .finally(() => setLoading(false));
   }, []);

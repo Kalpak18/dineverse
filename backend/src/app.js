@@ -11,7 +11,7 @@ const morgan = require('morgan');
 const logger = require('./utils/logger');
 const db = require('./config/database');
 const { apiLimiter } = require('./middleware/rateLimiter');
-const { createRedisAdapter, pubClient, subClient } = require('./config/redis');
+const { createRedisAdapter, redisClients } = require('./config/redis');
 
 const authRoutes = require('./routes/auth');
 const cafeRoutes = require('./routes/cafe');
@@ -215,8 +215,8 @@ const gracefulShutdown = (signal) => {
       await db.pool.end();
 
      // 🔥 Close Redis connections if exist
-     if (pubClient) await pubClient.quit();
-     if (subClient) await subClient.quit();
+     if (redisClients.pub) await redisClients.pub.quit();
+     if (redisClients.sub) await redisClients.sub.quit();
       logger.info('Database pool closed. Goodbye.');
     } catch (e) {
       logger.error('Error closing DB pool: %s', e.message);

@@ -507,7 +507,7 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
       `SELECT
         COALESCE(AVG(rating), 0)::numeric(3,2) AS avg_rating,
         COUNT(*) AS total_ratings
-       FROM ratings WHERE cafe_id = $1`,
+       FROM order_ratings WHERE cafe_id = $1`,
       [id]
     ),
   ]);
@@ -552,19 +552,33 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
 
 // ─── POST /api/admin/broadcast ────────────────────────────────
 // Send announcement email to all active cafes
+// Accepts: { subject, message, plan_filter: 'all'|'paid'|'trial' }
 exports.broadcastEmail = asyncHandler(async (req, res) => {
-  const { subject, htmlBody, cafeIds } = req.body;
+  const { subject, message, plan_filter = 'all' } = req.body;
 
-  if (!subject || !htmlBody) {
-    return fail(res, 'subject and htmlBody are required');
+  if (!subject || !message) {
+    return fail(res, 'subject and message are required');
   }
 
-  // Get list of cafes to send to (all active, or specific list)
+  // Wrap plain text message in minimal HTML for email clients
+  const htmlBody = `
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
+      <h2 style="color:#f97316;margin-bottom:16px">DineVerse Platform Notice</h2>
+      <div style="color:#374151;white-space:pre-wrap;line-height:1.6">${message.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
+      <p style="color:#9ca3af;font-size:12px">DineVerse — Café Ordering Platform · You received this as a registered café owner.</p>
+    </div>
+  `;
+
+  // Get list of cafes based on plan_filter
   let cafesResult;
-  if (cafeIds && Array.isArray(cafeIds) && cafeIds.length > 0) {
+  if (plan_filter === 'paid') {
     cafesResult = await db.query(
-      `SELECT id, email FROM cafes WHERE id = ANY($1) AND is_active = true`,
-      [cafeIds]
+      `SELECT id, email FROM cafes WHERE is_active = true AND plan_type != 'free_trial' AND plan_expiry_date > NOW()`
+    );
+  } else if (plan_filter === 'trial') {
+    cafesResult = await db.query(
+      `SELECT id, email FROM cafes WHERE is_active = true AND plan_type = 'free_trial' AND plan_expiry_date > NOW()`
     );
   } else {
     cafesResult = await db.query(`SELECT id, email FROM cafes WHERE is_active = true`);
@@ -576,7 +590,6 @@ exports.broadcastEmail = asyncHandler(async (req, res) => {
   }
 
   // Send emails
-  const { sendBroadcastEmail } = require('../services/emailService');
   let successCount = 0;
   let failedEmails = [];
 

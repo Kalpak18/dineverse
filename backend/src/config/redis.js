@@ -10,11 +10,13 @@ const Redis = require('ioredis');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const logger = require('../utils/logger');
 
-let pubClient = null;
-let subClient = null;
+// Module-level references updated by createRedisAdapter so graceful shutdown can close them
+const redisClients = { pub: null, sub: null };
 
-function createRedisClients() {
-  if (!process.env.REDIS_URL) return { pubClient: null, subClient: null };
+// Attaches the Redis adapter to a Socket.io Server instance.
+// Also stores clients in redisClients so app.js can close them on shutdown.
+async function createRedisAdapter(io) {
+  if (!process.env.REDIS_URL) return;
 
   const opts = {
     maxRetriesPerRequest: null,
@@ -22,23 +24,20 @@ function createRedisClients() {
     lazyConnect: true,
   };
 
-  pubClient = new Redis(process.env.REDIS_URL, opts);
-  subClient = pubClient.duplicate();
+  const pub = new Redis(process.env.REDIS_URL, opts);
+  const sub = pub.duplicate();
 
-  pubClient.on('error', (err) => logger.error('Redis pub error: %s', err.message));
-  subClient.on('error', (err) => logger.error('Redis sub error: %s', err.message));
+  pub.on('error', (err) => logger.error('Redis pub error: %s', err.message));
+  sub.on('error', (err) => logger.error('Redis sub error: %s', err.message));
 
-  return { pubClient, subClient };
-}
+  await Promise.all([pub.connect(), sub.connect()]);
+  io.adapter(createAdapter(pub, sub));
 
-// Attaches the Redis adapter to a Socket.io Server instance.
-async function createRedisAdapter(io) {
-  const { pubClient, subClient } = createRedisClients();
-  if (!pubClient) return;
+  // Store for graceful shutdown
+  redisClients.pub = pub;
+  redisClients.sub = sub;
 
-  await Promise.all([pubClient.connect(), subClient.connect()]);
-  io.adapter(createAdapter(pubClient, subClient));
   logger.info('Socket.io Redis adapter connected');
 }
 
-module.exports = { createRedisAdapter, pubClient, subClient };
+module.exports = { createRedisAdapter, redisClients };
