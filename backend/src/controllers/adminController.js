@@ -478,7 +478,7 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed,
         COUNT(*) FILTER (WHERE status = 'preparing') AS preparing,
         COUNT(*) FILTER (WHERE status = 'ready') AS ready,
-        COUNT(*) FILTER (WHERE status = 'picked_up') AS picked_up,
+        COUNT(*) FILTER (WHERE status = 'served') AS served,
         COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled
        FROM orders WHERE cafe_id = $1`,
       [id]
@@ -529,7 +529,7 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
       confirmed: parseInt(o.confirmed),
       preparing: parseInt(o.preparing),
       ready: parseInt(o.ready),
-      picked_up: parseInt(o.picked_up),
+      served: parseInt(o.served),
       cancelled: parseInt(o.cancelled),
     },
     revenue: {

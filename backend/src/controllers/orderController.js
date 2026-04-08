@@ -454,8 +454,7 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
     `SELECT o.id, o.status, o.final_amount, o.total_amount, o.payment_verified,
             o.customer_name, o.order_number,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-            c.name AS cafe_name, c.email AS cafe_email,
-            c.razorpay_account_id
+            c.name AS cafe_name, c.email AS cafe_email
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,

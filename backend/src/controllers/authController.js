@@ -151,7 +151,7 @@ exports.login = asyncHandler(async (req, res) => {
               c.id AS cafe_id, c.slug, c.name AS cafe_name
        FROM cafe_staff cs
        JOIN cafes c ON cs.cafe_id = c.id
-       WHERE (cs.email = $1 OR cs.phone = $1) AND cs.is_active = true AND c.is_active = true`,
+       WHERE cs.email = $1 AND cs.is_active = true AND c.is_active = true`,
       [id]
     );
 

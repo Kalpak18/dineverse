@@ -31,15 +31,14 @@ exports.createCategory = asyncHandler(async (req, res) => {
 
 exports.updateCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, display_order, is_active } = req.body;
+  const { name, display_order } = req.body;
   const result = await db.query(
     `UPDATE categories
      SET name = COALESCE($1, name),
-         display_order = COALESCE($2, display_order),
-         is_active = COALESCE($3, is_active)
-     WHERE id = $4 AND cafe_id = $5
+         display_order = COALESCE($2, display_order)
+     WHERE id = $3 AND cafe_id = $4
      RETURNING *`,
-    [name, display_order, is_active, id, req.cafeId]
+    [name, display_order, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
   ok(res, { category: result.rows[0] });
