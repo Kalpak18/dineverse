@@ -40,7 +40,7 @@ exports.validateRegister = [
     .trim()
     .notEmpty().withMessage('Slug is required')
     .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers, and hyphens'),
-  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('email').isEmail().withMessage('Valid email is required').customSanitizer(v => v.trim().toLowerCase()),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
   body('otp').trim().notEmpty().withMessage('Email verification code is required'),
 ];
@@ -426,7 +426,7 @@ exports.forgotPassword = asyncHandler(async (req, res) => {
 
 // ─── Reset Password — verify OTP + set new password ───────────
 exports.validateResetPassword = [
-  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+  body('email').isEmail().withMessage('Valid email is required').customSanitizer(v => v.trim().toLowerCase()),
   body('otp').trim().notEmpty().withMessage('Reset code is required'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
 ];

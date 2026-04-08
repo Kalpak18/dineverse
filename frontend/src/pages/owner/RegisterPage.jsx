@@ -27,6 +27,7 @@ export default function RegisterPage() {
   });
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState(''); // email OTP was actually sent to
   const [otpLoading, setOtpLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [slugStatus, setSlugStatus] = useState('idle'); // idle | checking | available | taken
@@ -99,7 +100,9 @@ export default function RegisterPage() {
     }
     setOtpLoading(true);
     try {
-      await sendVerificationOtp(form.email);
+      const emailToVerify = form.email.trim().toLowerCase();
+      await sendVerificationOtp(emailToVerify);
+      setVerifiedEmail(emailToVerify); // lock the email OTP was sent to
       setOtpSent(true);
       setResendCooldown(60);
       toast.success('Verification code sent to your email');
@@ -125,7 +128,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await register({ ...form, otp });
+      await register({ ...form, email: verifiedEmail, otp });
       toast.success('Café registered successfully!');
       navigate('/owner/dashboard');
     } catch (err) {
@@ -213,7 +216,7 @@ export default function RegisterPage() {
                       className={`input flex-1 ${otpSent ? 'border-green-400' : ''}`}
                       placeholder="owner@cafe.com"
                       value={form.email}
-                      onChange={(e) => { setForm({ ...form, email: e.target.value }); if (otpSent) setOtpSent(false); }}
+                      onChange={(e) => { setForm({ ...form, email: e.target.value }); if (otpSent) { setOtpSent(false); setVerifiedEmail(''); } }}
                       required
                     />
                     <button
