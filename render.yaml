@@ -17,8 +17,6 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 5000
 
       # ── Database (paste from Neon dashboard) ──────────────────
       - key: DATABASE_URL

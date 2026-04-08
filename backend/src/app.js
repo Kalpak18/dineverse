@@ -153,14 +153,11 @@ app.use('/api/ratings', ratingRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/reservations', reservationRoutes);
 
-// Health check — includes DB ping so load balancers detect real outages
+// Root + health check — Render/load balancers hit both
+app.get('/', (_req, res) => res.json({ status: 'ok' }));
 app.get('/health', (_req, res) => {
-   res.json({
-     status: 'ok',
-     uptime: process.uptime(),
-     timestamp: new Date()
-   });
- });
+  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date() });
+});
 
 // 404 handler for unknown API routes
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
