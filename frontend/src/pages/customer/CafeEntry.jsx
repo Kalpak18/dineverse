@@ -71,7 +71,7 @@ export default function CafeEntry() {
 
     // Connect socket to track reservation status updates
     const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
     });
     socketRef.current = socket;

@@ -123,7 +123,7 @@ export default function OrdersPage() {
   // Connect socket for receiving customer messages on the orders page
   useEffect(() => {
     if (!cafe?.id) return;
-    const socket = io(SOCKET_URL, { transports: ['websocket', 'polling'], reconnection: true });
+    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));

@@ -90,7 +90,7 @@ export default function NotificationCenter({ cafeId }) {
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        transports: ['websocket', 'polling'],
+        transports: ['polling', 'websocket'],
       });
     }
 

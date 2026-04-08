@@ -74,7 +74,7 @@ export default function MyOrdersPage() {
 
     // Socket setup
     const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
     });
     socketRef.current = socket;

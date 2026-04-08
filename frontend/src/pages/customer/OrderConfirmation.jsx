@@ -91,7 +91,7 @@ export default function OrderConfirmation() {
 
     // 3. Connect socket.io
     const socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
