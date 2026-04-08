@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS platform_settings (
 );
 
 -- Seed: default category emoji map
-INSERT INTO platform_settings (key, value, label) VALUES (
+INSERT INTO platform_settings (key, value, label, is_public) VALUES (
   'category_emoji_map',
   '{
     "momos":      "🥟",
@@ -57,12 +57,14 @@ INSERT INTO platform_settings (key, value, label) VALUES (
     "egg":        "🥚",
     "mutton":     "🍖"
   }',
-  'Category Emoji Map'
-) ON CONFLICT (key) DO NOTHING;
+  'Category Emoji Map',
+  true
+) ON CONFLICT (key) DO UPDATE SET is_public = true;
 
 -- Seed: platform announcement (empty by default)
-INSERT INTO platform_settings (key, value, label) VALUES (
+INSERT INTO platform_settings (key, value, label, is_public) VALUES (
   'announcement',
   '{"text": "", "active": false, "type": "info"}',
-  'Platform Announcement'
-) ON CONFLICT (key) DO NOTHING;
+  'Platform Announcement',
+  true
+) ON CONFLICT (key) DO UPDATE SET is_public = true;
