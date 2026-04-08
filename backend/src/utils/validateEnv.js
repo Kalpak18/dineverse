@@ -19,15 +19,15 @@ module.exports = function validateEnv() {
     process.exit(1);
   }
 
-  // Razorpay is optional (cafes can take cash/UPI), but warn clearly if missing
-  const hasRazorpay = process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET;
+  // Razorpay: support both RAZORPAY_KEY_ID (prod) and RAZORPAY_TEST_KEY_ID (legacy)
+  const hasRazorpay = (process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID) &&
+                      (process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET);
   if (!hasRazorpay) {
-    logger.warn('[STARTUP] RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — online payments will fail');
+    logger.warn('[STARTUP] Razorpay keys not set — online payments will fail');
   }
 
-  // SMTP is optional (OTP can be disabled), but warn if missing
-  const hasSMTP = process.env.SMTP_USER && process.env.SMTP_PASS;
-  if (!hasSMTP) {
-    logger.warn('[STARTUP] SMTP_USER / SMTP_PASS not set — email OTP verification will fail');
+  // Email: uses Brevo HTTP API (BREVO_API_KEY), not SMTP
+  if (!process.env.BREVO_API_KEY) {
+    logger.warn('[STARTUP] BREVO_API_KEY not set — email OTP verification will fail');
   }
 };

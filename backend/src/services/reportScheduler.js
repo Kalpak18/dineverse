@@ -3,21 +3,37 @@
  * Sends yesterday's summary to every active café that had orders.
  */
 const cron = require('node-cron');
+const https = require('https');
 const db = require('../config/database');
 const logger = require('../utils/logger');
-const nodemailer = require('nodemailer');
 
-let transporter = null;
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+function brevoSend(to, subject, html) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify({
+      sender:      { name: 'DineVerse', email: process.env.BREVO_SENDER_EMAIL || 'noreply@dine-verse.com' },
+      to:          [{ email: to }],
+      subject,
+      htmlContent: html,
     });
-  }
-  return transporter;
+    const req = https.request({
+      hostname: 'api.brevo.com',
+      path:     '/v3/smtp/email',
+      method:   'POST',
+      headers: {
+        'Content-Type':   'application/json',
+        'Accept':         'application/json',
+        'api-key':        process.env.BREVO_API_KEY,
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', (c) => { data += c; });
+      res.on('end', () => res.statusCode < 300 ? resolve() : reject(new Error(`Brevo ${res.statusCode}: ${data}`)));
+    });
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
 
 const STAR = '★';
@@ -204,20 +220,14 @@ async function sendReportForCafe(cafe, dateStr) {
     </div>
   </body></html>`;
 
-  const from = process.env.SMTP_FROM || `"DineVerse Reports" <${process.env.SMTP_USER}>`;
-  await getTransporter().sendMail({
-    from,
-    to: cafe.email,
-    subject: `☀️ ${cafe.name} — Yesterday's Report (${formattedDate})`,
-    html,
-  });
+  await brevoSend(cafe.email, `☀️ ${cafe.name} — Yesterday's Report (${formattedDate})`, html);
 
   logger.info('[Report] Sent to %s (%s) — Revenue: ₹%d, Orders: %s', cafe.name, cafe.email, revenue, stats.paid_orders);
 }
 
 module.exports = function initReportScheduler() {
-  if (!process.env.SMTP_USER) {
-    logger.warn('[Report] SMTP not configured — skipping report scheduler');
+  if (!process.env.BREVO_API_KEY) {
+    logger.warn('[Report] BREVO_API_KEY not set — skipping report scheduler');
     return;
   }
   // Run at 08:00 AM IST = 02:30 UTC
