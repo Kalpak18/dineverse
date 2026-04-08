@@ -78,7 +78,7 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
   const [categoriesResult, itemsResult] = await Promise.all([
     db.query(
       `SELECT id, name, display_order FROM categories
-       WHERE cafe_id = $1 AND is_active = true
+       WHERE cafe_id = $1
        ORDER BY display_order ASC, name ASC`,
       [cafeId]
     ),
