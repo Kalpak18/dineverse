@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { createOtp, verifyOtp } = require('../utils/otpStore');
-const { sendOtpSms, normalizePhone } = require('../services/smsService');
+const { sendOtpEmail, sendPasswordResetEmail } = require('../services/emailService');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
@@ -18,21 +18,18 @@ const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId 
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// ─── Send OTP (registration — SMS via Twilio) ─────────────────
+// ─── Send OTP (registration — email via Brevo SMTP) ──────────
 exports.sendOtp = asyncHandler(async (req, res) => {
-  const { phone } = req.body;
-  if (!phone || phone.replace(/\D/g, '').length < 10) {
-    return fail(res, 'Valid phone number is required');
-  }
+  const { email } = req.body;
+  if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
 
   try {
-    const normalized = normalizePhone(phone);
-    const otp = await createOtp(normalized, 'register');
-    await sendOtpSms(normalized, otp);
-    ok(res, {}, 'Verification code sent to your mobile');
+    const otp = await createOtp(email, 'register');
+    await sendOtpEmail(email, otp);
+    ok(res, {}, 'Verification code sent to your email');
   } catch (error) {
-    logger.error('OTP SMS error: %s', error.message);
-    return fail(res, error.message || 'Failed to send verification code. Please try again.');
+    logger.error('OTP email error: %s', error.message);
+    return fail(res, 'Failed to send verification email. Please try again later.');
   }
 });
 
@@ -45,7 +42,7 @@ exports.validateRegister = [
     .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers, and hyphens'),
   body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-  body('otp').trim().notEmpty().withMessage('Mobile verification code is required'),
+  body('otp').trim().notEmpty().withMessage('Email verification code is required'),
 ];
 
 exports.register = asyncHandler(async (req, res) => {
@@ -55,9 +52,8 @@ exports.register = asyncHandler(async (req, res) => {
   const { name, slug, email, password, otp, description,
           address, address_line2, city, state, pincode, phone } = req.body;
 
-  // Verify OTP against phone (OTP was sent to phone during sendOtp)
-  if (!phone) return fail(res, 'Phone number is required for verification');
-  const otpCheck = await verifyOtp(normalizePhone(phone), otp, 'register');
+  // Verify OTP against email before touching the database
+  const otpCheck = await verifyOtp(email, otp, 'register');
   if (!otpCheck.valid) return fail(res, otpCheck.reason);
 
   const existing = await db.query(
@@ -400,35 +396,31 @@ exports.switchOutlet = asyncHandler(async (req, res) => {
   ok(res, { token, cafe_id: outlet.id, slug: outlet.slug, name: outlet.name });
 });
 
-// ─── Forgot Password — send reset OTP via SMS ─────────────────
-// User identifies with email; OTP goes to their registered phone number.
+// ─── Forgot Password — send reset OTP via email (Brevo SMTP) ──
 exports.forgotPassword = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
 
-  // Look up phone from cafes or staff
+  // Check both owners and staff
   const ownerRes = await db.query(
-    'SELECT id, phone FROM cafes WHERE email = $1 AND is_active = true',
+    'SELECT id FROM cafes WHERE email = $1 AND is_active = true',
     [email.toLowerCase()]
   );
   const staffRes = ownerRes.rows.length === 0
-    ? await db.query('SELECT id, phone FROM cafe_staff WHERE email = $1 AND is_active = true', [email.toLowerCase()])
+    ? await db.query('SELECT id FROM cafe_staff WHERE email = $1 AND is_active = true', [email.toLowerCase()])
     : { rows: [] };
 
-  const account = ownerRes.rows[0] || staffRes.rows[0];
-  if (!account) return fail(res, 'No account found with this email address', 404);
-  if (!account.phone) return fail(res, 'No mobile number linked to this account. Contact support.');
+  if (ownerRes.rows.length === 0 && staffRes.rows.length === 0) {
+    return fail(res, 'No account found with this email address', 404);
+  }
 
   try {
-    const phone = normalizePhone(account.phone);
-    const otp = await createOtp(phone, 'reset');
-    await sendOtpSms(phone, otp);
-    // Return last 4 digits of phone so frontend can show "sent to xxxxxxxx89"
-    const masked = account.phone.replace(/\D/g, '').slice(-4);
-    ok(res, { masked_phone: masked }, `Reset code sent to your registered mobile`);
+    const otp = await createOtp(email, 'reset');
+    await sendPasswordResetEmail(email, otp);
+    ok(res, {}, 'Password reset code sent to your email');
   } catch (error) {
-    logger.error('Failed to send reset SMS: %s', error.message);
-    return fail(res, error.message || 'Failed to send reset code. Please try again.');
+    logger.error('Failed to send reset email: %s', error.message);
+    return fail(res, 'Failed to send reset email. Please try again later.');
   }
 });
 
@@ -445,19 +437,7 @@ exports.resetPassword = asyncHandler(async (req, res) => {
 
   const { email, otp, password } = req.body;
 
-  // Resolve phone from email (OTP was stored with phone as key)
-  const ownerRes = await db.query(
-    'SELECT id, phone FROM cafes WHERE email = $1 AND is_active = true',
-    [email.toLowerCase()]
-  );
-  const staffRes = ownerRes.rows.length === 0
-    ? await db.query('SELECT id, phone FROM cafe_staff WHERE email = $1 AND is_active = true', [email.toLowerCase()])
-    : { rows: [] };
-
-  const account = ownerRes.rows[0] || staffRes.rows[0];
-  if (!account || !account.phone) return fail(res, 'Account not found', 404);
-
-  const otpCheck = await verifyOtp(normalizePhone(account.phone), otp, 'reset');
+  const otpCheck = await verifyOtp(email, otp, 'reset');
   if (!otpCheck.valid) return fail(res, otpCheck.reason);
 
   const password_hash = await bcrypt.hash(password, 12);

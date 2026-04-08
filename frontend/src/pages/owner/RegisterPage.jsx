@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
-
-const isValidPhone = (p) => p.replace(/\D/g, '').length >= 10;
 import toast from 'react-hot-toast';
 
 function toSlug(str) {
@@ -95,16 +93,16 @@ export default function RegisterPage() {
   }, [resendCooldown]);
 
   const handleSendOtp = async () => {
-    if (!form.phone || !isValidPhone(form.phone)) {
-      toast.error('Enter a valid 10-digit mobile number first');
+    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      toast.error('Enter a valid email first');
       return;
     }
     setOtpLoading(true);
     try {
-      await sendVerificationOtp(form.phone);
+      await sendVerificationOtp(form.email);
       setOtpSent(true);
       setResendCooldown(60);
-      toast.success('Verification code sent to your mobile');
+      toast.success('Verification code sent to your email');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to send code');
     } finally {
@@ -114,7 +112,7 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!otpSent)              { toast.error('Please verify your mobile number first'); return; }
+    if (!otpSent)              { toast.error('Please verify your email first'); return; }
     if (!otp.trim())           { toast.error('Enter the verification code'); return; }
     if (form.password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     if (!form.phone.trim())    { toast.error('Phone number is required'); return; }
@@ -209,31 +207,13 @@ export default function RegisterPage() {
 
                 <div>
                   <label className="label">Email *</label>
-                  <input
-                    type="email"
-                    className="input"
-                    placeholder="owner@cafe.com"
-                    value={form.email}
-                    onChange={set('email')}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="label">Password *</label>
-                  <input type="password" className="input" placeholder="At least 8 characters"
-                    value={form.password} onChange={set('password')} required />
-                </div>
-
-                <div>
-                  <label className="label">Mobile Number * <span className="text-gray-400 font-normal">(OTP will be sent here)</span></label>
                   <div className="flex gap-2">
                     <input
-                      type="tel"
+                      type="email"
                       className={`input flex-1 ${otpSent ? 'border-green-400' : ''}`}
-                      placeholder="98765 43210"
-                      value={form.phone}
-                      onChange={(e) => { set('phone')(e); if (otpSent) setOtpSent(false); }}
+                      placeholder="owner@cafe.com"
+                      value={form.email}
+                      onChange={(e) => { setForm({ ...form, email: e.target.value }); if (otpSent) setOtpSent(false); }}
                       required
                     />
                     <button
@@ -245,7 +225,7 @@ export default function RegisterPage() {
                       {otpLoading ? 'Sending...' : resendCooldown > 0 ? `Resend (${resendCooldown}s)` : otpSent ? 'Resend' : 'Send Code'}
                     </button>
                   </div>
-                  {otpSent && <p className="text-xs text-green-600 mt-1 font-medium">✓ Code sent to your mobile</p>}
+                  {otpSent && <p className="text-xs text-green-600 mt-1 font-medium">✓ Code sent — check your inbox (and spam folder)</p>}
                 </div>
 
                 {otpSent && (
@@ -262,6 +242,18 @@ export default function RegisterPage() {
                     <p className="text-xs text-gray-400 mt-1">6-digit code — expires in 10 minutes</p>
                   </div>
                 )}
+
+                <div>
+                  <label className="label">Password *</label>
+                  <input type="password" className="input" placeholder="At least 8 characters"
+                    value={form.password} onChange={set('password')} required />
+                </div>
+
+                <div>
+                  <label className="label">Phone Number *</label>
+                  <input type="tel" className="input" placeholder="+91 98765 43210"
+                    value={form.phone} onChange={set('phone')} required />
+                </div>
               </div>
             </div>
 
@@ -306,7 +298,7 @@ export default function RegisterPage() {
 
             {!otpSent && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                You must verify your mobile number before creating your account.
+                You must verify your email before creating your account.
               </p>
             )}
 
