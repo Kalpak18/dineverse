@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { forgotPassword, resetPassword } from '../../services/api';
+// step: 'email' → 'otp' → 'password'
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
-// step: 'email' → 'otp' → 'password'
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState('email');
   const [email, setEmail] = useState('');
+  const [maskedPhone, setMaskedPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -33,8 +34,9 @@ export default function ForgotPasswordPage() {
     }
     setLoading(true);
     try {
-      await forgotPassword(email.trim().toLowerCase());
-      toast.success('Reset code sent — check your inbox');
+      const { data } = await forgotPassword(email.trim().toLowerCase());
+      setMaskedPhone(data.masked_phone || '');
+      toast.success('Reset code sent to your registered mobile');
       setStep('otp');
       setResendCooldown(60);
     } catch (err) {
@@ -50,7 +52,7 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     try {
       await forgotPassword(email.trim().toLowerCase());
-      toast.success('New reset code sent');
+      toast.success('New reset code sent to your mobile');
       setResendCooldown(60);
     } catch (err) {
       toast.error(getApiError(err));
@@ -137,7 +139,7 @@ export default function ForgotPasswordPage() {
           {step === 'email' && (
             <>
               <h2 className="text-lg font-semibold text-gray-800 mb-1">Forgot your password?</h2>
-              <p className="text-sm text-gray-500 mb-5">Enter the email address linked to your DineVerse account and we'll send you a reset code.</p>
+              <p className="text-sm text-gray-500 mb-5">Enter your registered email — we'll send a reset code to your linked mobile number via SMS.</p>
               <form onSubmit={handleSendOtp} className="space-y-4">
                 <div>
                   <label className="label">Email address</label>
@@ -161,11 +163,12 @@ export default function ForgotPasswordPage() {
           {/* ── Step 2: OTP ── */}
           {step === 'otp' && (
             <>
-              <h2 className="text-lg font-semibold text-gray-800 mb-1">Check your inbox</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-1">Check your phone</h2>
               <p className="text-sm text-gray-500 mb-1">
-                We sent a 6-digit reset code to <span className="font-semibold text-gray-700">{email}</span>.
+                We sent a 6-digit reset code via SMS to your registered mobile
+                {maskedPhone ? <span className="font-semibold text-gray-700"> (ending ••••{maskedPhone})</span> : ''}.
               </p>
-              <p className="text-xs text-gray-400 mb-5">Check your spam folder if you don't see it.</p>
+              <p className="text-xs text-gray-400 mb-5">Didn't receive it? Check that your number is correct or tap Resend.</p>
               <form onSubmit={handleVerifyOtp} className="space-y-4">
                 <div>
                   <label className="label">Reset Code</label>
@@ -200,7 +203,7 @@ export default function ForgotPasswordPage() {
               </div>
               <div className="mt-3 text-center">
                 <button
-                  onClick={() => { setStep('email'); setOtp(''); }}
+                  onClick={() => { setStep('email'); setOtp(''); setMaskedPhone(''); }}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
                   ← Use a different email
