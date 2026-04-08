@@ -278,14 +278,29 @@ export default function CafeEntry() {
                     </div>
                   )}
 
-                  {/* Table grid — shows availability in real-time */}
-                  {(areas.length === 0 || form.area_id) && (
+                  {/* Table number text input — always editable; grid below is just quick-select */}
+                  <div>
+                    <label className="label">Table Number</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Table 5 or type your own"
+                      className="input"
+                      value={form.table_number}
+                      onChange={(e) => {
+                        setForm((f) => ({ ...f, table_number: e.target.value, table_id: '' }));
+                        if (errors.table_number) setErrors((e2) => ({ ...e2, table_number: undefined }));
+                      }}
+                    />
+                    {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
+                  </div>
+
+                  {/* Table grid — shows availability; tap to fill the input above */}
+                  {(areas.length === 0 || form.area_id) && visibleTables.length > 0 && (
                     <div>
-                      <label className="label">
-                        Table
-                        <span className="text-gray-400 font-normal text-xs ml-1">— 🔴 = reserved right now</span>
-                      </label>
-                      <div className="grid grid-cols-3 gap-2 mt-1">
+                      <p className="text-xs text-gray-400 mb-1.5">
+                        Quick select <span className="text-red-400">🔴 = reserved</span>
+                      </p>
+                      <div className="grid grid-cols-3 gap-2">
                         {visibleTables.map((t) => {
                           const isSelected = form.table_id === t.id;
                           const reserved   = t.is_reserved;
@@ -314,7 +329,6 @@ export default function CafeEntry() {
                           );
                         })}
                       </div>
-                      {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
                     </div>
                   )}
                 </>

@@ -97,17 +97,11 @@ exports.register = asyncHandler(async (req, res) => {
 
   const cafe = result.rows[0];
 
-  // Seed default data so the setup wizard is usable immediately
-  await Promise.allSettled([
-    db.query(
-      'INSERT INTO categories (cafe_id, name, display_order) VALUES ($1, $2, 0)',
-      [cafe.id, 'General']
-    ),
-    db.query(
-      'INSERT INTO cafe_tables (cafe_id, label) VALUES ($1, $2), ($1, $3)',
-      [cafe.id, 'Table 1', 'Table 2']
-    ),
-  ]);
+  // Seed default tables so the setup wizard has something to start with
+  await db.query(
+    'INSERT INTO cafe_tables (cafe_id, label) VALUES ($1, $2), ($1, $3)',
+    [cafe.id, 'Table 1', 'Table 2']
+  ).catch(() => {});
 
   const token = generateToken(cafe.id, cafe.slug, 'OWNER');
   logger.info('New café registered: %s (%s)', cafe.name, cafe.slug);
