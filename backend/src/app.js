@@ -172,28 +172,27 @@ app.use((err, _req, res, _next) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────
- const PORT = process.env.PORT || 5000;
- const startServer = async () => {
-   try {
-     // 🔥 Ensure DB is reachable BEFORE starting server
-     await db.query('SELECT 1');
-     logger.info('Database connected successfully');
+const PORT = process.env.PORT || 5000;
 
-     server.listen(PORT, () => {
-       logger.info('DineVerse backend running on port %d [%s]', PORT, process.env.NODE_ENV || 'development');
+// Start listening immediately so Render's health check passes fast.
+// DB is verified async after bind — requests that need the DB will
+// naturally fail with a 503 during the brief warm-up window.
+server.listen(PORT, () => {
+  logger.info('DineVerse backend running on port %d [%s]', PORT, process.env.NODE_ENV || 'development');
 
-       // ⚠️ Only run scheduler in primary instance (Render safe)
-       if (process.env.INSTANCE_ROLE !== 'worker') {
-         initReportScheduler();
-       }
-     });
-   } catch (err) {
-     logger.error('Failed to connect to database. Exiting... %s', err.message);
-     process.exit(1);
-   }
- };
-
- startServer();
+  // Verify DB reachability after server is already accepting connections
+  db.query('SELECT 1')
+    .then(() => {
+      logger.info('Database connected successfully');
+      if (process.env.INSTANCE_ROLE !== 'worker') {
+        initReportScheduler();
+      }
+    })
+    .catch((err) => {
+      logger.error('Database connection failed: %s', err.message);
+      // Don't exit — Neon reconnects on next query; log and keep serving
+    });
+});
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
