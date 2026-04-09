@@ -512,6 +512,8 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
 
   // Verify HMAC signature
   const secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET;
+  if (!secret) return fail(res, 'Payment gateway not configured', 503);
+
   const expected = crypto
     .createHmac('sha256', secret)
     .update(`${razorpay_order_id}|${razorpay_payment_id}`)
