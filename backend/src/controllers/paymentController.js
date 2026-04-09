@@ -102,9 +102,12 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     return fail(res, 'Missing payment details');
   }
 
+  const secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET;
+  if (!secret) return fail(res, 'Payment gateway not configured', 503);
+
   // Verify HMAC signature
   const expected = crypto
-    .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET)
+    .createHmac('sha256', secret)
     .update(`${razorpay_order_id}|${razorpay_payment_id}`)
     .digest('hex');
 
