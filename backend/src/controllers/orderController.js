@@ -33,7 +33,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { slug } = req.params;
-  const { customer_name, customer_phone, table_number, items, notes, order_type = 'dine-in', client_order_id } = req.body;
+  const { customer_name, customer_phone, table_number, items, notes, order_type = 'dine-in', client_order_id, tip_amount = 0 } = req.body;
+  const tip = Math.max(0, parseFloat(tip_amount) || 0);
   const tableNum = order_type === 'takeaway' ? 'Takeaway' : (table_number || '');
 
   const client = await db.pool.connect();
@@ -95,12 +96,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
       orderResult = await client.query(
         `INSERT INTO orders
            (cafe_id, customer_name, customer_phone, table_number, order_type,
-            total_amount, discount_amount, final_amount, offer_id, notes, client_order_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            total_amount, discount_amount, tip_amount, final_amount, offer_id, notes, client_order_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
-                   status, total_amount, discount_amount, final_amount, notes, created_at`,
+                   status, total_amount, discount_amount, tip_amount, final_amount, notes, created_at`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
-         total, discountAmount, finalAmount, offerId || null, notes || null, client_order_id || null]
+         total, discountAmount, tip, finalAmount + tip, offerId || null, notes || null, client_order_id || null]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');

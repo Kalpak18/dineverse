@@ -7,7 +7,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const result = await db.query(
     `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
-            name_style, latitude, longitude, city, is_open
+            name_style, latitude, longitude, city, is_open, gst_rate, gst_number
      FROM cafes WHERE slug = $1 AND is_active = true`,
     [slug]
   );

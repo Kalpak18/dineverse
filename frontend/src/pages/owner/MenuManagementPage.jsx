@@ -378,6 +378,16 @@ function ItemRow({ item, onEdit, onDelete, onToggleAvail, onRestock }) {
 
 /* ── Item Modal ── */
 function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCategoryCreated }) {
+  const ALLERGEN_TAGS = [
+    { key: 'vegan',       label: 'Vegan',        emoji: '🌱' },
+    { key: 'gluten-free', label: 'Gluten-Free',   emoji: '🌾' },
+    { key: 'dairy-free',  label: 'Dairy-Free',    emoji: '🥛' },
+    { key: 'egg-free',    label: 'Egg-Free',      emoji: '🥚' },
+    { key: 'nuts',        label: 'Contains Nuts', emoji: '🥜' },
+    { key: 'spicy',       label: 'Spicy',         emoji: '🌶️' },
+    { key: 'sugar-free',  label: 'Sugar-Free',    emoji: '🍬' },
+  ];
+
   const [form, setForm] = useState({
     name: item?.name || '',
     description: item?.description || '',
@@ -388,7 +398,13 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     is_available: item?.is_available ?? true,
     track_stock: item?.track_stock ?? false,
     stock_quantity: item?.stock_quantity ?? '',
+    tags: item?.tags || [],
   });
+
+  const toggleTag = (key) => setForm((f) => ({
+    ...f,
+    tags: f.tags.includes(key) ? f.tags.filter((t) => t !== key) : [...f.tags, key],
+  }));
   const [localCategories, setLocalCategories] = useState(initialCategories);
   const [newCatName, setNewCatName] = useState('');
   const [showNewCat, setShowNewCat] = useState(false);
@@ -425,6 +441,7 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
         category_id: form.category_id || null,
         track_stock: form.track_stock,
         stock_quantity: form.track_stock && form.stock_quantity !== '' ? parseInt(form.stock_quantity) : null,
+        tags: form.tags,
       };
       const { data } = item
         ? await updateMenuItem(item.id, payload)
@@ -552,6 +569,27 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
               <p className="text-xs text-gray-400 mt-1">Item auto-disables on menu when stock reaches 0</p>
             </div>
           )}
+        </div>
+
+        {/* Dietary / allergen tags */}
+        <div>
+          <label className="label">Dietary & Allergen Tags</label>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {ALLERGEN_TAGS.map(({ key, label, emoji }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => toggleTag(key)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                  form.tags.includes(key)
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                }`}
+              >
+                {emoji} {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <ImageUpload

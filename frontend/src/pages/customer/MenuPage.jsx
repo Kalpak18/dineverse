@@ -83,7 +83,15 @@ export default function MenuPage() {
     }
     Promise.all([getCafeBySlug(slug), getCafeMenu(slug), getPublicOffers(slug).catch(() => ({ data: { offers: [] } }))])
       .then(([cafeRes, menuRes, offersRes]) => {
-        setCafe(cafeRes.data.cafe);
+        const cafeData = cafeRes.data.cafe;
+        setCafe(cafeData);
+        // Store GST info in session so CartPage can show breakdown
+        const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
+        sessionStorage.setItem(`session_${slug}`, JSON.stringify({
+          ...existing,
+          gst_rate: cafeData.gst_rate ?? 0,
+          gst_number: cafeData.gst_number || '',
+        }));
         const menuData = menuRes.data.menu;
         setMenu(menuData);
         if (menuData.length > 0) setSelectedCatId(menuData[0].id);
@@ -424,6 +432,20 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty }) {
           <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed pl-5">
             {item.description}
           </p>
+        )}
+
+        {/* Dietary / allergen tags */}
+        {item.tags && item.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5 pl-5">
+            {item.tags.map((tag) => (
+              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
+                {tag === 'vegan' ? '🌱' : tag === 'gluten-free' ? '🌾' : tag === 'dairy-free' ? '🥛' :
+                 tag === 'egg-free' ? '🥚' : tag === 'nuts' ? '🥜' : tag === 'spicy' ? '🌶️' :
+                 tag === 'sugar-free' ? '🍬' : ''}
+                {' '}{tag}
+              </span>
+            ))}
+          </div>
         )}
 
         <div className="flex items-center justify-between mt-2.5 pl-5">

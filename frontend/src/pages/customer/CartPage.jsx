@@ -14,8 +14,19 @@ export default function CartPage() {
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [tip, setTip] = useState(0);
+
+  const TIP_OPTIONS = [0, 10, 20, 50];
 
   const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+
+  // GST breakdown (prices are GST-inclusive)
+  const gstRate    = parseInt(session?.gst_rate ?? 0);
+  const hasGst     = !!(session?.gst_number) && gstRate > 0;
+  const taxableAmt = hasGst ? total / (1 + gstRate / 100) : total;
+  const totalTax   = hasGst ? total - taxableAmt : 0;
+
+  const grandTotal = total + tip;
   const activeOrders = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
 
   if (!session) {
@@ -54,6 +65,7 @@ export default function CartPage() {
         table_number:   session.table_number,
         order_type:     session.order_type || 'dine-in',
         notes:          notes.trim() || undefined,
+        tip_amount:     tip || undefined,
         // Idempotency key: same key = same order, prevents double-submit on network retry
         client_order_id: crypto.randomUUID(),
         items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
@@ -131,9 +143,71 @@ export default function CartPage() {
             </div>
           ))}
         </div>
-        <div className="border-t border-gray-200 mt-3 pt-3 flex justify-between font-bold text-gray-900">
-          <span>Total</span>
-          <span>₹{total.toFixed(2)}</span>
+        <div className="border-t border-gray-200 mt-3 pt-3 space-y-1.5 text-sm">
+          {hasGst ? (
+            <>
+              <div className="flex justify-between text-gray-500">
+                <span>Base amount</span>
+                <span>₹{taxableAmt.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500">
+                <span>CGST ({gstRate / 2}%)</span>
+                <span>₹{(totalTax / 2).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500">
+                <span>SGST ({gstRate / 2}%)</span>
+                <span>₹{(totalTax / 2).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-600 font-medium border-t border-gray-100 pt-1">
+                <span>Subtotal (incl. GST)</span>
+                <span>₹{total.toFixed(2)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex justify-between text-gray-600">
+              <span>Subtotal</span>
+              <span>₹{total.toFixed(2)}</span>
+            </div>
+          )}
+          {tip > 0 && (
+            <div className="flex justify-between text-gray-600">
+              <span>Tip</span>
+              <span>₹{tip.toFixed(2)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
+            <span>Total</span>
+            <span>₹{grandTotal.toFixed(2)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Tip selector */}
+      <div className="mx-4 mt-3 bg-white border border-gray-200 rounded-xl p-4">
+        <p className="text-sm font-semibold text-gray-700 mb-2.5">Add a tip? 🙏</p>
+        <div className="flex gap-2 flex-wrap">
+          {TIP_OPTIONS.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTip(t)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                tip === t
+                  ? 'bg-brand-500 text-white border-brand-500'
+                  : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
+              }`}
+            >
+              {t === 0 ? 'No tip' : `₹${t}`}
+            </button>
+          ))}
+          <input
+            type="number"
+            min="0"
+            placeholder="Custom"
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-24 focus:border-brand-400 outline-none"
+            value={tip > 0 && !TIP_OPTIONS.includes(tip) ? tip : ''}
+            onChange={(e) => setTip(Math.max(0, parseFloat(e.target.value) || 0))}
+          />
         </div>
       </div>
 
@@ -145,7 +219,7 @@ export default function CartPage() {
             className="btn-primary w-full flex items-center justify-between"
           >
             <span>{loading ? 'Placing order...' : 'Place Order'}</span>
-            <span>₹{total.toFixed(2)}</span>
+            <span>₹{grandTotal.toFixed(2)}</span>
           </button>
         </div>
       </div>

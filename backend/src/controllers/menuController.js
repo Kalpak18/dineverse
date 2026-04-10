@@ -78,7 +78,7 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { name, description, price, category_id, image_url, is_veg, is_available, display_order,
-          track_stock, stock_quantity } = req.body;
+          track_stock, stock_quantity, tags } = req.body;
 
   if (category_id) {
     const catCheck = await db.query(
@@ -88,11 +88,13 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
     if (catCheck.rows.length === 0) return fail(res, 'Invalid category');
   }
 
+  const tagsArr = Array.isArray(tags) ? tags : [];
+
   const result = await db.query(
     `INSERT INTO menu_items
        (cafe_id, category_id, name, description, price, image_url, is_veg, is_available, display_order,
-        track_stock, stock_quantity)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        track_stock, stock_quantity, tags)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING *`,
     [
       req.cafeId, category_id || null, name, description || null, price,
@@ -102,6 +104,7 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
       display_order || 0,
       track_stock || false,
       track_stock && stock_quantity != null ? parseInt(stock_quantity) : null,
+      tagsArr,
     ]
   );
   ok(res, { item: result.rows[0] }, 'Menu item created', 201);
@@ -110,7 +113,8 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
 exports.updateMenuItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, description, price, category_id, image_url, is_veg, is_available, display_order,
-          track_stock, stock_quantity } = req.body;
+          track_stock, stock_quantity, tags } = req.body;
+  const tagsArr = Array.isArray(tags) ? tags : undefined;
   const result = await db.query(
     `UPDATE menu_items
      SET name           = COALESCE($1,  name),
@@ -122,12 +126,14 @@ exports.updateMenuItem = asyncHandler(async (req, res) => {
          is_available   = COALESCE($7,  is_available),
          display_order  = COALESCE($8,  display_order),
          track_stock    = COALESCE($9,  track_stock),
-         stock_quantity = COALESCE($10, stock_quantity)
-     WHERE id = $11 AND cafe_id = $12
+         stock_quantity = COALESCE($10, stock_quantity),
+         tags           = COALESCE($11, tags)
+     WHERE id = $12 AND cafe_id = $13
      RETURNING *`,
     [name, description, price, category_id, image_url, is_veg, is_available, display_order,
      track_stock != null ? track_stock : null,
      stock_quantity != null ? parseInt(stock_quantity) : null,
+     tagsArr || null,
      id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
