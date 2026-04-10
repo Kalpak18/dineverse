@@ -189,5 +189,11 @@ exports.getPublicTables = asyncHandler(async (req, res) => {
     tables: tablesRows.filter((t) => t.area_id === a.id),
   }));
 
+  // Tables not assigned to any area — put them in a virtual "General" group
+  const unassigned = tablesRows.filter((t) => !t.area_id);
+  if (unassigned.length > 0) {
+    areas.push({ id: null, name: 'General', sort_order: 999, tables: unassigned });
+  }
+
   ok(res, { areas, has_tables: tablesRows.length > 0 });
 });

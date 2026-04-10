@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD ["node", "src/app.js"]
+CMD ["sh", "-c", "node scripts/migrate.js && node src/app.js"]

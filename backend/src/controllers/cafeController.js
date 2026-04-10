@@ -7,7 +7,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const result = await db.query(
     `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
-            name_style, latitude, longitude, city
+            name_style, latitude, longitude, city, is_open
      FROM cafes WHERE slug = $1 AND is_active = true`,
     [slug]
   );
@@ -102,4 +102,14 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
   }
 
   ok(res, { menu });
+});
+
+// Owner: toggle café open/closed
+exports.toggleCafeOpen = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    'UPDATE cafes SET is_open = NOT is_open WHERE id = $1 RETURNING is_open',
+    [req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Café not found', 404);
+  ok(res, { is_open: result.rows[0].is_open });
 });

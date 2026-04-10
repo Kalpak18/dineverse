@@ -104,31 +104,41 @@ export default function CafeEntry() {
     if (errors.table_number) setErrors((e) => ({ ...e, table_number: undefined }));
   };
 
-  const selectedArea = areas.find((a) => a.id === form.area_id);
+  const selectedArea = areas.find((a) => String(a.id) === String(form.area_id));
 
-  // All tables visible in current area (or all areas flattened)
+  // Tables shown in grid: filtered by selected area, or all if no area selected
   const visibleTables = selectedArea
     ? selectedArea.tables
     : areas.flatMap((a) => a.tables);
+
+  // Normalize table number: "5" → "Table 5", "T5" → "Table 5", already "Table 5" → unchanged
+  const normalizeTableNumber = (raw, areaName) => {
+    const t = raw.trim();
+    if (!t) return t;
+    // If purely numeric or "T<number>", prefix with "Table "
+    const normalized = /^\d+$/.test(t) ? `Table ${t}`
+      : /^t\d+$/i.test(t) ? `Table ${t.slice(1)}`
+      : t;
+    // Prepend area name if area is set and not already included
+    if (areaName && areaName !== 'General' && !normalized.startsWith(areaName)) {
+      return `${areaName} — ${normalized}`;
+    }
+    return normalized;
+  };
 
   const validate = () => {
     const e = {};
     if (!form.customer_name.trim()) e.customer_name = 'Please enter your name';
     if (!form.customer_phone?.trim()) e.customer_phone = 'Please enter your mobile number';
     if (form.order_type === 'dine-in') {
-      if (hasTables) {
-        if (areas.length > 0 && !form.area_id) e.area_id = 'Please select an area';
-        if (!form.table_number.trim()) e.table_number = 'Please select a table';
-      } else {
-        if (!form.table_number.trim()) e.table_number = 'Please enter your table number';
-      }
+      if (!form.table_number.trim()) e.table_number = 'Please enter your table number';
     }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
   const handleTableSelect = (table) => {
-    if (table.is_reserved) return; // blocked
+    if (table.is_reserved) return;
     setForm((f) => ({ ...f, table_id: table.id, table_number: table.label }));
     if (errors.table_number) setErrors((e) => ({ ...e, table_number: undefined }));
   };
@@ -137,10 +147,7 @@ export default function CafeEntry() {
     e.preventDefault();
     if (!validate()) return;
 
-    let tableLabel = form.table_number.trim();
-    if (hasTables && selectedArea) {
-      tableLabel = `${selectedArea.name} — ${tableLabel}`;
-    }
+    const tableLabel = normalizeTableNumber(form.table_number, selectedArea?.name);
 
     const session = {
       customer_name:  form.customer_name.trim(),
@@ -203,6 +210,14 @@ export default function CafeEntry() {
           </button>
         ) : null}
 
+        {/* Closed banner */}
+        {cafe.is_open === false && (
+          <div className="mb-5 bg-red-50 border border-red-200 rounded-2xl px-4 py-4 text-center">
+            <p className="text-red-700 font-semibold text-sm">🔴 This café is currently closed</p>
+            <p className="text-red-500 text-xs mt-1">You can still browse the menu, but ordering is not available right now.</p>
+          </div>
+        )}
+
         {/* Café header */}
         <div className="text-center mb-8">
           {cafe.logo_url ? (
@@ -264,26 +279,27 @@ export default function CafeEntry() {
 
             {/* Table selection — dine-in only */}
             {form.order_type === 'dine-in' && (
-              hasTables ? (
-                <>
-                  {/* Area selector */}
-                  {areas.length > 0 && (
+              <>
+                  {/* Area dropdown — only shown when cafe has configured areas */}
+                  {hasTables && areas.filter(a => a.id !== null).length > 0 && (
                     <div>
-                      <label className="label">Area</label>
+                      <label className="label">Area <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
                       <select className="input" value={form.area_id} onChange={(e) => handleAreaChange(e.target.value)}>
-                        <option value="">Select area...</option>
-                        {areas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+                        <option value="">All areas</option>
+                        {areas.filter(a => a.id !== null).map((a) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
                       </select>
-                      {errors.area_id && <p className="text-red-500 text-xs mt-1">{errors.area_id}</p>}
                     </div>
                   )}
 
-                  {/* Table number text input — always editable; grid below is just quick-select */}
+                  {/* Table number — free text, suggestions from area */}
                   <div>
                     <label className="label">Table Number</label>
                     <input
                       type="text"
-                      placeholder="e.g. Table 5 or type your own"
+                      list="table-suggestions"
+                      placeholder="e.g. 5 or Table 5"
                       className="input"
                       value={form.table_number}
                       onChange={(e) => {
@@ -291,18 +307,23 @@ export default function CafeEntry() {
                         if (errors.table_number) setErrors((e2) => ({ ...e2, table_number: undefined }));
                       }}
                     />
+                    {/* Datalist suggestions filtered by selected area */}
+                    <datalist id="table-suggestions">
+                      {visibleTables.filter(t => !t.is_reserved).map((t) => (
+                        <option key={t.id} value={t.label} />
+                      ))}
+                    </datalist>
+                    <p className="text-xs text-gray-400 mt-1">Type a number like "5" — it'll show as "Table 5" on your order</p>
                     {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
                   </div>
 
-                  {/* Table grid — shows availability; tap to fill the input above */}
-                  {(areas.length === 0 || form.area_id) && visibleTables.length > 0 && (
+                  {/* Table grid quick-select — only when tables configured */}
+                  {hasTables && visibleTables.length > 0 && (
                     <div>
-                      <p className="text-xs text-gray-400 mb-1.5">
-                        Quick select <span className="text-red-400">🔴 = reserved</span>
-                      </p>
+                      <p className="text-xs text-gray-400 mb-1.5">Quick select — <span className="text-red-400">🔴 reserved</span></p>
                       <div className="grid grid-cols-3 gap-2">
                         {visibleTables.map((t) => {
-                          const isSelected = form.table_id === t.id;
+                          const isSelected = form.table_id === t.id || form.table_number === t.label;
                           const reserved   = t.is_reserved;
                           return (
                             <button
@@ -332,18 +353,8 @@ export default function CafeEntry() {
                     </div>
                   )}
                 </>
-              ) : (
-                <div>
-                  <label className="label">Table Number</label>
-                  <input
-                    type="text" placeholder="e.g. Table 5" className="input"
-                    value={form.table_number}
-                    onChange={(e) => setForm({ ...form, table_number: e.target.value })}
-                  />
-                  {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
-                </div>
               )
-            )}
+            }
 
             {form.order_type === 'takeaway' && (
               <p className="text-xs text-gray-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">

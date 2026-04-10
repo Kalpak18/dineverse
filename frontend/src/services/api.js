@@ -95,6 +95,9 @@ export const adminUpdateSetting   = (key, value) => adminApi.put(`/admin/setting
 export const adminBroadcast       = (data) => adminApi.post('/admin/broadcast', data);
 export const getPublicSetting     = (key) => api.get(`/admin/public-settings/${key}`);
 
+// ─── Cafe open/close toggle (owner) ──────────────────────────
+export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');
+
 // ─── Public (Customer) ────────────────────────────────────────
 export const getCafeBySlug      = (slug) => api.get(`/cafes/${slug}`);
 export const getCafeTables      = (slug, params) => api.get(`/cafes/${slug}/tables`, { params });

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getDashboardStats, getMenuItems, getPublicSetting } from '../../services/api';
+import { getDashboardStats, getMenuItems, getPublicSetting, toggleCafeOpen } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SetupWizard from '../../components/SetupWizard';
 import { Link } from 'react-router-dom';
@@ -14,9 +14,24 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showWizard, setShowWizard] = useState(false);
   const [announcement, setAnnouncement] = useState(null);
+  const [isOpen, setIsOpen] = useState(true);
+  const [togglingOpen, setTogglingOpen] = useState(false);
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(
     () => localStorage.getItem('dineverse_announcement_dismissed') || ''
   );
+
+  const handleToggleOpen = async () => {
+    setTogglingOpen(true);
+    try {
+      const res = await toggleCafeOpen();
+      setIsOpen(res.data.is_open);
+      toast.success(res.data.is_open ? 'Café is now Open 🟢' : 'Café is now Closed 🔴');
+    } catch {
+      toast.error('Failed to update status');
+    } finally {
+      setTogglingOpen(false);
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -127,12 +142,25 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        <Link
-          to="/owner/profile"
-          className="flex-shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
-        >
-          Edit Profile
-        </Link>
+        <div className="flex flex-col items-end gap-2 flex-shrink-0">
+          <Link
+            to="/owner/profile"
+            className="text-xs font-medium text-brand-600 hover:text-brand-700 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Edit Profile
+          </Link>
+          <button
+            onClick={handleToggleOpen}
+            disabled={togglingOpen}
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+              isOpen
+                ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+            }`}
+          >
+            {togglingOpen ? '...' : isOpen ? '🟢 Open' : '🔴 Closed'}
+          </button>
+        </div>
       </div>
 
       {/* Welcome */}
