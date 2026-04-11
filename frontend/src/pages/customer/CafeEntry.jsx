@@ -80,7 +80,13 @@ export default function CafeEntry() {
     stored.forEach((r) => socket.emit('track_reservation', r.id));
 
     socket.on('connect', () => {
+      socket.emit('join_menu', slug);
       loadReservations(slug).forEach((r) => socket.emit('track_reservation', r.id));
+    });
+    socket.emit('join_menu', slug);
+
+    socket.on('cafe_status', ({ is_open }) => {
+      setCafe((prev) => prev ? { ...prev, is_open } : prev);
     });
 
     socket.on('reservation_updated', (updated) => {

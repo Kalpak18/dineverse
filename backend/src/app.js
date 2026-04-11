@@ -96,6 +96,11 @@ io.on('connection', (socket) => {
     logger.debug('Socket %s joined cafe:%s', socket.id, cafeId);
   });
 
+  // Customers join this room to receive live café status (open/closed) updates
+  socket.on('join_menu', (slug) => {
+    socket.join(`menu:${slug}`);
+  });
+
   socket.on('leave_cafe', (cafeId) => {
     socket.leave(`cafe:${cafeId}`);
   });

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { loadOrders } from '../../utils/cafeOrderStorage';
@@ -46,6 +48,7 @@ export default function MenuPage() {
   const navigate = useNavigate();
   const { items: cartItems, addItem, updateQty, itemCount, total } = useCart();
   const [cafe, setCafe] = useState(null);
+  const [cafeOpen, setCafeOpen] = useState(true);
   const [menu, setMenu] = useState([]);
   const [offers, setOffers] = useState([]);
   const [emojiMap, setEmojiMap] = useState(FALLBACK_EMOJI_MAP);
@@ -85,6 +88,7 @@ export default function MenuPage() {
       .then(([cafeRes, menuRes, offersRes]) => {
         const cafeData = cafeRes.data.cafe;
         setCafe(cafeData);
+        setCafeOpen(cafeData.is_open !== false);
         // Store GST info in session so CartPage can show breakdown
         const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
         sessionStorage.setItem(`session_${slug}`, JSON.stringify({
@@ -101,6 +105,20 @@ export default function MenuPage() {
       .catch(() => navigate(`/cafe/${slug}`))
       .finally(() => setLoading(false));
   }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Live café open/closed updates via socket
+  useEffect(() => {
+    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    socket.emit('join_menu', slug);
+    socket.on('connect', () => socket.emit('join_menu', slug));
+    socket.on('cafe_status', ({ is_open }) => {
+      setCafeOpen(is_open);
+      // Keep session in sync so CartPage reads fresh value
+      const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
+      sessionStorage.setItem(`session_${slug}`, JSON.stringify({ ...existing, is_open }));
+    });
+    return () => socket.disconnect();
+  }, [slug]);
 
   const getItemQty = useCallback(
     (itemId) => cartItems.find((i) => i.id === itemId)?.quantity || 0,
@@ -209,6 +227,13 @@ export default function MenuPage() {
           </div>
         </div>
       </header>
+
+      {/* ── Closed Banner (live) ── */}
+      {!cafeOpen && (
+        <div className="flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2.5 text-xs text-red-700 font-medium flex-shrink-0">
+          🔴 This café is currently closed — you can browse but cannot place orders right now.
+        </div>
+      )}
 
       {/* ── Offers Banner ── */}
       {offers.length > 0 && (

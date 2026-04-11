@@ -107,9 +107,12 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
 // Owner: toggle café open/closed
 exports.toggleCafeOpen = asyncHandler(async (req, res) => {
   const result = await db.query(
-    'UPDATE cafes SET is_open = NOT is_open WHERE id = $1 RETURNING is_open',
+    'UPDATE cafes SET is_open = NOT is_open WHERE id = $1 RETURNING is_open, slug',
     [req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
-  ok(res, { is_open: result.rows[0].is_open });
+  const { is_open, slug } = result.rows[0];
+  // Broadcast live status to all customers on this café's menu/cart pages
+  req.io.to(`menu:${slug}`).emit('cafe_status', { is_open });
+  ok(res, { is_open });
 });

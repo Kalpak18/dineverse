@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
 import { placeOrder, previewOffer } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
@@ -20,8 +22,17 @@ export default function CartPage() {
 
   const TIP_OPTIONS = [0, 10, 20, 50];
 
-  const session   = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
-  const cafeOpen  = session?.is_open !== false; // default true if not stored
+  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+  const [cafeOpen, setCafeOpen] = useState(session?.is_open !== false);
+
+  // Live open/closed updates — same room MenuPage uses
+  useEffect(() => {
+    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    socket.emit('join_menu', slug);
+    socket.on('connect', () => socket.emit('join_menu', slug));
+    socket.on('cafe_status', ({ is_open }) => setCafeOpen(is_open));
+    return () => socket.disconnect();
+  }, [slug]);
 
   // GST breakdown (prices are GST-inclusive)
   const gstRate    = parseInt(session?.gst_rate ?? 0);
