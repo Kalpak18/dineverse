@@ -149,11 +149,11 @@ exports.getPublicTables = asyncHandler(async (req, res) => {
              AND cafe_id  = $1
              AND reserved_date = $2::DATE
              AND status IN ('pending', 'confirmed')
-             AND $3::TIME >= reserved_time
-             AND $3::TIME <  reserved_time + (COALESCE(duration_minutes, 90) || ' minutes')::INTERVAL
+             AND $3::TIME < reserved_time + (COALESCE(duration_minutes, 90) || ' minutes')::INTERVAL
+             AND $3::TIME + INTERVAL '90 minutes' > reserved_time
              AND NOT (
                status = 'pending'
-               AND ($2::DATE + reserved_time + INTERVAL '15 minutes') < NOW()
+               AND $3::TIME > reserved_time + INTERVAL '15 minutes'
              )
            LIMIT 1
          ) r ON true
