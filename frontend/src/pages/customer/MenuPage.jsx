@@ -89,8 +89,9 @@ export default function MenuPage() {
         const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
         sessionStorage.setItem(`session_${slug}`, JSON.stringify({
           ...existing,
-          gst_rate: cafeData.gst_rate ?? 0,
+          gst_rate:   cafeData.gst_rate ?? 0,
           gst_number: cafeData.gst_number || '',
+          is_open:    cafeData.is_open !== false,
         }));
         const menuData = menuRes.data.menu;
         setMenu(menuData);

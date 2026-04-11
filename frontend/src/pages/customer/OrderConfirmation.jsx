@@ -5,7 +5,6 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
-import { printBill } from '../../utils/printBill';
 import toast from 'react-hot-toast';
 
 // Load Razorpay checkout script once
@@ -41,8 +40,9 @@ export default function OrderConfirmation() {
   const [paying, setPaying] = useState(null);          // order ID currently in payment flow
   const [cafeInfo, setCafeInfo] = useState(null);
   const [ratingOrder, setRatingOrder] = useState(null); // order being rated
-  const [tableBill, setTableBill] = useState(null);     // combined bill modal data
+  const [tableBill, setTableBill] = useState(null);
   const [loadingBill, setLoadingBill] = useState(false);
+  const [receiptOrder, setReceiptOrder] = useState(null); // digital receipt modal
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
     catch { return new Set(); }
@@ -427,31 +427,13 @@ export default function OrderConfirmation() {
                   </button>
                 )}
 
-                {/* Receipt — only after payment */}
+                {/* Digital receipt — only after payment */}
                 {order.status === 'paid' && (
                   <button
-                    onClick={() =>
-                      printBill({
-                        cafe: cafeInfo,
-                        bill: {
-                          isTakeaway: order.order_type === 'takeaway',
-                          customerName: order.customer_name,
-                          orderNumber: order.daily_order_number,
-                          table_number: order.table_number,
-                          total: parseFloat(order.final_amount || order.total_amount),
-                          discount: parseFloat(order.discount_amount || 0),
-                          aggregatedItems: (order.items || []).map((i) => ({
-                            name: i.item_name,
-                            qty: i.quantity,
-                            total: parseFloat(i.subtotal),
-                          })),
-                          orders: [order],
-                        },
-                      })
-                    }
+                    onClick={() => setReceiptOrder(order)}
                     className="w-full py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold transition-colors"
                   >
-                    🖨️ View Receipt
+                    🧾 View Receipt
                   </button>
                 )}
 
@@ -500,6 +482,81 @@ export default function OrderConfirmation() {
           }}
           onSkip={() => setRatingOrder(null)}
         />
+      )}
+
+      {/* Digital receipt modal */}
+      {receiptOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setReceiptOrder(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Café header */}
+            <div className="bg-brand-600 text-white text-center px-5 pt-5 pb-4 flex-shrink-0">
+              {cafeInfo?.logo_url && (
+                <img src={cafeInfo.logo_url} alt={cafeInfo.name} className="w-12 h-12 rounded-xl mx-auto mb-2 object-cover" />
+              )}
+              <p className="font-bold text-base">{cafeInfo?.name || 'Café'}</p>
+              {cafeInfo?.address && <p className="text-xs text-brand-200 mt-0.5">{cafeInfo.address}</p>}
+              {cafeInfo?.gst_number && <p className="text-xs text-brand-200 mt-0.5">GSTIN: {cafeInfo.gst_number}</p>}
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+              {/* Order meta */}
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Token #{fmtToken(receiptOrder.daily_order_number)}</span>
+                <span>{new Date(receiptOrder.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>{receiptOrder.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${receiptOrder.table_number}`}</span>
+                <span>Customer: {receiptOrder.customer_name}</span>
+              </div>
+
+              {/* Items */}
+              <div className="border-t border-dashed border-gray-200 pt-3 space-y-1.5">
+                {(receiptOrder.items || []).map((item, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-700">{item.item_name} × {item.quantity}</span>
+                    <span className="font-medium text-gray-900">₹{fmtPrice(item.subtotal)}</span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals */}
+              <div className="border-t border-dashed border-gray-200 pt-3 space-y-1 text-sm">
+                {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Discount</span>
+                    <span>−₹{fmtPrice(receiptOrder.discount_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(receiptOrder.tip_amount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Tip</span>
+                    <span>₹{fmtPrice(receiptOrder.tip_amount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 text-base pt-1">
+                  <span>Total Paid</span>
+                  <span>₹{fmtPrice(receiptOrder.final_amount || receiptOrder.total_amount)}</span>
+                </div>
+              </div>
+
+              <div className="text-center pt-2">
+                <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-4 py-1.5">
+                  <span className="text-green-600 font-bold text-xs">✓ PAID</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Thank you for dining with us!</p>
+              </div>
+            </div>
+
+            <div className="px-5 pb-4 flex-shrink-0">
+              <button onClick={() => setReceiptOrder(null)} className="w-full py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Table bill modal */}

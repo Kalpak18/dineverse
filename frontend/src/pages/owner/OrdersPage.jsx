@@ -60,6 +60,7 @@ export default function OrdersPage() {
   const [billingModal, setBillingModal] = useState(null);
   // Chat
   const [chatOrderId, setChatOrderId] = useState(null);
+  const [unreadChats, setUnreadChats] = useState({}); // { orderId: count }
   const socketRef = useRef(null);
 
   const loadOrders = useCallback(async () => {
@@ -120,13 +121,27 @@ export default function OrdersPage() {
     }
   };
 
-  // Connect socket for receiving customer messages on the orders page
+  // Connect socket + page-level listener for incoming customer messages
   useEffect(() => {
     if (!cafe?.id) return;
     const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));
+
+    // Page-level listener: notify owner when a customer message arrives
+    socket.on('order_message', (msg) => {
+      if (msg.sender_type !== 'customer') return;
+      // Only bump unread count if chat panel isn't already open for this order
+      setChatOrderId((currentChatId) => {
+        if (currentChatId !== msg.order_id) {
+          setUnreadChats((prev) => ({ ...prev, [msg.order_id]: (prev[msg.order_id] || 0) + 1 }));
+          toast(`💬 New message from customer`, { duration: 4000, icon: '🔔' });
+        }
+        return currentChatId;
+      });
+    });
+
     return () => { socket.disconnect(); socketRef.current = null; };
   }, [cafe?.id]);
 
@@ -303,9 +318,13 @@ export default function OrdersPage() {
                   order={order}
                   onStatusUpdate={handleStatusUpdate}
                   onCancelClick={(o) => setCancelTarget(o)}
-                  onChatClick={(o) => setChatOrderId(chatOrderId === o.id ? null : o.id)}
+                  onChatClick={(o) => {
+                    setChatOrderId(chatOrderId === o.id ? null : o.id);
+                    setUnreadChats((prev) => ({ ...prev, [o.id]: 0 }));
+                  }}
                   onOpenBilling={openOrderBilling}
                   chatOpen={chatOrderId === order.id}
+                  chatUnread={unreadChats[order.id] || 0}
                   expanded={expandedId === order.id}
                   onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
                   socketRef={socketRef}
@@ -357,7 +376,7 @@ export default function OrdersPage() {
 
 // ─── Order Card (Grid Item) ───────────────────────────────────────────────
 
-function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, expanded, onToggle, socketRef }) {
+function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, expanded, onToggle, socketRef }) {
   const statusCfg = STATUS_CONFIG[order.status];
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
@@ -437,12 +456,17 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
         </button>
         <button
           onClick={() => onChatClick(order)}
-          className={`px-3 py-2 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 ${
+          className={`relative px-3 py-2 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 ${
             chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
           }`}
           title="Chat with customer"
         >
           💬
+          {chatUnread > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+              {chatUnread}
+            </span>
+          )}
         </button>
         <button
           onClick={() => onCancelClick(order)}

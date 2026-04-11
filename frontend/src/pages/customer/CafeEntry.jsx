@@ -99,18 +99,6 @@ export default function CafeEntry() {
     };
   }, [slug]);
 
-  const handleAreaChange = (areaId) => {
-    setForm((f) => ({ ...f, area_id: areaId, table_id: '', table_number: '' }));
-    if (errors.table_number) setErrors((e) => ({ ...e, table_number: undefined }));
-  };
-
-  const selectedArea = areas.find((a) => String(a.id) === String(form.area_id));
-
-  // Tables shown in grid: filtered by selected area, or all if no area selected
-  const visibleTables = selectedArea
-    ? selectedArea.tables
-    : areas.flatMap((a) => a.tables);
-
   // Normalize table number: "5" → "Table 5", "T5" → "Table 5", already "Table 5" → unchanged
   const normalizeTableNumber = (raw, areaName) => {
     const t = raw.trim();
@@ -137,12 +125,6 @@ export default function CafeEntry() {
     return Object.keys(e).length === 0;
   };
 
-  const handleTableSelect = (table) => {
-    if (table.is_reserved) return;
-    setForm((f) => ({ ...f, table_id: table.id, table_number: table.label }));
-    if (errors.table_number) setErrors((e) => ({ ...e, table_number: undefined }));
-  };
-
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!validate()) return;
@@ -162,7 +144,28 @@ export default function CafeEntry() {
   const activeOrders  = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
   const hasAnyHistory = loadOrders(slug).length > 0 || loadReservations(slug).length > 0;
 
-  if (loading) return <LoadingSpinner />;
+  // Auto-redirect returning customer with active orders straight to tracking
+  const existingSession = (() => { try { return JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null'); } catch { return null; } })();
+  if (!loading && cafe && activeOrders.length > 0 && existingSession?.customer_name) {
+    navigate(`/cafe/${slug}/confirmation`, { replace: true });
+    return null;
+  }
+
+  if (loading) return (
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
+      <div className="w-full max-w-sm space-y-4 animate-pulse">
+        <div className="h-20 w-20 rounded-2xl bg-white/60 mx-auto" />
+        <div className="h-6 rounded-lg bg-white/60 w-40 mx-auto" />
+        <div className="card shadow-lg space-y-3">
+          <div className="h-4 rounded bg-gray-100 w-32" />
+          <div className="h-10 rounded-xl bg-gray-100" />
+          <div className="h-10 rounded-xl bg-gray-100" />
+          <div className="h-10 rounded-xl bg-gray-100" />
+          <div className="h-11 rounded-xl bg-brand-100" />
+        </div>
+      </div>
+    </div>
+  );
 
   if (!cafe) {
     return (
@@ -279,82 +282,16 @@ export default function CafeEntry() {
 
             {/* Table selection — dine-in only */}
             {form.order_type === 'dine-in' && (
-              <>
-                  {/* Area dropdown — only shown when cafe has configured areas */}
-                  {hasTables && areas.filter(a => a.id !== null).length > 0 && (
-                    <div>
-                      <label className="label">Area <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
-                      <select className="input" value={form.area_id} onChange={(e) => handleAreaChange(e.target.value)}>
-                        <option value="">All areas</option>
-                        {areas.filter(a => a.id !== null).map((a) => (
-                          <option key={a.id} value={a.id}>{a.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {/* Table number — free text, suggestions from area */}
-                  <div>
-                    <label className="label">Table Number</label>
-                    <input
-                      type="text"
-                      list="table-suggestions"
-                      placeholder="e.g. 5 or Table 5"
-                      className="input"
-                      value={form.table_number}
-                      onChange={(e) => {
-                        setForm((f) => ({ ...f, table_number: e.target.value, table_id: '' }));
-                        if (errors.table_number) setErrors((e2) => ({ ...e2, table_number: undefined }));
-                      }}
-                    />
-                    {/* Datalist suggestions filtered by selected area */}
-                    <datalist id="table-suggestions">
-                      {visibleTables.filter(t => !t.is_reserved).map((t) => (
-                        <option key={t.id} value={t.label} />
-                      ))}
-                    </datalist>
-                    <p className="text-xs text-gray-400 mt-1">Type a number like "5" — it'll show as "Table 5" on your order</p>
-                    {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
-                  </div>
-
-                  {/* Table grid quick-select — only when tables configured */}
-                  {hasTables && visibleTables.length > 0 && (
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1.5">Quick select — <span className="text-red-400">🔴 reserved</span></p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {visibleTables.map((t) => {
-                          const isSelected = form.table_id === t.id || form.table_number === t.label;
-                          const reserved   = t.is_reserved;
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              disabled={reserved}
-                              onClick={() => handleTableSelect(t)}
-                              title={reserved ? `Reserved until ${t.reserved_until}` : t.label}
-                              className={`relative py-2.5 px-1 rounded-xl border-2 text-xs font-semibold transition-all ${
-                                reserved
-                                  ? 'border-red-200 bg-red-50 text-red-400 cursor-not-allowed opacity-70'
-                                  : isSelected
-                                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                                    : 'border-gray-200 bg-white text-gray-700 hover:border-brand-300 hover:bg-brand-50'
-                              }`}
-                            >
-                              {t.label}
-                              {reserved && (
-                                <span className="block text-[9px] font-normal text-red-400 mt-0.5">
-                                  until {t.reserved_until}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )
-            }
+              <TableSearch
+                hasTables={hasTables}
+                areas={areas}
+                form={form}
+                setForm={setForm}
+                errors={errors}
+                setErrors={setErrors}
+                normalizeTableNumber={normalizeTableNumber}
+              />
+            )}
 
             {form.order_type === 'takeaway' && (
               <p className="text-xs text-gray-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
@@ -676,6 +613,118 @@ function ReservationModal({ slug, cafeName, onClose }) {
             {saving ? 'Booking…' : 'Confirm Reservation'}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Smart table search combobox ──────────────────────────────
+function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, normalizeTableNumber }) {
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  const namedAreas = areas.filter((a) => a.id !== null);
+  const selectedArea = areas.find((a) => String(a.id) === String(form.area_id));
+  const allTables = selectedArea ? selectedArea.tables : areas.flatMap((a) => a.tables);
+
+  // Filter suggestions by what the user typed
+  const query = form.table_number.toLowerCase().trim();
+  const suggestions = hasTables
+    ? allTables.filter((t) => {
+        if (t.is_reserved) return false;
+        const label = t.label.toLowerCase();
+        const areaLabel = (t.area_name || '').toLowerCase();
+        return !query || label.includes(query) || areaLabel.includes(query) ||
+          label.replace('table ', '').startsWith(query);
+      }).slice(0, 8)
+    : [];
+
+  const handleSelect = (t) => {
+    const aName = selectedArea?.name || t.area_name;
+    const normalized = normalizeTableNumber(t.label, aName !== 'General' ? aName : '');
+    setForm((f) => ({ ...f, table_number: normalized, table_id: t.id }));
+    setErrors((e) => ({ ...e, table_number: undefined }));
+    setOpen(false);
+    inputRef.current?.blur();
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (!dropdownRef.current?.contains(e.target) && !inputRef.current?.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="space-y-3">
+      {/* Area filter — only when multiple named areas */}
+      {namedAreas.length > 0 && (
+        <div>
+          <label className="label">Area <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
+          <select
+            className="input"
+            value={form.area_id}
+            onChange={(e) => {
+              setForm((f) => ({ ...f, area_id: e.target.value, table_id: '', table_number: '' }));
+              setErrors((er) => ({ ...er, table_number: undefined }));
+            }}
+          >
+            <option value="">All areas</option>
+            {namedAreas.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* Smart search input */}
+      <div className="relative">
+        <label className="label">Table Number</label>
+        <input
+          ref={inputRef}
+          type="text"
+          className="input"
+          placeholder={hasTables ? 'Type to search or enter table number…' : 'e.g. 5 or Table 5'}
+          value={form.table_number}
+          autoComplete="off"
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            setForm((f) => ({ ...f, table_number: e.target.value, table_id: '' }));
+            setErrors((er) => ({ ...er, table_number: undefined }));
+            setOpen(true);
+          }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+        />
+
+        {/* Dropdown */}
+        {open && suggestions.length > 0 && (
+          <div
+            ref={dropdownRef}
+            className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden"
+          >
+            {suggestions.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(t); }}
+                className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 flex items-center justify-between"
+              >
+                <span className="font-medium text-gray-800">{t.label}</span>
+                {t.area_name && t.area_name !== 'General' && (
+                  <span className="text-xs text-gray-400">{t.area_name}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
+        {!hasTables && (
+          <p className="text-xs text-gray-400 mt-1">Type "5" and it'll appear as "Table 5" on your order</p>
+        )}
       </div>
     </div>
   );

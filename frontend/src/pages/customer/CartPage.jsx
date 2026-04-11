@@ -20,7 +20,8 @@ export default function CartPage() {
 
   const TIP_OPTIONS = [0, 10, 20, 50];
 
-  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+  const session   = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+  const cafeOpen  = session?.is_open !== false; // default true if not stored
 
   // GST breakdown (prices are GST-inclusive)
   const gstRate    = parseInt(session?.gst_rate ?? 0);
@@ -250,11 +251,16 @@ export default function CartPage() {
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto space-y-2">
+          {!cafeOpen && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 font-medium">
+              🔴 This café is currently closed — orders cannot be placed right now.
+            </div>
+          )}
           <button
             onClick={() => setShowConfirm(true)}
-            disabled={loading}
-            className="btn-primary w-full flex items-center justify-between"
+            disabled={loading || !cafeOpen}
+            className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span>{loading ? 'Placing order...' : 'Place Order'}</span>
             <span>₹{grandTotal.toFixed(2)}</span>

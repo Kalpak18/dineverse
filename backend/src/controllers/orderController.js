@@ -41,14 +41,18 @@ exports.createOrder = asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verify café exists — scoped by slug
+    // Verify café exists and is open — scoped by slug
     const cafeResult = await client.query(
-      'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+      'SELECT id, is_open FROM cafes WHERE slug = $1 AND is_active = true',
       [slug]
     );
     if (cafeResult.rows.length === 0) {
       await client.query('ROLLBACK');
       return fail(res, 'Café not found', 404);
+    }
+    if (cafeResult.rows[0].is_open === false) {
+      await client.query('ROLLBACK');
+      return fail(res, 'This café is currently closed and not accepting orders', 403);
     }
     const cafeId = cafeResult.rows[0].id;
 
