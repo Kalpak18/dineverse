@@ -418,7 +418,7 @@ export default function CafeEntry() {
 }
 
 // ─── Reservation Modal ────────────────────────────────────────
-function ReservationModal({ slug, cafeName, onClose }) {
+function ReservationModal({ slug, cafeName, onClose, onBooked }) {
   const todayISO = new Date().toLocaleDateString('en-CA');
   const [form, setForm] = useState({
     customer_name: '', customer_phone: '', party_size: 2,
