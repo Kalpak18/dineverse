@@ -129,6 +129,7 @@ export default function CafeEntry() {
     e.preventDefault();
     if (!validate()) return;
 
+    const selectedArea = areas.find((a) => String(a.id) === String(form.area_id));
     const tableLabel = normalizeTableNumber(form.table_number, selectedArea?.name);
 
     const session = {
@@ -630,15 +631,16 @@ function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, norma
 
   // Filter suggestions by what the user typed
   const query = form.table_number.toLowerCase().trim();
-  const suggestions = hasTables
-    ? allTables.filter((t) => {
-        if (t.is_reserved) return false;
-        const label = t.label.toLowerCase();
-        const areaLabel = (t.area_name || '').toLowerCase();
-        return !query || label.includes(query) || areaLabel.includes(query) ||
-          label.replace('table ', '').startsWith(query);
-      }).slice(0, 8)
-    : [];
+  const availableTables = hasTables ? allTables.filter((t) => !t.is_reserved) : [];
+  const allReserved = hasTables && allTables.length > 0 && availableTables.length === 0;
+  const suggestions = availableTables
+    .filter((t) => {
+      const label = t.label.toLowerCase();
+      const areaLabel = (t.area_name || '').toLowerCase();
+      return !query || label.includes(query) || areaLabel.includes(query) ||
+        label.replace('table ', '').startsWith(query);
+    })
+    .slice(0, 8);
 
   const handleSelect = (t) => {
     const aName = selectedArea?.name || t.area_name;
@@ -722,6 +724,9 @@ function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, norma
         )}
 
         {errors.table_number && <p className="text-red-500 text-xs mt-1">{errors.table_number}</p>}
+        {allReserved && (
+          <p className="text-xs text-amber-600 mt-1">All tables appear occupied right now — you can still type your table number manually.</p>
+        )}
         {!hasTables && (
           <p className="text-xs text-gray-400 mt-1">Type "5" and it'll appear as "Table 5" on your order</p>
         )}
