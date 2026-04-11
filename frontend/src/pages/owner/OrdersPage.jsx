@@ -1066,9 +1066,11 @@ function OwnerChatPanel({ order, socketRef }) {
     if (!msg || sending) return;
     setSending(true);
     try {
-      const { data } = await postOwnerMessage(order.id, msg);
-      setMessages((prev) => [...prev, data.message]);
+      await postOwnerMessage(order.id, msg);
       setText('');
+      // Do NOT append here — the backend broadcasts via socket and the
+      // order_message handler (with dedup) adds it. Appending here too
+      // causes the message to appear twice.
     } catch { toast.error('Could not send message'); }
     finally { setSending(false); }
   };

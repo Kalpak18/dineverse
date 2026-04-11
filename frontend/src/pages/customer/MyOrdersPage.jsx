@@ -518,9 +518,11 @@ function CustomerChatInline({ order, slug, socketRef, open, onToggle }) {
     if (!msg || sending) return;
     setSending(true);
     try {
-      const { data } = await postCustomerMessage(slug, order.id, msg);
-      setMessages((prev) => [...prev, data.message]);
+      await postCustomerMessage(slug, order.id, msg);
       setText('');
+      // Do NOT append here — the backend broadcasts via socket and the
+      // order_message handler (with dedup) adds it. Appending here too
+      // causes the message to appear twice.
     } catch {}
     finally { setSending(false); }
   };
