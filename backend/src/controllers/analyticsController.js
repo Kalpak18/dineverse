@@ -28,7 +28,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     }
   }
 
-  const [summaryRes, expensesRes, topItemsRes, dailyRes, orderTypeRes] = await Promise.all([
+  const [summaryRes, expensesRes, topItemsRes, dailyRes, orderTypeRes, categoryRes] = await Promise.all([
     // Order counts — total_orders = ALL orders received (including cancelled)
     // paid_orders = only paid (matches History tab count)
     db.query(
@@ -92,6 +92,23 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
        GROUP BY order_type`,
       [req.cafeId, startDate, endDate]
     ),
+
+    // Revenue by category
+    db.query(
+      `SELECT COALESCE(c.name, 'Uncategorized') AS category,
+              SUM(oi.quantity) AS total_qty,
+              COALESCE(SUM(oi.subtotal) FILTER (WHERE o.status = 'paid'), 0) AS revenue
+       FROM order_items oi
+       JOIN orders o ON oi.order_id = o.id
+       LEFT JOIN menu_items mi ON oi.menu_item_id = mi.id
+       LEFT JOIN categories c ON mi.category_id = c.id
+       WHERE o.cafe_id = $1
+         AND DATE(o.created_at) BETWEEN $2 AND $3
+         AND o.status != 'cancelled'
+       GROUP BY COALESCE(c.name, 'Uncategorized')
+       ORDER BY revenue DESC`,
+      [req.cafeId, startDate, endDate]
+    ),
   ]);
 
   const totalRevenue  = parseFloat(summaryRes.rows[0].total_revenue);
@@ -109,9 +126,10 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       total_expenses:   totalExpenses,
       profit:           parseFloat((totalRevenue - totalExpenses).toFixed(2)),
     },
-    topItems:           topItemsRes.rows,
-    dailyBreakdown:     dailyRes.rows,
-    orderTypeBreakdown: orderTypeRes.rows,
-    expenses:           expensesRes.rows[0].expense_list || [],
+    topItems:            topItemsRes.rows,
+    dailyBreakdown:      dailyRes.rows,
+    orderTypeBreakdown:  orderTypeRes.rows,
+    categoryBreakdown:   categoryRes.rows,
+    expenses:            expensesRes.rows[0].expense_list || [],
   });
 });

@@ -29,6 +29,7 @@ import KitchenPage from './pages/owner/KitchenPage';
 import OffersPage from './pages/owner/OffersPage';
 import ReservationsPage from './pages/owner/ReservationsPage';
 import RatingsPage from './pages/owner/RatingsPage';
+import StaffPage from './pages/owner/StaffPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -100,6 +101,7 @@ export default function App() {
         <Route path="offers" element={<OffersPage />} />
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="ratings" element={<RatingsPage />} />
+        <Route path="staff" element={<StaffPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

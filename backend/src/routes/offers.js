@@ -3,11 +3,12 @@ const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
 const {
-  getOffers, createOffer, updateOffer, deleteOffer, getPublicOffers,
+  getOffers, createOffer, updateOffer, deleteOffer, getPublicOffers, previewOffer,
 } = require('../controllers/offerController');
 
-// Public: customer sees active offers
+// Public: customer sees active offers + previews discount
 router.get('/cafe/:slug/offers', getPublicOffers);
+router.post('/cafe/:slug/preview', previewOffer);
 
 // Owner CRUD (all require auth + subscription)
 router.use(authenticate, checkSubscription, requireOwner);

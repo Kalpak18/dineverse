@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
-import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage } from '../../services/api';
+import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { printBill } from '../../utils/printBill';
 import toast from 'react-hot-toast';
@@ -41,6 +41,8 @@ export default function OrderConfirmation() {
   const [paying, setPaying] = useState(null);          // order ID currently in payment flow
   const [cafeInfo, setCafeInfo] = useState(null);
   const [ratingOrder, setRatingOrder] = useState(null); // order being rated
+  const [tableBill, setTableBill] = useState(null);     // combined bill modal data
+  const [loadingBill, setLoadingBill] = useState(false);
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
     catch { return new Set(); }
@@ -232,10 +234,25 @@ export default function OrderConfirmation() {
     }
   };
 
+  const handleShowTableBill = async () => {
+    const dineInOrder = orders.find((o) => o.order_type === 'dine-in' && o.table_number);
+    if (!dineInOrder) return;
+    setLoadingBill(true);
+    try {
+      const { data } = await getTableBill(slug, dineInOrder.table_number);
+      setTableBill(data);
+    } catch {
+      toast.error('Could not load table bill');
+    } finally {
+      setLoadingBill(false);
+    }
+  };
+
   if (orders.length === 0) return null;
 
   const activeCount = orders.filter((o) => !['paid', 'cancelled'].includes(o.status)).length;
   const allDone     = activeCount === 0 && orders.length > 0;
+  const hasDineIn   = orders.some((o) => o.order_type === 'dine-in' && o.table_number);
 
   const startNewOrder = () => {
     sessionStorage.removeItem(`session_${slug}`);
@@ -267,6 +284,15 @@ export default function OrderConfirmation() {
               <p className="text-gray-500 text-sm mt-1">
                 {activeCount} active order{activeCount !== 1 ? 's' : ''} — live updates on
               </p>
+              {hasDineIn && (
+                <button
+                  onClick={handleShowTableBill}
+                  disabled={loadingBill}
+                  className="mt-3 px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
+                >
+                  {loadingBill ? 'Loading…' : '🧾 View Table Bill'}
+                </button>
+              )}
             </>
           )}
         </div>
@@ -474,6 +500,56 @@ export default function OrderConfirmation() {
           }}
           onSkip={() => setRatingOrder(null)}
         />
+      )}
+
+      {/* Table bill modal */}
+      {tableBill && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setTableBill(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden max-h-[85vh] flex flex-col">
+            <div className="h-1 bg-brand-500 rounded-t-2xl flex-shrink-0" />
+            <div className="px-5 pt-4 pb-2 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="font-bold text-gray-900">Table Bill</h3>
+                <p className="text-xs text-gray-400">{tableBill.table_number} · {tableBill.cafe_name}</p>
+              </div>
+              <button onClick={() => setTableBill(null)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400">✕</button>
+            </div>
+            <div className="overflow-y-auto flex-1 px-5 pb-4 space-y-3">
+              {(tableBill.orders || []).map((order, i) => (
+                <div key={order.id} className="border border-gray-100 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-gray-500 mb-1.5">
+                    Order #{order.daily_order_number} · {fmtTime(order.created_at)}
+                  </p>
+                  {(order.items || []).map((item, j) => (
+                    <div key={j} className="flex justify-between text-sm text-gray-700 py-0.5">
+                      <span>{item.item_name} × {item.quantity}</span>
+                      <span>₹{fmtPrice(item.subtotal)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-xs text-gray-500 mt-1.5 pt-1.5 border-t border-dashed border-gray-100">
+                    <span>Order subtotal</span>
+                    <span>₹{fmtPrice(order.final_amount || order.total_amount)}</span>
+                  </div>
+                </div>
+              ))}
+              <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1">
+                {tableBill.combined_tip > 0 && (
+                  <div className="flex justify-between text-sm text-gray-500">
+                    <span>Tips</span>
+                    <span>₹{fmtPrice(tableBill.combined_tip)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 text-base">
+                  <span>Total ({(tableBill.orders || []).length} order{(tableBill.orders || []).length !== 1 ? 's' : ''})</span>
+                  <span>₹{fmtPrice(tableBill.combined_total)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

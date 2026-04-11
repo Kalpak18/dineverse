@@ -8,6 +8,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
+import { useCart } from '../../context/CartContext';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import { getOrderStatus, cancelOrder, getCafeBySlug, getCustomerMessages, postCustomerMessage } from '../../services/api';
@@ -34,8 +35,9 @@ const RES_STATUS = {
 const TABS = { ACTIVE: 'active', RESERVATIONS: 'reservations', HISTORY: 'history' };
 
 export default function MyOrdersPage() {
-  const { slug } = useParams();
-  const navigate  = useNavigate();
+  const { slug }              = useParams();
+  const navigate              = useNavigate();
+  const { addItem, clearCart } = useCart();
   const [orders, setOrders]           = useState([]);
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
@@ -153,6 +155,16 @@ export default function MyOrdersPage() {
   const handleDismissRes = (id) => {
     removeReservation(slug, id);
     refreshRes();
+  };
+
+  const handleReorder = (order) => {
+    clearCart();
+    (order.items || []).forEach((oi) => {
+      const item = { id: oi.menu_item_id, name: oi.item_name, price: oi.unit_price };
+      for (let q = 0; q < (oi.quantity || 1); q++) addItem(item);
+    });
+    toast.success('Items added to cart — review before ordering');
+    navigate(`/cafe/${slug}/cart`);
   };
 
   const activeOrders  = orders.filter((o) => !['paid', 'cancelled'].includes(o.status));
@@ -287,6 +299,7 @@ export default function MyOrdersPage() {
                   socketRef={socketRef}
                   onCancel={handleCancel}
                   onDismiss={handleDismissOrder}
+                  onReorder={handleReorder}
                 />
               ))
             )}
@@ -298,7 +311,7 @@ export default function MyOrdersPage() {
 }
 
 // ─── Order Card ───────────────────────────────────────────────
-function OrderCard({ order, slug, socketRef, onCancel, onDismiss }) {
+function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
   const [chatOpen, setChatOpen] = useState(false);
   const cfg        = ORDER_STATUS[order.status] || ORDER_STATUS.pending;
   const isPending  = order.status === 'pending';
@@ -376,10 +389,18 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss }) {
               Cancel Order
             </button>
           )}
+          {order.status === 'paid' && onReorder && (order.items || []).length > 0 && (
+            <button
+              onClick={() => onReorder(order)}
+              className="flex-1 py-2 rounded-xl border border-brand-200 text-brand-600 text-xs font-semibold hover:bg-brand-50 transition-colors"
+            >
+              🔄 Re-order
+            </button>
+          )}
           {isTerminal && (
             <button
               onClick={() => onDismiss(order.id)}
-              className="flex-1 py-2 rounded-xl border border-gray-200 text-gray-400 text-xs font-medium hover:bg-gray-50 transition-colors"
+              className="py-2 px-3 rounded-xl border border-gray-200 text-gray-400 text-xs font-medium hover:bg-gray-50 transition-colors"
             >
               Dismiss
             </button>

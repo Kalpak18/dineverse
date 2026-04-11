@@ -9,11 +9,15 @@ const {
   getDashboardStats,
   getOrderStatus, customerCancelOrder,
   createOrderPayment, verifyOrderPayment,
+  getTableBill,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
   getOwnerMessages, postOwnerMessage,
 } = require('../controllers/messageController');
+
+// Public: combined bill for a table
+router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 
 // Public: customer places order (rate-limited to prevent abuse)
 // NOTE: customer-facing routes are NOT subscription-gated — customers can always

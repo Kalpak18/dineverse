@@ -13,7 +13,7 @@ exports.validateStaff = [
 // Owner: list all staff for this café
 exports.getStaff = asyncHandler(async (req, res) => {
   const result = await db.query(
-    'SELECT id, name, email, is_active, created_at FROM cafe_staff WHERE cafe_id = $1 ORDER BY created_at ASC',
+    'SELECT id, name, email, role, is_active, created_at FROM cafe_staff WHERE cafe_id = $1 ORDER BY created_at ASC',
     [req.cafeId]
   );
   ok(res, { staff: result.rows });
@@ -42,6 +42,27 @@ exports.createStaff = asyncHandler(async (req, res) => {
     [req.cafeId, name, email, password_hash]
   );
   ok(res, { staff: result.rows[0] }, 'Staff account created', 201);
+});
+
+// Owner: update a staff account (name, role, is_active)
+exports.updateStaff = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { name, role, is_active } = req.body;
+
+  const VALID_ROLES = ['cashier', 'kitchen', 'manager'];
+  if (role && !VALID_ROLES.includes(role)) return fail(res, 'role must be cashier, kitchen, or manager');
+
+  const result = await db.query(
+    `UPDATE cafe_staff
+     SET name      = COALESCE($1, name),
+         role      = COALESCE($2, role),
+         is_active = COALESCE($3, is_active)
+     WHERE id = $4 AND cafe_id = $5
+     RETURNING id, name, email, role, is_active, created_at`,
+    [name || null, role || null, is_active != null ? is_active : null, id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Staff member not found', 404);
+  ok(res, { staff: result.rows[0] });
 });
 
 // Owner: delete a staff account

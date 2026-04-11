@@ -123,6 +123,35 @@ exports.getPublicOffers = asyncHandler(async (req, res) => {
   ok(res, { offers: result.rows });
 });
 
+// ─── Public: preview offer discount before placing order ────────
+// POST /offers/cafe/:slug/preview  { items: [{menu_item_id, quantity}], total }
+exports.previewOffer = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const { items = [], total = 0 } = req.body;
+
+  const cafeResult = await db.query(
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    [slug]
+  );
+  if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
+
+  const { offerId, discountAmount, finalAmount } = await exports.applyBestOffer(
+    cafeResult.rows[0].id, items, parseFloat(total) || 0
+  );
+
+  if (!offerId) return ok(res, { applied: false, discount_amount: 0, final_amount: parseFloat(total) || 0 });
+
+  const offerRow = await db.query('SELECT name, description, offer_type, discount_value FROM offers WHERE id = $1', [offerId]);
+  ok(res, {
+    applied: true,
+    offer_name:      offerRow.rows[0]?.name,
+    offer_type:      offerRow.rows[0]?.offer_type,
+    discount_value:  offerRow.rows[0]?.discount_value,
+    discount_amount: discountAmount,
+    final_amount:    finalAmount,
+  });
+});
+
 // ─── Helper: apply best offer to an order total ────────────────
 // Returns { offerId, discountAmount, finalAmount }
 exports.applyBestOffer = async (cafeId, items, total) => {

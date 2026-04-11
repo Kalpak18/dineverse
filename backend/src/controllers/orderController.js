@@ -418,6 +418,61 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
   }
 });
 
+// ─── Public: Combined bill for a table (all active orders) ────
+exports.getTableBill = asyncHandler(async (req, res) => {
+  const { slug, tableNumber } = req.params;
+
+  const cafeResult = await db.query(
+    `SELECT id, name, gst_rate, gst_number FROM cafes WHERE slug = $1 AND is_active = true`,
+    [slug]
+  );
+  if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
+  const { id: cafeId, name: cafeName, gst_rate, gst_number } = cafeResult.rows[0];
+
+  const ordersResult = await db.query(
+    `SELECT id, order_number,
+            COALESCE(daily_order_number, order_number) AS daily_order_number,
+            status, total_amount, discount_amount, tip_amount, final_amount,
+            notes, created_at
+     FROM orders
+     WHERE cafe_id = $1
+       AND table_number = $2
+       AND status NOT IN ('cancelled', 'paid')
+     ORDER BY created_at ASC`,
+    [cafeId, tableNumber]
+  );
+
+  if (ordersResult.rows.length === 0) {
+    return ok(res, { orders: [], combined_total: 0, cafe_name: cafeName });
+  }
+
+  const orderIds = ordersResult.rows.map((o) => o.id);
+  const itemsResult = await db.query(
+    'SELECT order_id, item_name, quantity, unit_price, subtotal FROM order_items WHERE order_id = ANY($1)',
+    [orderIds]
+  );
+
+  const itemsByOrder = {};
+  for (const item of itemsResult.rows) {
+    if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+    itemsByOrder[item.order_id].push(item);
+  }
+
+  const orders = ordersResult.rows.map((o) => ({ ...o, items: itemsByOrder[o.id] || [] }));
+  const combinedTotal = orders.reduce((sum, o) => sum + parseFloat(o.final_amount || o.total_amount), 0);
+  const combinedTip   = orders.reduce((sum, o) => sum + parseFloat(o.tip_amount || 0), 0);
+
+  ok(res, {
+    cafe_name:      cafeName,
+    table_number:   tableNumber,
+    orders,
+    combined_total: parseFloat(combinedTotal.toFixed(2)),
+    combined_tip:   parseFloat(combinedTip.toFixed(2)),
+    gst_rate:       parseInt(gst_rate || 0),
+    gst_number:     gst_number || null,
+  });
+});
+
 // ─── Helper ───────────────────────────────────────────────────
 async function getOrderWithItems(orderId, cafeId = null) {
   const params = [orderId];

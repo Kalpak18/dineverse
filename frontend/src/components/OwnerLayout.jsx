@@ -14,6 +14,7 @@ const navItems = [
   { to: '/owner/reservations', label: 'Reservations', icon: '📅' },
   { to: '/owner/ratings',      label: 'Ratings',      icon: '⭐' },
   { to: '/owner/analytics',    label: 'Analytics',    icon: '📈' },
+  { to: '/owner/staff',        label: 'Staff',        icon: '👥' },
   { to: '/owner/tables',       label: 'Tables',       icon: '🪑' },
   { to: '/owner/billing',      label: 'Billing',      icon: '💳' },
   { to: '/owner/help',         label: 'Help',         icon: '🎫' },

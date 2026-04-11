@@ -156,9 +156,10 @@ export const updateOrderStatus = (id, status, cash_received = null, cancellation
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────
-export const getStaff = () => api.get('/staff');
-export const createStaff = (data) => api.post('/staff', data);
-export const deleteStaff = (id) => api.delete(`/staff/${id}`);
+export const getStaff    = ()         => api.get('/staff');
+export const createStaff = (data)     => api.post('/staff', data);
+export const updateStaff = (id, data) => api.patch(`/staff/${id}`, data);
+export const deleteStaff = (id)       => api.delete(`/staff/${id}`);
 
 // ─── Expenses (Owner) ─────────────────────────────────────────
 export const getExpenses = (params) => api.get('/expenses', { params });
@@ -176,11 +177,16 @@ export const submitRating = (slug, orderId, data) => api.post(`/ratings/cafe/${s
 export const getRatings = (params) => api.get('/ratings', { params });
 
 // ─── Offers ───────────────────────────────────────────────────
-export const getPublicOffers = (slug) => api.get(`/offers/cafe/${slug}/offers`);
-export const getOffers = () => api.get('/offers');
-export const createOffer = (data) => api.post('/offers', data);
-export const updateOffer = (id, data) => api.patch(`/offers/${id}`, data);
-export const deleteOffer = (id) => api.delete(`/offers/${id}`);
+export const getPublicOffers = (slug)       => api.get(`/offers/cafe/${slug}/offers`);
+export const previewOffer    = (slug, data) => api.post(`/offers/cafe/${slug}/preview`, data);
+export const getOffers       = ()           => api.get('/offers');
+export const createOffer     = (data)       => api.post('/offers', data);
+export const updateOffer     = (id, data)   => api.patch(`/offers/${id}`, data);
+export const deleteOffer     = (id)         => api.delete(`/offers/${id}`);
+
+// ─── Table combined bill (customer-facing) ────────────────────
+export const getTableBill = (slug, tableNumber) =>
+  api.get(`/orders/cafe/${slug}/table-bill/${encodeURIComponent(tableNumber)}`);
 
 // ─── Reservations ─────────────────────────────────────────────
 export const createReservation = (slug, data) => api.post(`/reservations/cafe/${slug}/reserve`, data);

@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useCart } from '../../context/CartContext';
-import { placeOrder } from '../../services/api';
+import { placeOrder, previewOffer } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import toast from 'react-hot-toast';
@@ -15,6 +15,8 @@ export default function CartPage() {
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
+  const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
+  const offerDebounce = useRef(null);
 
   const TIP_OPTIONS = [0, 10, 20, 50];
 
@@ -26,8 +28,28 @@ export default function CartPage() {
   const taxableAmt = hasGst ? total / (1 + gstRate / 100) : total;
   const totalTax   = hasGst ? total - taxableAmt : 0;
 
-  const grandTotal = total + tip;
+  const discountAmt = offerPreview?.applied ? parseFloat(offerPreview.discount_amount || 0) : 0;
+  const grandTotal  = total - discountAmt + tip;
   const activeOrders = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
+
+  // Debounced offer preview: refetch when cart total changes
+  useEffect(() => {
+    if (!items.length) { setOfferPreview(null); return; }
+    clearTimeout(offerDebounce.current);
+    offerDebounce.current = setTimeout(async () => {
+      try {
+        const payload = {
+          items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+          total,
+        };
+        const { data } = await previewOffer(slug, payload);
+        setOfferPreview(data);
+      } catch {
+        setOfferPreview(null);
+      }
+    }, 500);
+    return () => clearTimeout(offerDebounce.current);
+  }, [slug, total, items]);
 
   if (!session) {
     navigate(`/cafe/${slug}`);
@@ -133,6 +155,16 @@ export default function CartPage() {
         />
       </div>
 
+      {offerPreview?.applied && (
+        <div className="mx-4 mt-4 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+          <span className="text-green-500 text-lg">🎉</span>
+          <div>
+            <p className="text-xs font-semibold text-green-800">{offerPreview.offer_name} applied!</p>
+            <p className="text-xs text-green-600">You save ₹{discountAmt.toFixed(2)} on this order</p>
+          </div>
+        </div>
+      )}
+
       <div className="mx-4 mt-4 bg-gray-50 rounded-xl p-4">
         <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
         <div className="space-y-1 text-sm">
@@ -167,6 +199,12 @@ export default function CartPage() {
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
               <span>₹{total.toFixed(2)}</span>
+            </div>
+          )}
+          {offerPreview?.applied && (
+            <div className="flex justify-between text-green-600 font-medium">
+              <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
+              <span>−₹{discountAmt.toFixed(2)}</span>
             </div>
           )}
           {tip > 0 && (

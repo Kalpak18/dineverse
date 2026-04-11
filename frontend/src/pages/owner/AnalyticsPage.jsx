@@ -140,9 +140,12 @@ export default function AnalyticsPage() {
     }
   };
 
-  // Simple inline bar chart using CSS widths
-  const maxRevenue = data?.dailyBreakdown?.length
+  // Simple inline bar charts using CSS widths
+  const maxRevenue  = data?.dailyBreakdown?.length
     ? Math.max(...data.dailyBreakdown.map((d) => parseFloat(d.revenue)), 1)
+    : 1;
+  const maxCatRev   = data?.categoryBreakdown?.length
+    ? Math.max(...data.categoryBreakdown.map((c) => parseFloat(c.revenue)), 1)
     : 1;
 
   return (
@@ -215,6 +218,28 @@ export default function AnalyticsPage() {
                     <p className="text-xs text-gray-500 mt-0.5 capitalize">
                       {t.order_type === 'dine-in' ? '🍽️ Dine In' : '🥡 Takeaway'}
                     </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Category revenue breakdown */}
+          {data.categoryBreakdown?.length > 0 && (
+            <div className="card">
+              <h2 className="font-semibold text-gray-900 mb-4">Revenue by Category</h2>
+              <div className="space-y-2.5">
+                {data.categoryBreakdown.map((cat) => (
+                  <div key={cat.category} className="flex items-center gap-3 text-sm">
+                    <span className="w-28 flex-shrink-0 text-gray-600 truncate" title={cat.category}>{cat.category}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-brand-400 rounded-full transition-all"
+                        style={{ width: `${(parseFloat(cat.revenue) / maxCatRev) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-gray-400 text-xs w-10 text-right">{cat.total_qty} sold</span>
+                    <span className="font-medium text-gray-900 w-20 text-right">{fmtCurrency(cat.revenue)}</span>
                   </div>
                 ))}
               </div>
