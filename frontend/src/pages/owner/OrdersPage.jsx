@@ -80,7 +80,7 @@ export default function OrdersPage() {
     cafe?.id,
     (order) => {
       setOrders((prev) => [order, ...prev]);
-      toast.success(`New order #${fmtToken(order.daily_order_number)} from ${order.customer_name}!`);
+      toast.success(`New order ${fmtToken(order.daily_order_number, order.order_type)} from ${order.customer_name}!`);
     },
     (updated) => {
       setOrders((prev) =>
@@ -396,7 +396,7 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
       <div className="px-4 pt-4 pb-3">
         {/* Row 1: order number + status badge */}
         <div className="flex items-center justify-between mb-2">
-          <span className="font-bold text-gray-900 text-sm">#{fmtToken(order.daily_order_number)}</span>
+          <span className="font-bold text-gray-900 text-sm">{fmtToken(order.daily_order_number, order.order_type)}</span>
           <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
         </div>
 
@@ -504,7 +504,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
       );
       toast.success(
         bill.isTakeaway
-          ? `Token #${bill.orders[0].daily_order_number} — payment collected!`
+          ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
           : `Table ${bill.table_number} — payment collected!`
       );
     } finally {
@@ -600,7 +600,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                   <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 border-l-teal-400 flex flex-col">
                     <div className="px-4 pt-4 pb-3 flex-1">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-gray-900 text-sm">#{fmtToken(token)}</span>
+                        <span className="font-bold text-gray-900 text-sm">{fmtToken(token, 'takeaway')}</span>
                         <span className="badge bg-teal-100 text-teal-700 text-xs">Ready for Pickup</span>
                       </div>
                       <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
@@ -738,7 +738,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                               return (
                                 <div key={order.id} className="bg-white rounded-xl border border-gray-100 px-3 py-2.5">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="font-semibold text-gray-800 text-sm">#{fmtToken(token)}</span>
+                                    <span className="font-semibold text-gray-800 text-sm">{fmtToken(token, order.order_type)}</span>
                                     <span className="text-xs text-gray-400">{fmtTime(order.created_at)}</span>
                                     <span className={`badge text-xs ${STATUS_CONFIG[order.status].color}`}>
                                       {STATUS_CONFIG[order.status].label}
@@ -871,7 +871,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
         <h3 className="font-bold text-gray-900 text-lg">Collect Payment</h3>
         <p className="text-sm text-gray-500 mt-0.5">
           {bill.isTakeaway
-            ? `🥡 ${bill.customerName} — Token #${fmtToken(bill.orderNumber)}`
+            ? `🥡 ${bill.customerName} — ${fmtToken(bill.orderNumber, 'takeaway')}`
             : `🍽️ Table ${bill.table_number}`}
         </p>
       </div>
@@ -984,7 +984,7 @@ function CancelReasonModal({ order, onConfirm, onClose }) {
           <div>
             <h3 className="font-bold text-gray-900">Cancel Order</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              #{fmtToken(order.daily_order_number)} · {order.customer_name}
+              {fmtToken(order.daily_order_number, order.order_type)} · {order.customer_name}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
@@ -1164,7 +1164,7 @@ function HistoryView({ orders }) {
             <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 border-l-purple-400 flex flex-col">
               <div className="px-4 pt-4 pb-3 flex-1">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold text-gray-900 text-sm">#{fmtToken(token)}</span>
+                  <span className="font-bold text-gray-900 text-sm">{fmtToken(token, order.order_type)}</span>
                   <span className="badge bg-purple-100 text-purple-800 text-xs">Paid</span>
                 </div>
                 <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>

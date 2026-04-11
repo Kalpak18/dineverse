@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
+import { fmtToken, fmtPrice, fmtTime, groupByDate } from '../../utils/formatters';
 import { useCart } from '../../context/CartContext';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
@@ -285,22 +285,28 @@ export default function MyOrdersPage() {
           </>
         )}
 
-        {/* ── History ── */}
+        {/* ── History — grouped by date ── */}
         {activeTab === TABS.HISTORY && (
           <>
             {historyOrders.length === 0 ? (
               <EmptyState icon="🧾" title="No past orders" sub="Completed orders will appear here." />
             ) : (
-              historyOrders.map((order) => (
-                <OrderCard
-                  key={order.id}
-                  order={order}
-                  slug={slug}
-                  socketRef={socketRef}
-                  onCancel={handleCancel}
-                  onDismiss={handleDismissOrder}
-                  onReorder={handleReorder}
-                />
+              groupByDate(historyOrders).map(({ label, orders: dayOrders }) => (
+                <div key={label}>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 px-1">{label}</p>
+                  {dayOrders.map((order) => (
+                    <div key={order.id} className="mb-3">
+                      <OrderCard
+                        order={order}
+                        slug={slug}
+                        socketRef={socketRef}
+                        onCancel={handleCancel}
+                        onDismiss={handleDismissOrder}
+                        onReorder={handleReorder}
+                      />
+                    </div>
+                  ))}
+                </div>
               ))
             )}
           </>
@@ -331,9 +337,11 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
         {/* Order meta */}
         <div className="flex items-start justify-between mb-3">
           <div>
-            <p className="text-xs text-gray-400 font-medium tracking-wide">TOKEN</p>
-            <p className="font-black text-gray-900 text-xl leading-none">
-              #{fmtToken(order.daily_order_number)}
+            <p className="text-xs text-gray-400 font-medium tracking-wide">
+              {order.order_type === 'takeaway' ? 'PICKUP TOKEN' : 'TABLE TOKEN'}
+            </p>
+            <p className="font-black text-gray-900 text-xl leading-none tracking-tight">
+              {fmtToken(order.daily_order_number, order.order_type)}
             </p>
           </div>
           <div className="text-right">
