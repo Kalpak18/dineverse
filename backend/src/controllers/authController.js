@@ -200,6 +200,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               phone, logo_url, cover_image_url,
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+              pan_number, tax_inclusive, gst_verified, business_type, country,
               plan_type, plan_start_date, plan_expiry_date, created_at,
               parent_cafe_id
        FROM cafes WHERE id = $1`,
@@ -221,6 +222,24 @@ exports.getMe = asyncHandler(async (req, res) => {
 });
 
 // ─── Update Profile ───────────────────────────────────────────
+// ── GSTIN format validator (India) ────────────────────────────
+// Pattern: 2-digit state code + 10-char PAN + entity digit + Z + checksum
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const VALID_STATE_CODES = new Set([
+  '01','02','03','04','05','06','07','08','09','10','11','12','13','14','15',
+  '16','17','18','19','20','21','22','23','24','25','26','27','28','29','30',
+  '31','32','33','34','35','36','37','38',
+]);
+
+function validateGstin(gstin) {
+  if (!gstin) return { valid: false, reason: 'GSTIN is empty' };
+  const g = gstin.toUpperCase().trim();
+  if (!GSTIN_REGEX.test(g)) return { valid: false, reason: 'GSTIN format is invalid' };
+  const stateCode = g.slice(0, 2);
+  if (!VALID_STATE_CODES.has(stateCode)) return { valid: false, reason: `Unknown state code: ${stateCode}` };
+  return { valid: true };
+}
+
 exports.updateProfile = asyncHandler(async (req, res) => {
   const {
     name, description,
@@ -228,7 +247,15 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     phone, logo_url, cover_image_url,
     name_style, latitude, longitude,
     gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+    pan_number, tax_inclusive, business_type, country,
   } = req.body;
+
+  // Validate GSTIN format if provided — set gst_verified accordingly
+  let gstVerified = false;
+  if (gst_number && gst_number.trim()) {
+    const check = validateGstin(gst_number);
+    gstVerified = check.valid;
+  }
 
   if (!phone || !phone.trim()) return fail(res, 'Phone number is required');
 
@@ -255,12 +282,18 @@ exports.updateProfile = asyncHandler(async (req, res) => {
            fssai_number    = COALESCE($16, fssai_number),
            upi_id          = COALESCE($17, upi_id),
            bill_prefix     = COALESCE($18, bill_prefix),
-           bill_footer     = COALESCE($19, bill_footer)
-       WHERE id = $20
+           bill_footer     = COALESCE($19, bill_footer),
+           pan_number      = $20,
+           tax_inclusive   = COALESCE($21, tax_inclusive),
+           gst_verified    = $22,
+           business_type   = COALESCE($23, business_type),
+           country         = COALESCE($24, country)
+       WHERE id = $25
        RETURNING id, name, slug, email, description,
                  address, address_line2, city, state, pincode,
                  phone, logo_url, cover_image_url, name_style, latitude, longitude,
                  gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+                 pan_number, tax_inclusive, gst_verified, business_type, country,
                  parent_cafe_id`,
       [name, description,
        address, address_line2 || null, city || null, state || null, pincode || null,
@@ -269,10 +302,14 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        gst_number || null, gst_rate != null ? parseInt(gst_rate) : null,
        fssai_number || null, upi_id || null,
        bill_prefix || null, bill_footer || null,
+       pan_number || null,
+       tax_inclusive != null ? Boolean(tax_inclusive) : null,
+       gstVerified,
+       business_type || null, country || null,
        req.cafeId]
     );
   } catch {
-    // Migration 016 not applied — fall back to base columns only
+    // Migration 016/027 not applied — fall back to base columns only
     result = await db.query(
       `UPDATE cafes
        SET name            = COALESCE($1,  name),

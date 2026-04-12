@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getCafeBySlug, getCafeTables, createReservation } from '../../services/api';
+import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -39,7 +39,8 @@ export default function CafeEntry() {
   const [areas, setAreas]         = useState([]);
   const [hasTables, setHasTables] = useState(false);
   const [loading, setLoading]     = useState(true);
-  const [showReserve, setShowReserve] = useState(false);
+  const [showReserve, setShowReserve]   = useState(false);
+  const [showWaitlist, setShowWaitlist] = useState(false);
   const [myBookings, setMyBookings] = useState([]);
   const socketRef = useRef(null);
 
@@ -320,6 +321,14 @@ export default function CafeEntry() {
           📅 Book a Table in Advance
         </button>
 
+        {/* Join Waitlist */}
+        <button
+          onClick={() => setShowWaitlist(true)}
+          className="w-full mt-2 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+        >
+          🕐 Join Waitlist
+        </button>
+
         {/* My Bookings — live status tracker */}
         {myBookings.length > 0 && (
           <div className="mt-4 space-y-2">
@@ -403,6 +412,10 @@ export default function CafeEntry() {
           Powered by <span className="text-brand-400">DineVerse</span>
         </p>
       </div>
+
+      {showWaitlist && (
+        <WaitlistModal slug={slug} cafeName={cafe.name} onClose={() => setShowWaitlist(false)} />
+      )}
 
       {showReserve && (
         <ReservationModal
@@ -620,6 +633,119 @@ function ReservationModal({ slug, cafeName, onClose, onBooked }) {
             {saving ? 'Booking…' : 'Confirm Reservation'}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Waitlist Join Modal ──────────────────────────────────────
+function WaitlistModal({ slug, cafeName, onClose }) {
+  const [form, setForm] = useState({ customer_name: '', customer_phone: '', party_size: 2, notes: '' });
+  const [saving, setSaving] = useState(false);
+  const [joined, setJoined] = useState(null); // { position }
+  const [called, setCalled] = useState(false); // true when café seats this customer
+  const socketRef = useRef(null);
+
+  // Join per-entry socket room once we have the entry ID, listen for café call
+  useEffect(() => {
+    if (!joined?.id) return;
+    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    socketRef.current = socket;
+    socket.emit('track_waitlist', joined.id);
+    socket.on('waitlist_called', () => {
+      setCalled(true);
+      toast.success('Your table is ready! Please proceed to the café.', { duration: 8000 });
+    });
+    return () => socket.disconnect();
+  }, [joined?.id]);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.customer_name.trim()) return toast.error('Name is required');
+    setSaving(true);
+    try {
+      const { data } = await joinWaitlist(slug, {
+        customer_name:  form.customer_name.trim(),
+        customer_phone: form.customer_phone.trim(),
+        party_size:     parseInt(form.party_size) || 2,
+        notes:          form.notes.trim() || undefined,
+      });
+      setJoined(data.entry);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Could not join waitlist');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-4 pb-4 sm:pb-0 bg-black/50">
+      <div className="bg-white rounded-2xl w-full max-w-xs shadow-xl">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h3 className="font-bold text-gray-900">Join Waitlist</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        {joined ? (
+          <div className="px-5 py-6 text-center space-y-3">
+            {called ? (
+              <>
+                <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto text-3xl">🍽️</div>
+                <p className="font-bold text-green-700 text-lg">Your table is ready!</p>
+                <p className="text-sm text-gray-500">Please proceed to <strong>{cafeName}</strong>. The team is expecting you.</p>
+              </>
+            ) : (
+              <>
+                <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto text-3xl">🕐</div>
+                <p className="font-bold text-gray-900">You're on the waitlist!</p>
+                <p className="text-sm text-gray-500">
+                  You are <strong className="text-brand-600">#{joined.position}</strong> in line at <strong>{cafeName}</strong>.
+                </p>
+                <p className="text-xs text-gray-400">The café will notify you when your table is ready.</p>
+              </>
+            )}
+            <button onClick={onClose} className="btn-primary w-full mt-2">Done</button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
+            <p className="text-sm text-gray-500">Add yourself to the waiting list at <strong>{cafeName}</strong>.</p>
+            <div>
+              <label className="label">Your Name *</label>
+              <input
+                className="input" placeholder="e.g. Rahul"
+                value={form.customer_name}
+                onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Mobile Number</label>
+              <input
+                className="input" type="tel" placeholder="for café to reach you"
+                value={form.customer_phone}
+                onChange={(e) => setForm((f) => ({ ...f, customer_phone: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Party Size</label>
+              <input
+                className="input" type="number" min="1" max="50"
+                value={form.party_size}
+                onChange={(e) => setForm((f) => ({ ...f, party_size: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="label">Notes (optional)</label>
+              <input
+                className="input" placeholder="e.g. high chair needed"
+                value={form.notes}
+                onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+            <button type="submit" disabled={saving} className="btn-primary w-full">
+              {saving ? 'Adding…' : 'Join Waitlist'}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

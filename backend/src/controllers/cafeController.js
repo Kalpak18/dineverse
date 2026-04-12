@@ -7,7 +7,11 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const result = await db.query(
     `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
-            name_style, latitude, longitude, city, is_open, gst_rate, gst_number
+            name_style, latitude, longitude, city, is_open,
+            gst_rate, gst_number, fssai_number,
+            COALESCE(tax_inclusive, true) AS tax_inclusive,
+            COALESCE(business_type, 'restaurant') AS business_type,
+            COALESCE(country, 'India') AS country
      FROM cafes WHERE slug = $1 AND is_active = true`,
     [slug]
   );
@@ -33,6 +37,34 @@ exports.exploreCafes = asyncHandler(async (req, res) => {
      LIMIT 50`,
     params
   );
+  ok(res, { cafes: result.rows });
+});
+
+// Public: get cafés near a lat/lng point, sorted by distance
+exports.getNearbyCafes = asyncHandler(async (req, res) => {
+  const lat    = parseFloat(req.query.lat);
+  const lng    = parseFloat(req.query.lng);
+  const radius = Math.min(500, Math.max(0.5, parseFloat(req.query.radius) || 30));
+
+  if (isNaN(lat) || isNaN(lng)) return fail(res, 'lat and lng are required', 400);
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return fail(res, 'Invalid coordinates', 400);
+
+  const result = await db.query(`
+    WITH dist AS (
+      SELECT c.id, c.name, c.slug, c.description, c.city, c.address,
+             c.logo_url, c.cover_image_url, c.latitude, c.longitude,
+             6371 * acos(LEAST(1.0,
+               cos(radians($1)) * cos(radians(c.latitude))
+                 * cos(radians(c.longitude) - radians($2))
+               + sin(radians($1)) * sin(radians(c.latitude))
+             )) AS distance_km
+      FROM cafes c
+      WHERE c.is_active = true AND c.plan_expiry_date > NOW()
+        AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL
+    )
+    SELECT * FROM dist WHERE distance_km <= $3 ORDER BY distance_km ASC LIMIT 100
+  `, [lat, lng, radius]);
+
   ok(res, { cafes: result.rows });
 });
 

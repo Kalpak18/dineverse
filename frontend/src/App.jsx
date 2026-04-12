@@ -5,6 +5,7 @@ import { useAdminAuth } from './context/AdminAuthContext';
 // Landing + Explore
 import LandingPage from './pages/LandingPage';
 import ExplorePage from './pages/customer/ExplorePage';
+import MapPage from './pages/customer/MapPage';
 
 // Customer pages
 import CafeEntry from './pages/customer/CafeEntry';
@@ -30,6 +31,9 @@ import OffersPage from './pages/owner/OffersPage';
 import ReservationsPage from './pages/owner/ReservationsPage';
 import RatingsPage from './pages/owner/RatingsPage';
 import StaffPage from './pages/owner/StaffPage';
+import InventoryPage from './pages/owner/InventoryPage';
+import CustomersPage from './pages/owner/CustomersPage';
+import WaitlistPage from './pages/owner/WaitlistPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -67,6 +71,7 @@ export default function App() {
       {/* Landing + Explore */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/explore" element={<ExplorePage />} />
+      <Route path="/map"     element={<MapPage />} />
 
       {/* Customer routes */}
       <Route path="/cafe/:slug" element={<CafeEntry />} />
@@ -102,6 +107,9 @@ export default function App() {
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="ratings" element={<RatingsPage />} />
         <Route path="staff" element={<StaffPage />} />
+        <Route path="inventory" element={<InventoryPage />} />
+        <Route path="customers" element={<CustomersPage />} />
+        <Route path="waitlist" element={<WaitlistPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

@@ -89,13 +89,14 @@ export default function MenuPage() {
         const cafeData = cafeRes.data.cafe;
         setCafe(cafeData);
         setCafeOpen(cafeData.is_open !== false);
-        // Store GST info in session so CartPage can show breakdown
+        // Store tax info in session so CartPage can show breakdown
         const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
         sessionStorage.setItem(`session_${slug}`, JSON.stringify({
           ...existing,
-          gst_rate:   cafeData.gst_rate ?? 0,
-          gst_number: cafeData.gst_number || '',
-          is_open:    cafeData.is_open !== false,
+          gst_rate:     cafeData.gst_rate ?? 0,
+          gst_number:   cafeData.gst_number || '',
+          tax_inclusive: cafeData.tax_inclusive !== false,
+          is_open:      cafeData.is_open !== false,
         }));
         const menuData = menuRes.data.menu;
         setMenu(menuData);

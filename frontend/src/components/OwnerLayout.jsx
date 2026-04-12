@@ -17,6 +17,9 @@ const navItems = [
   { to: '/owner/analytics',    label: 'Analytics',    icon: '📈' },
   { to: '/owner/staff',        label: 'Staff',        icon: '👥' },
   { to: '/owner/tables',       label: 'Tables',       icon: '🪑' },
+  { to: '/owner/inventory',    label: 'Inventory',    icon: '📦' },
+  { to: '/owner/customers',    label: 'Customers',    icon: '🧑‍🤝‍🧑' },
+  { to: '/owner/waitlist',     label: 'Waitlist',     icon: '🕐' },
   { to: '/owner/billing',      label: 'Billing',      icon: '💳' },
   { to: '/owner/help',         label: 'Help',         icon: '🎫' },
 ];

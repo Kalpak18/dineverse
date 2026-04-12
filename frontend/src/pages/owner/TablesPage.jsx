@@ -1,15 +1,57 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAreas, createArea, updateArea, deleteArea,
   createTable, updateTable, deleteTable,
 } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
+import QRCode from 'qrcode';
+
+function QRModal({ table, slug, onClose }) {
+  const canvasRef = useRef(null);
+  const url = `${window.location.origin}/cafe/${slug}?table=${encodeURIComponent(table.label)}`;
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, url, { width: 220, margin: 2 });
+    }
+  }, [url]);
+
+  const handleDownload = () => {
+    const canvas = canvasRef.current;
+    const link = document.createElement('a');
+    link.download = `qr-table-${table.label}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/50"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xs text-center space-y-4">
+        <h3 className="font-bold text-gray-900">QR Code — {table.label}</h3>
+        <p className="text-xs text-gray-400 break-all">{url}</p>
+        <div className="flex justify-center">
+          <canvas ref={canvasRef} className="rounded-xl" />
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleDownload} className="btn-primary flex-1 text-sm">⬇ Download</button>
+          <button onClick={onClose} className="btn-secondary flex-1 text-sm">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function TablesPage() {
+  const { cafe } = useAuth();
   const [areas, setAreas]         = useState([]);
   const [unassigned, setUnassigned] = useState([]);
   const [loading, setLoading]     = useState(true);
+  const [qrTable, setQrTable]     = useState(null); // table object
 
   // UI state
   const [newAreaName, setNewAreaName]   = useState('');
@@ -246,6 +288,13 @@ export default function TablesPage() {
                     <span className="font-medium truncate">{table.label}</span>
                     <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                       <button
+                        onClick={() => setQrTable(table)}
+                        title="Show QR code"
+                        className="text-xs text-gray-400 hover:text-brand-500"
+                      >
+                        ▦
+                      </button>
+                      <button
                         onClick={() => handleToggleTable(table)}
                         title={table.is_active ? 'Deactivate' : 'Activate'}
                         className="text-xs text-gray-400 hover:text-amber-500"
@@ -277,6 +326,10 @@ export default function TablesPage() {
             Customers will see dropdowns on your ordering page.
           </p>
         </div>
+      )}
+
+      {qrTable && (
+        <QRModal table={qrTable} slug={cafe?.slug} onClose={() => setQrTable(null)} />
       )}
     </div>
   );

@@ -5,7 +5,7 @@ const checkSubscription = require('../middleware/checkSubscription');
 const {
   getCategories, validateCategory, createCategory, updateCategory, deleteCategory,
   getMenuItems, validateMenuItem, createMenuItem, updateMenuItem, deleteMenuItem,
-  toggleAvailability, updateStock,
+  toggleAvailability, updateStock, getInventory,
 } = require('../controllers/menuController');
 
 // All menu routes require authentication + active subscription
@@ -24,5 +24,6 @@ router.patch('/items/:id', requireOwner, updateMenuItem);
 router.delete('/items/:id', requireOwner, deleteMenuItem);
 router.patch('/items/:id/toggle', requireOwner, toggleAvailability);
 router.patch('/items/:id/stock',  requireOwner, updateStock);
+router.get('/inventory',          requireOwner, getInventory);
 
 module.exports = router;

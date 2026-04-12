@@ -7,6 +7,43 @@ import toast from 'react-hot-toast';
 
 const toSlug = (str) => str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
 
+// ── GSTIN validation (India) ──────────────────────────────────
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+const GSTIN_STATE_CODES = {
+  '01':'Jammu & Kashmir','02':'Himachal Pradesh','03':'Punjab','04':'Chandigarh',
+  '05':'Uttarakhand','06':'Haryana','07':'Delhi','08':'Rajasthan','09':'Uttar Pradesh',
+  '10':'Bihar','11':'Sikkim','12':'Arunachal Pradesh','13':'Nagaland','14':'Manipur',
+  '15':'Mizoram','16':'Tripura','17':'Meghalaya','18':'Assam','19':'West Bengal',
+  '20':'Jharkhand','21':'Odisha','22':'Chhattisgarh','23':'Madhya Pradesh',
+  '24':'Gujarat','25':'Daman & Diu','26':'Dadra & Nagar Haveli','27':'Maharashtra',
+  '28':'Andhra Pradesh (old)','29':'Karnataka','30':'Goa','31':'Lakshadweep',
+  '32':'Kerala','33':'Tamil Nadu','34':'Puducherry','35':'Andaman & Nicobar',
+  '36':'Telangana','37':'Andhra Pradesh','38':'Ladakh',
+};
+
+function validateGstin(gstin) {
+  if (!gstin || !gstin.trim()) return { status: 'empty' };
+  const g = gstin.toUpperCase().trim();
+  if (g.length < 15) return { status: 'short', msg: `${g.length}/15 characters` };
+  if (!GSTIN_REGEX.test(g)) return { status: 'invalid', msg: 'Format invalid — expected: 22AAAAA0000A1Z5' };
+  const stateCode = g.slice(0, 2);
+  const stateName = GSTIN_STATE_CODES[stateCode];
+  if (!stateName) return { status: 'invalid', msg: `Unknown state code: ${stateCode}` };
+  return { status: 'valid', msg: `Format valid · ${stateName}` };
+}
+
+const BUSINESS_TYPES = [
+  { value: 'restaurant',     label: 'Restaurant (Non-AC)',         rate: 5  },
+  { value: 'restaurant_ac',  label: 'Restaurant (AC)',             rate: 5  },
+  { value: 'cafe',           label: 'Café / Coffee Shop',          rate: 5  },
+  { value: 'bakery',         label: 'Bakery / Sweet Shop',         rate: 5  },
+  { value: 'hotel_rest',     label: 'Hotel Restaurant (room ≥₹7500)', rate: 18 },
+  { value: 'bar',            label: 'Bar / Pub (with liquor)',      rate: 18 },
+  { value: 'food_stall',     label: 'Food Stall / Cloud Kitchen',  rate: 5  },
+  { value: 'composition',    label: 'Composition Scheme',          rate: 0  },
+  { value: 'unregistered',   label: 'Not GST Registered (<₹20L turnover)', rate: 0 },
+];
+
 const INDIAN_STATES = [
   'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
   'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
@@ -45,6 +82,10 @@ export default function ProfilePage() {
     upi_id:          cafe?.upi_id    || '',
     bill_prefix:     cafe?.bill_prefix || 'INV',
     bill_footer:     cafe?.bill_footer || '',
+    pan_number:      cafe?.pan_number  || '',
+    tax_inclusive:   cafe?.tax_inclusive !== false,
+    business_type:   cafe?.business_type || 'restaurant',
+    country:         cafe?.country || 'India',
   });
   const [saving, setSaving] = useState(false);
 
@@ -259,49 +300,192 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* ── Billing Details ── */}
-        <div className="card space-y-4">
+        {/* ── Tax & Legal ── */}
+        <div className="card space-y-5">
           <div>
-            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Billing Details</h2>
-            <p className="text-xs text-gray-400 mt-0.5">These details appear on every printed bill/receipt.</p>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Tax & Legal</h2>
+            <p className="text-xs text-gray-400 mt-0.5">These details appear on every printed bill/receipt and are used to calculate tax on orders.</p>
           </div>
 
+          {/* Business Type + Country */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">GST Number</label>
-              <input
-                className="input uppercase"
-                value={form.gst_number}
-                onChange={set('gst_number')}
-                placeholder="22AAAAA0000A1Z5"
-                maxLength={15}
-              />
-              <p className="text-xs text-gray-400 mt-1">Optional. Printed on bill if provided.</p>
+              <label className="label">Business Type</label>
+              <select
+                className="input"
+                value={form.business_type}
+                onChange={(e) => {
+                  const btype = BUSINESS_TYPES.find((b) => b.value === e.target.value);
+                  setForm((f) => ({
+                    ...f,
+                    business_type: e.target.value,
+                    gst_rate: btype?.rate ?? f.gst_rate,
+                  }));
+                }}
+              >
+                {BUSINESS_TYPES.map((b) => (
+                  <option key={b.value} value={b.value}>{b.label}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-400 mt-1">Auto-suggests correct GST rate.</p>
             </div>
             <div>
-              <label className="label">GST Rate</label>
+              <label className="label">Country</label>
+              <select
+                className="input"
+                value={form.country}
+                onChange={set('country')}
+              >
+                <option value="India">India</option>
+                <option value="Other">Other (manual rate)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* GSTIN with live format validation */}
+          {(() => {
+            const gCheck = validateGstin(form.gst_number);
+            return (
+              <div>
+                <label className="label">
+                  GSTIN (GST Identification Number)
+                  {gCheck.status === 'valid' && (
+                    <span className="ml-2 text-xs text-green-600 font-semibold bg-green-50 px-2 py-0.5 rounded-full">
+                      ✓ Format Valid
+                    </span>
+                  )}
+                </label>
+                <input
+                  className={`input uppercase font-mono tracking-wider ${
+                    gCheck.status === 'valid' ? 'border-green-400 ring-1 ring-green-400' :
+                    gCheck.status === 'invalid' ? 'border-red-400 ring-1 ring-red-400' : ''
+                  }`}
+                  value={form.gst_number}
+                  onChange={(e) => setForm((f) => ({ ...f, gst_number: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                  placeholder="22AAAAA0000A1Z5"
+                  maxLength={15}
+                />
+                {gCheck.status === 'valid' && (
+                  <p className="text-xs text-green-600 mt-1">✓ {gCheck.msg}</p>
+                )}
+                {gCheck.status === 'invalid' && (
+                  <p className="text-xs text-red-500 mt-1">✕ {gCheck.msg}</p>
+                )}
+                {gCheck.status === 'short' && form.gst_number && (
+                  <p className="text-xs text-amber-600 mt-1">{gCheck.msg}</p>
+                )}
+                {gCheck.status === 'empty' && (
+                  <p className="text-xs text-gray-400 mt-1">Leave blank if not GST registered. GSTIN is 15 characters.</p>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* PAN Number */}
+          <div>
+            <label className="label">PAN Number</label>
+            <input
+              className="input uppercase font-mono tracking-wider"
+              value={form.pan_number}
+              onChange={(e) => setForm((f) => ({ ...f, pan_number: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+              placeholder="AAAAA0000A"
+              maxLength={10}
+            />
+            {form.pan_number && !/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number) ? (
+              <p className="text-xs text-red-500 mt-1">✕ PAN format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F)</p>
+            ) : form.pan_number ? (
+              <p className="text-xs text-green-600 mt-1">✓ Format valid</p>
+            ) : (
+              <p className="text-xs text-gray-400 mt-1">10-character PAN of the business owner / firm.</p>
+            )}
+          </div>
+
+          {/* GST Rate + Tax Inclusive toggle */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">GST Rate (%)</label>
               <select
                 className="input"
                 value={form.gst_rate}
                 onChange={(e) => setForm((f) => ({ ...f, gst_rate: parseInt(e.target.value) }))}
               >
                 <option value={0}>0% — Not registered / Composition</option>
-                <option value={5}>5% — Standard restaurant</option>
-                <option value={18}>18% — AC restaurant / liquor / 5-star</option>
+                <option value={5}>5% — Standard (CGST 2.5% + SGST 2.5%)</option>
+                <option value={12}>12% — Special items</option>
+                <option value={18}>18% — Hotel / Liquor (CGST 9% + SGST 9%)</option>
+                <option value={28}>28% — Luxury</option>
               </select>
+            </div>
+            <div>
+              <label className="label">Tax Treatment</label>
+              <div className="flex rounded-xl border border-gray-200 overflow-hidden mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, tax_inclusive: true }))}
+                  className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                    form.tax_inclusive ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Tax Inclusive
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, tax_inclusive: false }))}
+                  className={`flex-1 py-2.5 text-xs font-medium transition-colors ${
+                    !form.tax_inclusive ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Tax Exclusive
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                {form.tax_inclusive
+                  ? 'Menu prices already include GST — tax extracted from total.'
+                  : 'GST added on top of menu prices at checkout.'}
+              </p>
             </div>
           </div>
 
+          {/* Tax example preview */}
+          {form.gst_rate > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold mb-1">How this affects a ₹100 item:</p>
+              {form.tax_inclusive ? (
+                <>
+                  <p>• Menu price shown: <strong>₹100.00</strong> (includes GST)</p>
+                  <p>• Base value: <strong>₹{(100 / (1 + form.gst_rate / 100)).toFixed(2)}</strong></p>
+                  <p>• CGST {form.gst_rate / 2}%: <strong>₹{((100 - 100 / (1 + form.gst_rate / 100)) / 2).toFixed(2)}</strong> + SGST {form.gst_rate / 2}%: same</p>
+                  <p className="text-blue-600">Customer pays ₹100.00 — tax is already inside the price.</p>
+                </>
+              ) : (
+                <>
+                  <p>• Menu price shown: <strong>₹100.00</strong> (pre-tax)</p>
+                  <p>• GST {form.gst_rate}% added at checkout: <strong>₹{(100 * form.gst_rate / 100).toFixed(2)}</strong></p>
+                  <p>• CGST {form.gst_rate / 2}%: <strong>₹{(100 * form.gst_rate / 100 / 2).toFixed(2)}</strong> + SGST: same</p>
+                  <p className="text-blue-600">Customer pays ₹{(100 + 100 * form.gst_rate / 100).toFixed(2)} — tax added on top.</p>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* FSSAI */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">FSSAI License No.</label>
               <input
-                className="input"
+                className="input font-mono"
                 value={form.fssai_number}
                 onChange={set('fssai_number')}
                 placeholder="10020012345678"
                 maxLength={20}
               />
+              {form.fssai_number && (form.fssai_number.length < 14 || form.fssai_number.length > 14) ? (
+                <p className="text-xs text-amber-600 mt-1">FSSAI license is 14 digits</p>
+              ) : form.fssai_number ? (
+                <p className="text-xs text-green-600 mt-1">✓ Length valid</p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-1">Mandatory for food businesses. Printed on bill.</p>
+              )}
             </div>
             <div>
               <label className="label">UPI ID</label>
@@ -314,6 +498,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* Invoice */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="label">Invoice Prefix</label>
@@ -343,26 +528,32 @@ export default function ProfilePage() {
           {/* Live bill header preview */}
           <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl px-4 py-3 text-xs text-gray-500 space-y-0.5">
             <p className="font-semibold text-gray-700 mb-1">Bill header preview</p>
-            <p
-              className="text-sm text-center text-gray-900 uppercase tracking-wide"
-              style={activeStyle.style}
-            >
+            <p className="text-sm text-center text-gray-900 uppercase tracking-wide" style={activeStyle.style}>
               {form.name || 'Your Café Name'}
             </p>
-            {form.address    && <p className="text-center">{form.address}</p>}
+            {form.address      && <p className="text-center">{form.address}</p>}
             {form.address_line2 && <p className="text-center">{form.address_line2}</p>}
             {(form.city || form.state || form.pincode) && (
-              <p className="text-center">
-                {[form.city, form.state, form.pincode].filter(Boolean).join(', ')}
+              <p className="text-center">{[form.city, form.state, form.pincode].filter(Boolean).join(', ')}</p>
+            )}
+            {form.phone && <p className="text-center">Ph: {form.phone}</p>}
+            {form.gst_number && (
+              <p className="text-center font-mono">
+                GSTIN: {form.gst_number.toUpperCase()}
+                {validateGstin(form.gst_number).status === 'valid' && (
+                  <span className="ml-1 text-green-600">✓</span>
+                )}
               </p>
             )}
-            {form.phone      && <p className="text-center">Ph: {form.phone}</p>}
-            {form.gst_number && <p className="text-center">GSTIN: {form.gst_number.toUpperCase()}</p>}
-            {form.gst_number && form.gst_rate > 0 && (
-              <p className="text-center">GST {form.gst_rate}% (CGST {form.gst_rate/2}% + SGST {form.gst_rate/2}%)</p>
+            {form.pan_number && <p className="text-center font-mono">PAN: {form.pan_number.toUpperCase()}</p>}
+            {form.gst_rate > 0 && (
+              <p className="text-center">
+                GST {form.gst_rate}% — CGST {form.gst_rate / 2}% + SGST {form.gst_rate / 2}%
+                {form.tax_inclusive ? ' (Inclusive)' : ' (Exclusive)'}
+              </p>
             )}
-            {form.fssai_number && <p className="text-center">FSSAI No: {form.fssai_number}</p>}
-            {form.upi_id       && <p className="text-center">UPI: {form.upi_id}</p>}
+            {form.fssai_number && <p className="text-center">FSSAI: {form.fssai_number}</p>}
+            {form.upi_id && <p className="text-center">UPI: {form.upi_id}</p>}
             <p className="mt-1 text-center text-gray-400 italic">{form.bill_footer || '(footer message)'}</p>
           </div>
         </div>

@@ -133,3 +133,48 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     expenses:            expensesRes.rows[0].expense_list || [],
   });
 });
+
+// Owner: export orders for date range as CSV
+exports.exportOrdersCSV = asyncHandler(async (req, res) => {
+  const { from, to } = req.query;
+  const today = new Date().toISOString().split('T')[0];
+  const startDate = from || today;
+  const endDate   = to   || today;
+
+  const result = await db.query(
+    `SELECT
+       COALESCE(o.daily_order_number, o.order_number) AS token,
+       o.order_type,
+       o.customer_name,
+       o.customer_phone,
+       o.table_number,
+       o.status,
+       o.total_amount,
+       o.discount_amount,
+       o.tip_amount,
+       o.final_amount,
+       o.notes,
+       TO_CHAR(o.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD HH24:MI') AS created_at
+     FROM orders o
+     WHERE o.cafe_id = $1
+       AND DATE(o.created_at) BETWEEN $2 AND $3
+     ORDER BY o.created_at DESC`,
+    [req.cafeId, startDate, endDate]
+  );
+
+  const headers = [
+    'Token','Type','Customer','Phone','Table','Status',
+    'Subtotal','Discount','Tip','Total','Notes','Date'
+  ];
+  const rows = result.rows.map((r) => [
+    r.token, r.order_type, `"${r.customer_name}"`, r.customer_phone || '',
+    `"${r.table_number}"`, r.status,
+    r.total_amount, r.discount_amount || 0, r.tip_amount || 0, r.final_amount,
+    `"${(r.notes || '').replace(/"/g, "'")}"`, r.created_at,
+  ].join(','));
+
+  const csv = [headers.join(','), ...rows].join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="orders-${startDate}-to-${endDate}.csv"`);
+  res.send(csv);
+});

@@ -26,15 +26,37 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   const timeStr  = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
   // ── GST calculation ──────────────────────────────────────────────────────
-  const gstRate     = parseInt(cafe?.gst_rate ?? 5);   // total GST %
-  const hasGst      = !!(cafe?.gst_number) && gstRate > 0;
+  const gstRate      = parseInt(cafe?.gst_rate ?? 5);
+  const hasGst       = !!(cafe?.gst_number) && gstRate > 0;
+  const taxInclusive = cafe?.tax_inclusive !== false; // default true (backward-compat)
 
-  // prices in DB are GST-inclusive; back-calculate base + tax
-  const total       = parseFloat(bill.total) || 0;
-  const taxableAmt  = hasGst ? total / (1 + gstRate / 100) : total;
-  const totalTax    = hasGst ? total - taxableAmt : 0;
-  const cgst        = totalTax / 2;
-  const sgst        = totalTax / 2;
+  const total        = parseFloat(bill.total) || 0;
+
+  // Use stored tax_amount from order snapshot if available; re-derive otherwise
+  const storedTax    = parseFloat(bill.orders?.[0]?.tax_amount ?? -1);
+  let totalTax, taxableAmt;
+
+  if (hasGst) {
+    if (storedTax >= 0) {
+      // Use the recorded tax snapshot (most accurate)
+      totalTax   = storedTax * (bill.orders?.length || 1); // sum across orders if aggregated
+      taxableAmt = total - totalTax;
+    } else if (taxInclusive) {
+      // Tax baked into price — extract
+      taxableAmt = total / (1 + gstRate / 100);
+      totalTax   = total - taxableAmt;
+    } else {
+      // Tax was added on top — total is gross = base + tax
+      taxableAmt = total / (1 + gstRate / 100);
+      totalTax   = total - taxableAmt;
+    }
+  } else {
+    taxableAmt = total;
+    totalTax   = 0;
+  }
+
+  const cgst = totalTax / 2;
+  const sgst = totalTax / 2;
 
   const change      = cashReceived != null ? (parseFloat(cashReceived) - total) : null;
 
@@ -172,6 +194,8 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     ${cafe?.email    ? `<p>${escHtml(cafe.email)}</p>`              : ''}
     ${cafe?.gst_number
       ? `<p>GSTIN: ${escHtml(cafe.gst_number.toUpperCase())}</p>`   : ''}
+    ${cafe?.pan_number
+      ? `<p>PAN: ${escHtml(cafe.pan_number.toUpperCase())}</p>`      : ''}
     ${cafe?.fssai_number
       ? `<p>FSSAI No: ${escHtml(cafe.fssai_number)}</p>`            : ''}
   </div>
@@ -282,7 +306,7 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   <div class="footer">
     <p>${escHtml(cafe?.bill_footer || 'Thank you for your visit! See you again.')}</p>
     ${hasGst
-      ? `<p style="margin-top:3px;font-size:9px;">*All prices are GST inclusive (${gstRate}%)</p>`
+      ? `<p style="margin-top:3px;font-size:9px;">*All prices are GST ${taxInclusive ? 'inclusive' : 'exclusive'} (${gstRate}%)</p>`
       : ''}
     <p style="margin-top:4px;color:#999;font-size:9px;">Powered by DineVerse</p>
   </div>

@@ -34,14 +34,31 @@ export default function CartPage() {
     return () => socket.disconnect();
   }, [slug]);
 
-  // GST breakdown (prices are GST-inclusive)
-  const gstRate    = parseInt(session?.gst_rate ?? 0);
-  const hasGst     = !!(session?.gst_number) && gstRate > 0;
-  const taxableAmt = hasGst ? total / (1 + gstRate / 100) : total;
-  const totalTax   = hasGst ? total - taxableAmt : 0;
+  // GST breakdown — supports both inclusive (baked into price) and exclusive (added on top)
+  const gstRate     = parseInt(session?.gst_rate ?? 0);
+  const hasGst      = !!(session?.gst_number) && gstRate > 0;
+  const taxInclusive = session?.tax_inclusive !== false; // default true
 
+  let taxableAmt, totalTax, grandTotal;
   const discountAmt = offerPreview?.applied ? parseFloat(offerPreview.discount_amount || 0) : 0;
-  const grandTotal  = total - discountAmt + tip;
+
+  if (hasGst) {
+    if (taxInclusive) {
+      // Prices include GST — extract tax: tax = total × rate / (100 + rate)
+      taxableAmt = total / (1 + gstRate / 100);
+      totalTax   = total - taxableAmt;
+      grandTotal = total - discountAmt + tip;
+    } else {
+      // Prices are pre-tax — add GST on top
+      taxableAmt = total - discountAmt; // base after discount
+      totalTax   = taxableAmt * gstRate / 100;
+      grandTotal = taxableAmt + totalTax + tip;
+    }
+  } else {
+    taxableAmt = total;
+    totalTax   = 0;
+    grandTotal = total - discountAmt + tip;
+  }
   const activeOrders = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
 
   // Debounced offer preview: refetch when cart total changes
@@ -189,31 +206,54 @@ export default function CartPage() {
         </div>
         <div className="border-t border-gray-200 mt-3 pt-3 space-y-1.5 text-sm">
           {hasGst ? (
-            <>
-              <div className="flex justify-between text-gray-500">
-                <span>Base amount</span>
-                <span>₹{taxableAmt.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-500">
-                <span>CGST ({gstRate / 2}%)</span>
-                <span>₹{(totalTax / 2).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-500">
-                <span>SGST ({gstRate / 2}%)</span>
-                <span>₹{(totalTax / 2).toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-600 font-medium border-t border-gray-100 pt-1">
-                <span>Subtotal (incl. GST)</span>
-                <span>₹{total.toFixed(2)}</span>
-              </div>
-            </>
+            taxInclusive ? (
+              <>
+                <div className="flex justify-between text-gray-500">
+                  <span>Base amount</span>
+                  <span>₹{taxableAmt.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-500">
+                  <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
+                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-500">
+                  <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
+                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-600 font-medium border-t border-gray-100 pt-1">
+                  <span>Subtotal (GST {gstRate}% incl.)</span>
+                  <span>₹{total.toFixed(2)}</span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between text-gray-600">
+                  <span>Subtotal</span>
+                  <span>₹{total.toFixed(2)}</span>
+                </div>
+                {discountAmt > 0 && (
+                  <div className="flex justify-between text-green-600 font-medium">
+                    <span>Discount</span>
+                    <span>−₹{discountAmt.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-gray-500">
+                  <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
+                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-gray-500">
+                  <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
+                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                </div>
+              </>
+            )
           ) : (
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
               <span>₹{total.toFixed(2)}</span>
             </div>
           )}
-          {offerPreview?.applied && (
+          {offerPreview?.applied && taxInclusive && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
               <span>−₹{discountAmt.toFixed(2)}</span>

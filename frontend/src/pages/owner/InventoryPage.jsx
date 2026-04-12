@@ -1,0 +1,232 @@
+import { useState, useEffect, useCallback } from 'react';
+import { getInventory, updateStock } from '../../services/api';
+import toast from 'react-hot-toast';
+
+const LOW = 5;
+
+export default function InventoryPage() {
+  const [items, setItems]       = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [filter, setFilter]     = useState('all'); // all | low | out | untracked
+  const [search, setSearch]     = useState('');
+  const [restock, setRestock]   = useState(null); // { id, name, qty }
+  const [saving, setSaving]     = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const { data } = await getInventory();
+      setItems(data.items);
+    } catch { toast.error('Failed to load inventory'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleRestock = async (e) => {
+    e.preventDefault();
+    if (restock.qty === '' || restock.qty < 0) return toast.error('Enter a valid quantity');
+    setSaving(true);
+    try {
+      const { data } = await updateStock(restock.id, {
+        stock_quantity: parseInt(restock.qty),
+        track_stock: true,
+      });
+      setItems((prev) => prev.map((i) => i.id === restock.id ? {
+        ...i,
+        stock_quantity: data.item.stock_quantity,
+        track_stock: true,
+        is_available: data.item.is_available,
+        low_stock: data.item.stock_quantity <= LOW,
+        out_of_stock: data.item.stock_quantity <= 0,
+      } : i));
+      toast.success(`${restock.name} restocked to ${restock.qty}`);
+      setRestock(null);
+    } catch { toast.error('Failed to update stock'); }
+    finally { setSaving(false); }
+  };
+
+  const handleDisableTracking = async (item) => {
+    try {
+      await updateStock(item.id, { stock_quantity: null, track_stock: false });
+      setItems((prev) => prev.map((i) => i.id === item.id
+        ? { ...i, track_stock: false, stock_quantity: null, low_stock: false, out_of_stock: false }
+        : i));
+      toast.success('Stock tracking disabled');
+    } catch { toast.error('Failed'); }
+  };
+
+  const q = search.toLowerCase();
+  const filtered = items.filter((i) => {
+    if (q && !i.name.toLowerCase().includes(q) && !(i.category || '').toLowerCase().includes(q)) return false;
+    if (filter === 'low')       return i.track_stock && i.low_stock && !i.out_of_stock;
+    if (filter === 'out')       return i.track_stock && i.out_of_stock;
+    if (filter === 'untracked') return !i.track_stock;
+    return true;
+  });
+
+  const counts = {
+    low:       items.filter((i) => i.track_stock && i.low_stock && !i.out_of_stock).length,
+    out:       items.filter((i) => i.track_stock && i.out_of_stock).length,
+    untracked: items.filter((i) => !i.track_stock).length,
+  };
+
+  if (loading) return (
+    <div className="space-y-3 animate-pulse">
+      {[...Array(6)].map((_, i) => <div key={i} className="h-14 rounded-xl bg-gray-100" />)}
+    </div>
+  );
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Inventory</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{items.filter((i) => i.track_stock).length} items tracked</p>
+        </div>
+      </div>
+
+      {/* Alert cards */}
+      {(counts.out > 0 || counts.low > 0) && (
+        <div className="flex gap-3 flex-wrap">
+          {counts.out > 0 && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700 font-medium">
+              🚫 {counts.out} item{counts.out !== 1 ? 's' : ''} out of stock
+            </div>
+          )}
+          {counts.low > 0 && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-700 font-medium">
+              ⚠️ {counts.low} item{counts.low !== 1 ? 's' : ''} running low (≤{LOW})
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="flex gap-3 flex-wrap">
+        <input
+          type="text" placeholder="Search items…" value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="input flex-1 min-w-48 py-2"
+        />
+        <div className="flex rounded-xl border border-gray-200 overflow-hidden text-sm">
+          {[
+            { key: 'all', label: 'All' },
+            { key: 'out', label: `Out (${counts.out})` },
+            { key: 'low', label: `Low (${counts.low})` },
+            { key: 'untracked', label: `Untracked (${counts.untracked})` },
+          ].map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`px-3 py-2 font-medium transition-colors ${
+                filter === key ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-2">📦</div>
+          <p>No items match this filter.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
+                <th className="text-left px-4 py-3">Item</th>
+                <th className="text-left px-4 py-3">Category</th>
+                <th className="text-center px-4 py-3">Stock</th>
+                <th className="text-center px-4 py-3">Status</th>
+                <th className="text-right px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.map((item) => (
+                <tr key={item.id} className={`${item.out_of_stock ? 'bg-red-50/40' : item.low_stock ? 'bg-amber-50/40' : ''}`}>
+                  <td className="px-4 py-3 font-medium text-gray-900">{item.name}</td>
+                  <td className="px-4 py-3 text-gray-500">{item.category || '—'}</td>
+                  <td className="px-4 py-3 text-center">
+                    {item.track_stock
+                      ? <span className={`font-bold text-base ${item.out_of_stock ? 'text-red-600' : item.low_stock ? 'text-amber-600' : 'text-gray-900'}`}>
+                          {item.stock_quantity ?? '—'}
+                        </span>
+                      : <span className="text-gray-300 text-xs">not tracked</span>
+                    }
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    {!item.track_stock ? (
+                      <span className="text-xs text-gray-400">—</span>
+                    ) : item.out_of_stock ? (
+                      <span className="badge bg-red-100 text-red-700 text-xs">Out of stock</span>
+                    ) : item.low_stock ? (
+                      <span className="badge bg-amber-100 text-amber-700 text-xs">Low stock</span>
+                    ) : (
+                      <span className="badge bg-green-100 text-green-700 text-xs">OK</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setRestock({ id: item.id, name: item.name, qty: item.stock_quantity ?? 0 })}
+                        className="text-xs font-medium text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition-colors"
+                      >
+                        {item.track_stock ? 'Restock' : 'Enable & set'}
+                      </button>
+                      {item.track_stock && (
+                        <button
+                          onClick={() => handleDisableTracking(item)}
+                          className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+                          title="Disable stock tracking"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Restock modal */}
+      {restock && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/40"
+          onClick={(e) => { if (e.target === e.currentTarget) setRestock(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-xs p-6">
+            <h3 className="font-bold text-gray-900 mb-1">Update Stock</h3>
+            <p className="text-sm text-gray-500 mb-4">{restock.name}</p>
+            <form onSubmit={handleRestock} className="space-y-4">
+              <div>
+                <label className="label">New quantity</label>
+                <input
+                  type="number" min="0" autoFocus
+                  className="input"
+                  value={restock.qty}
+                  onChange={(e) => setRestock((r) => ({ ...r, qty: e.target.value }))}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={saving} className="btn-primary flex-1">
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+                <button type="button" onClick={() => setRestock(null)} className="btn-secondary flex-1">
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

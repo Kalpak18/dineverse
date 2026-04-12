@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getAnalytics, createExpense, deleteExpense } from '../../services/api';
+import { getAnalytics, createExpense, deleteExpense, exportOrdersCSV } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
@@ -115,6 +115,7 @@ export default function AnalyticsPage() {
   const [period, setPeriod] = useState('monthly');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +130,21 @@ export default function AnalyticsPage() {
   }, [period]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await exportOrdersCSV({ period });
+      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orders-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('CSV exported');
+    } catch { toast.error('Export failed'); }
+    finally { setExporting(false); }
+  };
 
   const handleDeleteExpense = async (id) => {
     try {
@@ -152,7 +168,12 @@ export default function AnalyticsPage() {
     <div className="max-w-4xl space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
-        <button onClick={load} className="btn-secondary text-sm">↻ Refresh</button>
+        <div className="flex gap-2">
+          <button onClick={handleExport} disabled={exporting} className="btn-secondary text-sm">
+            {exporting ? 'Exporting…' : '⬇ Export CSV'}
+          </button>
+          <button onClick={load} className="btn-secondary text-sm">↻ Refresh</button>
+        </div>
       </div>
 
       {/* Period selector */}

@@ -140,6 +140,26 @@ exports.updateMenuItem = asyncHandler(async (req, res) => {
   ok(res, { item: result.rows[0] });
 });
 
+// Owner: inventory dashboard — all tracked items with stock levels
+exports.getInventory = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT mi.id, mi.name, mi.track_stock, mi.stock_quantity, mi.is_available,
+            c.name AS category
+     FROM menu_items mi
+     LEFT JOIN categories c ON mi.category_id = c.id
+     WHERE mi.cafe_id = $1 AND mi.is_deleted = false
+     ORDER BY mi.track_stock DESC, mi.stock_quantity ASC NULLS LAST, mi.name ASC`,
+    [req.cafeId]
+  );
+  const LOW_STOCK_THRESHOLD = 5;
+  const items = result.rows.map((r) => ({
+    ...r,
+    low_stock: r.track_stock && r.stock_quantity != null && r.stock_quantity <= LOW_STOCK_THRESHOLD,
+    out_of_stock: r.track_stock && r.stock_quantity != null && r.stock_quantity <= 0,
+  }));
+  ok(res, { items, low_stock_threshold: LOW_STOCK_THRESHOLD });
+});
+
 // Owner: restock an item (set new stock quantity)
 exports.updateStock = asyncHandler(async (req, res) => {
   const { id } = req.params;

@@ -28,6 +28,8 @@ const tableRoutes = require('./routes/tables');
 const ratingRoutes = require('./routes/ratings');
 const offerRoutes = require('./routes/offers');
 const reservationRoutes = require('./routes/reservations');
+const waitlistRoutes    = require('./routes/waitlist');
+const customerRoutes    = require('./routes/customers');
 const initReportScheduler = require('./services/reportScheduler');
 
 const app = express();
@@ -101,6 +103,11 @@ io.on('connection', (socket) => {
     socket.join(`menu:${slug}`);
   });
 
+  // Customer tracks their own waitlist position
+  socket.on('track_waitlist', (entryId) => {
+    socket.join(`waitlist:${entryId}`);
+  });
+
   socket.on('leave_cafe', (cafeId) => {
     socket.leave(`cafe:${cafeId}`);
   });
@@ -157,6 +164,8 @@ app.use('/api/tables', tableRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/reservations', reservationRoutes);
+app.use('/api/waitlist',    waitlistRoutes);
+app.use('/api/customers',   customerRoutes);
 
 // Root + health check — Render/load balancers hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));

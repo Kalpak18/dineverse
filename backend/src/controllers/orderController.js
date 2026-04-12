@@ -41,9 +41,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verify café exists and is open — scoped by slug
+    // Verify café exists and is open — scoped by slug; fetch tax config too
     const cafeResult = await client.query(
-      'SELECT id, is_open FROM cafes WHERE slug = $1 AND is_active = true',
+      `SELECT id, is_open,
+              COALESCE(gst_rate, 0)::int     AS gst_rate,
+              COALESCE(tax_inclusive, true)  AS tax_inclusive
+       FROM cafes WHERE slug = $1 AND is_active = true`,
       [slug]
     );
     if (cafeResult.rows.length === 0) {
@@ -54,7 +57,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await client.query('ROLLBACK');
       return fail(res, 'This café is currently closed and not accepting orders', 403);
     }
-    const cafeId = cafeResult.rows[0].id;
+    const { id: cafeId, gst_rate, tax_inclusive } = cafeResult.rows[0];
 
     // Validate all items belong to this café and are available — multi-tenant scoped
     const itemIds = items.map((i) => i.menu_item_id);
@@ -94,18 +97,49 @@ exports.createOrder = asyncHandler(async (req, res) => {
     // Apply best active offer
     const { offerId, discountAmount, finalAmount } = await applyBestOffer(cafeId, items, total);
 
+    // ── Tax calculation ────────────────────────────────────────
+    // tax_inclusive = true  → prices already include GST; extract tax from total
+    // tax_inclusive = false → prices are pre-tax; add GST on top
+    const rate = parseInt(gst_rate || 0);
+    let taxAmount = 0;
+    let trueTotal = total;         // gross total paid by customer (before discount+tip)
+    let trueFinal;                 // final amount after discount + tip
+
+    if (rate > 0) {
+      if (tax_inclusive) {
+        // GST is baked into item prices — extract: tax = total × rate/(100+rate)
+        taxAmount  = parseFloat((total * rate / (100 + rate)).toFixed(2));
+        trueFinal  = finalAmount + tip;
+      } else {
+        // GST is added on top of item prices
+        taxAmount  = parseFloat((total * rate / 100).toFixed(2));
+        trueTotal  = total + taxAmount;
+        // Discount applies to pre-tax subtotal; tax on discounted base
+        const discountedBase = total - discountAmount;
+        taxAmount  = parseFloat((discountedBase * rate / 100).toFixed(2));
+        trueFinal  = discountedBase + taxAmount + tip;
+      }
+    } else {
+      trueFinal = finalAmount + tip;
+    }
+
     // Insert order
     let orderResult;
     try {
       orderResult = await client.query(
         `INSERT INTO orders
            (cafe_id, customer_name, customer_phone, table_number, order_type,
-            total_amount, discount_amount, tip_amount, final_amount, offer_id, notes, client_order_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            total_amount, discount_amount, tip_amount, final_amount,
+            tax_amount, tax_rate,
+            offer_id, notes, client_order_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
-                   status, total_amount, discount_amount, tip_amount, final_amount, notes, created_at`,
+                   status, total_amount, discount_amount, tip_amount, final_amount,
+                   tax_amount, tax_rate, notes, created_at`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
-         total, discountAmount, tip, finalAmount + tip, offerId || null, notes || null, client_order_id || null]
+         trueTotal, discountAmount, tip, trueFinal,
+         taxAmount, rate,
+         offerId || null, notes || null, client_order_id || null]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');

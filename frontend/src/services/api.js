@@ -102,6 +102,7 @@ export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');
 export const getCafeBySlug      = (slug) => api.get(`/cafes/${slug}`);
 export const getCafeTables      = (slug, params) => api.get(`/cafes/${slug}/tables`, { params });
 export const exploreCafes       = (city) => api.get('/cafes/explore', { params: city ? { city } : {} });
+export const getNearbyCafes     = (lat, lng, radius = 30) => api.get('/cafes/nearby', { params: { lat, lng, radius } });
 export const getAvailableTables = (slug) => api.get(`/cafes/${slug}/available-tables`);
 
 // Owner: areas + tables management
@@ -167,10 +168,22 @@ export const createExpense = (data) => api.post('/expenses', data);
 export const deleteExpense = (id) => api.delete(`/expenses/${id}`);
 
 // ─── Analytics (Owner) ────────────────────────────────────────
-export const getAnalytics = (params) => api.get('/analytics', { params });
+export const getAnalytics    = (params) => api.get('/analytics', { params });
+export const exportOrdersCSV = (params) => api.get('/analytics/export', { params, responseType: 'blob' });
 
-// ─── Stock (Owner) ────────────────────────────────────────────
-export const updateStock = (id, data) => api.patch(`/menu/items/${id}/stock`, data);
+// ─── Stock / Inventory (Owner) ────────────────────────────────
+export const updateStock   = (id, data) => api.patch(`/menu/items/${id}/stock`, data);
+export const getInventory  = ()         => api.get('/menu/inventory');
+
+// ─── Customers CRM (Owner) ────────────────────────────────────
+export const getCustomers      = (params) => api.get('/customers', { params });
+export const getCustomerOrders = (params) => api.get('/customers/orders', { params });
+
+// ─── Waitlist ─────────────────────────────────────────────────
+export const joinWaitlist     = (slug, data) => api.post(`/waitlist/cafe/${slug}/waitlist`, data);
+export const getWaitlist      = ()           => api.get('/waitlist');
+export const updateWaitlistEntry = (id, data) => api.patch(`/waitlist/${id}`, data);
+export const deleteWaitlistEntry = (id)      => api.delete(`/waitlist/${id}`);
 
 // ─── Ratings ──────────────────────────────────────────────────
 export const submitRating = (slug, orderId, data) => api.post(`/ratings/cafe/${slug}/orders/${orderId}/rate`, data);

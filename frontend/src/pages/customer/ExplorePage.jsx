@@ -92,6 +92,13 @@ export default function ExplorePage() {
               Search
             </button>
           </form>
+          <button
+            type="button"
+            onClick={() => navigate('/map')}
+            className="flex items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+          >
+            🗺️ Map
+          </button>
         </div>
       </div>
 

@@ -524,6 +524,12 @@ export default function OrderConfirmation() {
 
               {/* Totals */}
               <div className="border-t border-dashed border-gray-200 pt-3 space-y-1 text-sm">
+                {parseFloat(receiptOrder.tax_amount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>GST {receiptOrder.tax_rate}% (CGST {receiptOrder.tax_rate / 2}% + SGST {receiptOrder.tax_rate / 2}%)</span>
+                    <span>₹{fmtPrice(receiptOrder.tax_amount)}</span>
+                  </div>
+                )}
                 {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
