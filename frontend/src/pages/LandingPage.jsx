@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import DineLogo from '../components/DineLogo';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -8,10 +9,7 @@ export default function LandingPage() {
       {/* ── Navbar ─────────────────────────────────────────────── */}
       <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100 px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-sm">D</div>
-            <span className="font-bold text-gray-900 text-lg">DineVerse</span>
-          </div>
+          <DineLogo size="sm" />
           <div className="hidden md:flex items-center gap-8 text-sm text-gray-600">
             <a href="#how-it-works" className="hover:text-brand-600 transition-colors">How It Works</a>
             <a href="#features" className="hover:text-brand-600 transition-colors">Features</a>
@@ -340,9 +338,8 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto">
           <div className="grid sm:grid-cols-4 gap-8 mb-8">
             <div>
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-lg bg-brand-500 flex items-center justify-center text-white font-bold text-xs">D</div>
-                <span className="font-bold text-white">DineVerse</span>
+              <div className="mb-3">
+                <DineLogo size="sm" white />
               </div>
               <p className="text-xs leading-relaxed">
                 Smart café management platform built for India. QR ordering, real-time kitchen, GST billing.

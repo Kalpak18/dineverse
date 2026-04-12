@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { useState } from 'react';
+import DineLogo from './DineLogo';
 
 const navItems = [
   { to: '/admin/dashboard',  label: 'Dashboard',  icon: '📊' },
@@ -28,15 +29,8 @@ export default function AdminLayout() {
       >
         {/* Brand */}
         <div className="px-5 py-5 border-b border-gray-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-brand-600 flex items-center justify-center text-white font-bold text-lg">
-              ⚡
-            </div>
-            <div>
-              <p className="font-bold text-white">DineVerse</p>
-              <p className="text-xs text-gray-400">Developer Console</p>
-            </div>
-          </div>
+          <DineLogo size="sm" white />
+          <p className="text-xs text-gray-400 mt-1 pl-0.5">Developer Console</p>
         </div>
 
         {/* Nav */}

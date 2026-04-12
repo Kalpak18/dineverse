@@ -4,6 +4,7 @@ import { getOutlets, switchOutlet } from '../services/api';
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
+import DineLogo from './DineLogo';
 
 const navItems = [
   { to: '/owner/dashboard',    label: 'Dashboard',    icon: '📊' },
@@ -104,8 +105,11 @@ export default function OwnerLayout() {
           md:translate-x-0 fixed md:static inset-y-0 left-0 z-40
           w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-200`}
       >
-        {/* Brand + outlet switcher */}
-        <div className="px-4 py-4 border-b border-gray-100 flex-shrink-0">
+        {/* DineVerse brand mark */}
+        <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex-shrink-0 space-y-3">
+          <DineLogo size="sm" />
+
+          {/* Café profile link */}
           <NavLink
             to="/owner/profile"
             onClick={() => setMobileOpen(false)}

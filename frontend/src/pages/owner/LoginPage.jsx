@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
+import DineLogo from '../../components/DineLogo';
 
 // Accepts email or phone (10-digit or +91 prefixed)
 function isValidIdentifier(val) {
@@ -46,10 +47,9 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-brand-500 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-3xl">☕</span>
+          <div className="flex justify-center mb-3">
+            <DineLogo size="lg" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">DineVerse</h1>
           <p className="text-gray-500 text-sm mt-1">Owner dashboard</p>
         </div>
 
