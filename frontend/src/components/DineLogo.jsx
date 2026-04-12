@@ -14,7 +14,7 @@
  */
 
 const ICON_SRC = {
-  sm:  '/icons/favicon-128x128.png',
+  sm:  '/icons/favicon-96x96.png',
   md:  '/icons/favicon-128x128.png',
   lg:  '/icons/favicon-256x256.png',
 };
