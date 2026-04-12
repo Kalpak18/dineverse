@@ -14,11 +14,11 @@
  */
 
 const ICON_SRC = {
-  sm:  '/icons/favicon-32x32.png',
-  md:  '/icons/favicon-64x64.png',
-  lg:  '/icons/favicon-128x128.png',
+  sm:  '/icons/favicon-128x128.png',
+  md:  '/icons/favicon-128x128.png',
+  lg:  '/icons/favicon-256x256.png',
 };
-const ICON_FALLBACK = '/icons/icon-192.svg';
+const ICON_FALLBACK = '/icons/favicon-256x256.png';
 
 export default function DineLogo({ size = 'md', white = false, icon = false }) {
   const dims = { sm: 'h-7', md: 'h-9', lg: 'h-12' };
