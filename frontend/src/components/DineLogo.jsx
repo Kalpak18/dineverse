@@ -35,8 +35,12 @@ export default function DineLogo({ size = 'md', white = false, icon = false }) {
         onError={(e) => { e.currentTarget.src = ICON_FALLBACK; }}
       />
       {!icon && (
-        <span className={`font-black ${text[size]} tracking-tight ${white ? 'text-white' : 'text-gray-900'}`}>
-          Dine<span className="text-[#f97316]">Verse</span>
+        <span
+          className={`${text[size]} tracking-tight`}
+          style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 900 }}
+        >
+          <span className="text-[#f97316]">Dine</span>
+          <span className={white ? 'text-white' : 'text-[#0f1535]'}>Verse</span>
         </span>
       )}
     </div>
