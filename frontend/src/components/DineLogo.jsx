@@ -2,30 +2,32 @@
  * DineLogo — renders the DineVerse logo icon + wordmark.
  *
  * Props:
- *   size   — 'sm' | 'md' | 'lg'  (default 'md')
+ *   size   — 'sm' | 'md' | 'lg' | 'xl'  (default 'md')
  *   white  — bool, render wordmark in white (for dark backgrounds)
  *   icon   — bool, icon-only mode (no wordmark)
  *
- * Icon source selection by size:
- *   sm  (h-7  ≈ 28px) → favicon-32x32.png
- *   md  (h-9  ≈ 36px) → favicon-64x64.png
- *   lg  (h-12 ≈ 48px) → favicon-128x128.png
- * Falls back to icon-192.svg if the PNG fails to load.
+ * Size reference:
+ *   sm  (h-9  ≈ 36px)  → navbar / sidebar
+ *   md  (h-12 ≈ 48px)  → general use
+ *   lg  (h-20 ≈ 80px)  → login / register pages
+ *   xl  (h-28 ≈ 112px) → hero / splash screens
  */
 
 const ICON_SRC = {
   sm:  '/icons/favicon-96x96.png',
   md:  '/icons/favicon-128x128.png',
   lg:  '/icons/favicon-256x256.png',
+  xl:  '/icons/favicon-256x256.png',
 };
 const ICON_FALLBACK = '/icons/favicon-256x256.png';
 
 export default function DineLogo({ size = 'md', white = false, icon = false }) {
-  const dims = { sm: 'h-7', md: 'h-9', lg: 'h-12' };
-  const text  = { sm: 'text-base', md: 'text-lg', lg: 'text-2xl' };
+  const dims = { sm: 'h-9', md: 'h-12', lg: 'h-20', xl: 'h-28' };
+  const text  = { sm: 'text-lg', md: 'text-xl', lg: 'text-3xl', xl: 'text-4xl' };
+  const gap   = { sm: 'gap-2', md: 'gap-2.5', lg: 'gap-3', xl: 'gap-4' };
 
   return (
-    <div className="flex items-center gap-2 select-none">
+    <div className={`flex items-center ${gap[size]} select-none`}>
       <img
         src={ICON_SRC[size]}
         alt="DineVerse"
