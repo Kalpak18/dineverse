@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import DineLogo from '../../components/DineLogo';
 import { useAuth } from '../../context/AuthContext';
 import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
 import toast from 'react-hot-toast';
@@ -155,8 +156,8 @@ export default function RegisterPage() {
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-brand-500 flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <span className="text-3xl">☕</span>
+          <div className="flex justify-center mb-4">
+            <DineLogo size="xl" pill />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Register your Café</h1>
           <p className="text-gray-500 text-sm mt-1">Start accepting orders in minutes</p>
