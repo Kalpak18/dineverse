@@ -1,6 +1,7 @@
 const db = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { notify } = require('../services/notificationService');
 
 // ─── Public: Customer books a reservation ─────────────────────
 exports.createPublicReservation = asyncHandler(async (req, res) => {
@@ -22,11 +23,11 @@ exports.createPublicReservation = asyncHandler(async (req, res) => {
   if (bookingDate < new Date()) return fail(res, 'Cannot book a reservation in the past');
 
   const cafeResult = await db.query(
-    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    'SELECT id, email FROM cafes WHERE slug = $1 AND is_active = true',
     [slug]
   );
   if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
-  const cafeId = cafeResult.rows[0].id;
+  const { id: cafeId, email: cafeEmail } = cafeResult.rows[0];
 
   // Validate area belongs to this café (if provided)
   if (area_id) {
@@ -88,10 +89,20 @@ exports.createPublicReservation = asyncHandler(async (req, res) => {
     insertVals
   );
 
-  // Notify owner via socket
-  if (req.io) req.io.to(`cafe:${cafeId}`).emit('new_reservation', result.rows[0]);
+  const res0 = result.rows[0];
+  // Notify owner — persisted so they see it even after reconnect
+  const dateStr = new Date(`${reserved_date}T${reserved_time}`).toLocaleString('en-IN', {
+    weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+  notify(req.io, cafeId, cafeEmail, {
+    type:  'new_reservation',
+    title: `New reservation from ${customer_name.trim()}`,
+    body:  `${party_size} guest${party_size > 1 ? 's' : ''} · ${dateStr} — confirm or cancel`,
+    refId: res0.id,
+    email: true,
+  }).catch(() => {});
 
-  ok(res, { reservation: result.rows[0] }, 'Reservation requested! The café will confirm shortly.', 201);
+  ok(res, { reservation: res0 }, 'Reservation requested! The café will confirm shortly.', 201);
 });
 
 // ─── Owner: list reservations (auto-expires pending past grace) ─

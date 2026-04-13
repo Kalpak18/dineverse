@@ -102,3 +102,6 @@ exports.sendBroadcastEmail = async (toEmail, subject, htmlBody) => {
     throw new Error(`Failed to send broadcast email: ${err.message}`);
   }
 };
+
+// Raw send — used internally by notificationService for alert emails
+exports.brevoSendRaw = brevoSend;

@@ -252,9 +252,12 @@ export default function OwnerLayout() {
             }
             <span className="font-semibold text-gray-800 text-sm">{cafe?.name}</span>
           </div>
-          <NavLink to="/owner/profile" className="p-2 rounded-lg hover:bg-gray-100">
-            <span className="text-gray-500 text-sm">⚙️</span>
-          </NavLink>
+          <div className="flex items-center gap-1 relative">
+            <NotificationCenter cafeId={cafe?.id} />
+            <NavLink to="/owner/profile" className="p-2 rounded-lg hover:bg-gray-100">
+              <span className="text-gray-500 text-sm">⚙️</span>
+            </NavLink>
+          </div>
         </header>
 
         {/* Expiry warning */}
@@ -287,8 +290,7 @@ export default function OwnerLayout() {
         </main>
       </div>
 
-      {/* Persistent notification alerts */}
-      <NotificationCenter cafeId={cafe?.id} />
+      {/* Notification toasts rendered at root level (outside sidebar/main) */}
     </div>
   );
 }

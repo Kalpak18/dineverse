@@ -76,7 +76,7 @@ async function sendDailyReports() {
 }
 
 async function sendReportForCafe(cafe, dateStr) {
-  const [statsRes, topItemsRes, ratingRes, hourlyRes] = await Promise.all([
+  const [statsRes, topItemsRes, ratingRes, hourlyRes, actionRes] = await Promise.all([
     db.query(
       `SELECT
          COUNT(*) FILTER (WHERE status != 'cancelled') AS total_orders,
@@ -111,12 +111,37 @@ async function sendReportForCafe(cafe, dateStr) {
        GROUP BY hour ORDER BY orders DESC LIMIT 1`,
       [cafe.id, dateStr]
     ),
+    // Action items: pending orders + unconfirmed reservations + low/zero-stock items
+    Promise.all([
+      db.query(
+        `SELECT COUNT(*) AS count FROM orders
+         WHERE cafe_id = $1 AND status = 'pending'`,
+        [cafe.id]
+      ),
+      db.query(
+        `SELECT COUNT(*) AS count FROM reservations
+         WHERE cafe_id = $1 AND status = 'pending'
+           AND reserved_date >= CURRENT_DATE`,
+        [cafe.id]
+      ).catch(() => ({ rows: [{ count: 0 }] })), // table may not exist on older DBs
+      db.query(
+        `SELECT name, stock_quantity FROM menu_items
+         WHERE cafe_id = $1 AND track_stock = true
+           AND stock_quantity IS NOT NULL AND stock_quantity <= 5
+         ORDER BY stock_quantity ASC LIMIT 5`,
+        [cafe.id]
+      ),
+    ]),
   ]);
 
   const stats = statsRes.rows[0];
   const topItems = topItemsRes.rows;
   const rating = ratingRes.rows[0];
   const peakHour = hourlyRes.rows[0];
+  const [pendingOrdersRes, pendingResRes, lowStockRes] = actionRes;
+  const pendingOrders = parseInt(pendingOrdersRes.rows[0].count, 10);
+  const pendingReservations = parseInt(pendingResRes.rows[0].count, 10);
+  const lowStockItems = lowStockRes.rows;
 
   const revenue = parseFloat(stats.revenue || 0);
   const formattedDate = new Date(dateStr).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -205,6 +230,49 @@ async function sendReportForCafe(cafe, dateStr) {
           <p style="margin:2px 0 0;font-size:12px;color:#6b7280">Takeaway</p>
         </div>
       </div>
+
+      ${(pendingOrders > 0 || pendingReservations > 0 || lowStockItems.length > 0) ? `
+      <!-- Action Required -->
+      <div style="background:#fff7ed;border:2px solid #fb923c;border-radius:12px;padding:20px;margin-bottom:20px">
+        <h2 style="margin:0 0 12px;font-size:14px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:0.5px">
+          ⚡ Action Required
+        </h2>
+        ${pendingOrders > 0 ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #fed7aa">
+          <div>
+            <p style="margin:0;font-weight:600;color:#111827;font-size:13px">Unconfirmed Orders</p>
+            <p style="margin:2px 0 0;font-size:12px;color:#6b7280">${pendingOrders} order${pendingOrders !== 1 ? 's' : ''} waiting for confirmation</p>
+          </div>
+          <a href="${process.env.CLIENT_URL || 'https://dine-verse.com'}/owner/orders"
+             style="background:#f97316;color:white;font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;text-decoration:none">
+            Confirm →
+          </a>
+        </div>` : ''}
+        ${pendingReservations > 0 ? `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;${lowStockItems.length > 0 ? 'border-bottom:1px solid #fed7aa;' : ''}">
+          <div>
+            <p style="margin:0;font-weight:600;color:#111827;font-size:13px">Unconfirmed Reservations</p>
+            <p style="margin:2px 0 0;font-size:12px;color:#6b7280">${pendingReservations} reservation${pendingReservations !== 1 ? 's' : ''} need your response</p>
+          </div>
+          <a href="${process.env.CLIENT_URL || 'https://dine-verse.com'}/owner/reservations"
+             style="background:#f97316;color:white;font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;text-decoration:none">
+            Review →
+          </a>
+        </div>` : ''}
+        ${lowStockItems.length > 0 ? `
+        <div style="padding:10px 0 0">
+          <p style="margin:0 0 6px;font-weight:600;color:#111827;font-size:13px">Low / Zero Stock</p>
+          ${lowStockItems.map((item) => `
+            <div style="display:flex;justify-content:space-between;padding:3px 0">
+              <span style="font-size:12px;color:#374151">${item.name}</span>
+              <span style="font-size:12px;font-weight:700;color:${item.stock_quantity <= 0 ? '#dc2626' : '#d97706'}">${item.stock_quantity <= 0 ? 'Sold out' : `${item.stock_quantity} left`}</span>
+            </div>`).join('')}
+          <a href="${process.env.CLIENT_URL || 'https://dine-verse.com'}/owner/inventory"
+             style="display:inline-block;margin-top:8px;font-size:12px;color:#f97316;text-decoration:none;font-weight:600">
+            Restock items →
+          </a>
+        </div>` : ''}
+      </div>` : ''}
 
       <!-- CTA -->
       <div style="text-align:center;margin-bottom:24px">

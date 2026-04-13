@@ -203,7 +203,9 @@ export default function DashboardPage() {
           label="Pending"
           value={stats?.statusBreakdown?.find((s) => s.status === 'pending')?.count || 0}
           icon="⏳"
-          color="yellow"
+          color={(stats?.statusBreakdown?.find((s) => s.status === 'pending')?.count || 0) > 0 ? 'red' : 'yellow'}
+          href="/owner/orders"
+          pulse={(stats?.statusBreakdown?.find((s) => s.status === 'pending')?.count || 0) > 0}
         />
         <StatCard
           label="Preparing"
@@ -266,20 +268,27 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, icon, color }) {
+function StatCard({ label, value, icon, color, href, pulse }) {
   const colors = {
     blue:   'bg-blue-50 text-blue-600',
     green:  'bg-green-50 text-green-600',
     yellow: 'bg-yellow-50 text-yellow-600',
     orange: 'bg-orange-50 text-orange-600',
+    red:    'bg-red-50 text-red-600',
   };
-  return (
-    <div className="card">
-      <div className={`w-10 h-10 rounded-lg ${colors[color]} flex items-center justify-center text-xl mb-3`}>
+  const inner = (
+    <>
+      <div className={`w-10 h-10 rounded-lg ${colors[color] || colors.blue} flex items-center justify-center text-xl mb-3 relative`}>
         {icon}
+        {pulse && <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full animate-ping" />}
       </div>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
+      <p className={`text-2xl font-bold ${color === 'red' ? 'text-red-600' : 'text-gray-900'}`}>{value}</p>
       <p className="text-xs text-gray-500 mt-0.5">{label}</p>
-    </div>
+      {href && pulse && <p className="text-xs text-red-500 font-medium mt-1">Needs action →</p>}
+    </>
   );
+  if (href) {
+    return <Link to={href} className="card hover:shadow-md transition-shadow">{inner}</Link>;
+  }
+  return <div className="card">{inner}</div>;
 }

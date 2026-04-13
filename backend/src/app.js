@@ -164,8 +164,9 @@ app.use('/api/tables', tableRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/offers', offerRoutes);
 app.use('/api/reservations', reservationRoutes);
-app.use('/api/waitlist',    waitlistRoutes);
-app.use('/api/customers',   customerRoutes);
+app.use('/api/waitlist',       waitlistRoutes);
+app.use('/api/customers',      customerRoutes);
+app.use('/api/notifications',  require('./routes/notifications'));
 
 // Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));

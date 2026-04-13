@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { applyBestOffer } = require('./offerController');
+const { notify } = require('../services/notificationService');
 
 // ─── Schedule helper ────────────────────────────────────────────
 // Returns null (open) or a string reason why orders are blocked.
@@ -78,9 +79,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verify café exists and is open — scoped by slug; fetch tax config + schedule
+    // Verify café exists and is open — scoped by slug; fetch tax config + schedule + email
     const cafeResult = await client.query(
-      `SELECT id, is_open,
+      `SELECT id, email, is_open,
               COALESCE(gst_rate, 0)::int     AS gst_rate,
               COALESCE(tax_inclusive, true)  AS tax_inclusive,
               opening_hours,
@@ -103,7 +104,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await client.query('ROLLBACK');
       return fail(res, scheduleReason, 403);
     }
-    const { id: cafeId, gst_rate, tax_inclusive } = cafe;
+    const { id: cafeId, email: cafeEmail, gst_rate, tax_inclusive } = cafe;
 
     // Validate all items belong to this café and are available — multi-tenant scoped
     const itemIds = items.map((i) => i.menu_item_id);
@@ -227,8 +228,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
            WHERE id = $2`,
           [newQty, i.menu_item_id]
         );
-        if (newQty <= 0 && req.io) {
-          req.io.to(`cafe:${cafeId}`).emit('item_sold_out', { menu_item_id: i.menu_item_id, name: mi.name });
+        if (newQty <= 0) {
+          req.io?.to(`cafe:${cafeId}`).emit('item_sold_out', { menu_item_id: i.menu_item_id, name: mi.name });
+          // Persist + email alert for sold-out (fire-and-forget, outside transaction)
+          notify(req.io, cafeId, cafeEmail, {
+            type:  'item_sold_out',
+            title: `"${mi.name}" is sold out`,
+            body:  'Stock hit zero — the item has been hidden from the menu.',
+            refId: i.menu_item_id,
+            email: true,
+          }).catch(() => {});
         }
       }
     }
@@ -244,9 +253,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     const fullOrder = await getOrderWithItems(order.id);
 
-    if (req.io) {
-      req.io.to(`cafe:${cafeId}`).emit('new_order', fullOrder);
-    }
+    // Notify owner — persists in DB so they see it even after reconnect
+    const orderLabel = order_type === 'takeaway' ? 'Takeaway' : `Table ${tableNum}`;
+    const itemCount  = items.reduce((s, i) => s + i.quantity, 0);
+    notify(req.io, cafeId, cafeEmail, {
+      type:  'new_order',
+      title: `New order from ${customer_name}`,
+      body:  `${orderLabel} · ${itemCount} item${itemCount !== 1 ? 's' : ''} · ₹${fullOrder.final_amount}`,
+      refId: fullOrder.id,
+      email: true,
+    }).catch(() => {});
 
     logger.info('Order #%s placed at café %s table %s', order.order_number, slug, table_number);
     ok(res, { order: fullOrder }, 'Order placed', 201);

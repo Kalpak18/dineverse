@@ -1,6 +1,7 @@
-const db           = require('../config/database');
-const { ok, fail } = require('../utils/respond');
-const asyncHandler  = require('../utils/asyncHandler');
+const db              = require('../config/database');
+const { ok, fail }    = require('../utils/respond');
+const asyncHandler    = require('../utils/asyncHandler');
+const { notify }      = require('../services/notificationService');
 
 // Public: customer joins waitlist
 exports.joinWaitlist = asyncHandler(async (req, res) => {
@@ -8,11 +9,11 @@ exports.joinWaitlist = asyncHandler(async (req, res) => {
   if (!customer_name?.trim()) return fail(res, 'Name is required', 400);
 
   const cafeRes = await db.query(
-    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    'SELECT id, email FROM cafes WHERE slug = $1 AND is_active = true',
     [req.params.slug]
   );
   if (!cafeRes.rows.length) return fail(res, 'Café not found', 404);
-  const cafeId = cafeRes.rows[0].id;
+  const { id: cafeId, email: cafeEmail } = cafeRes.rows[0];
 
   // Count current position in queue
   const posRes = await db.query(
@@ -29,8 +30,14 @@ exports.joinWaitlist = asyncHandler(async (req, res) => {
   );
   const entry = result.rows[0];
 
-  // Broadcast to owner
-  req.io.to(`cafe:${cafeId}`).emit('waitlist_update', { action: 'joined', entry: { ...entry, position } });
+  // Notify owner — persisted so they see it after reconnect
+  notify(req.io, cafeId, cafeEmail, {
+    type:  'new_waitlist',
+    title: `${customer_name.trim()} joined the waitlist`,
+    body:  `Party of ${party_size} · Position #${position}${notes ? ` · "${notes}"` : ''}`,
+    refId: String(entry.id),
+    email: false, // waitlist joins are high-frequency; email only if specifically wanted
+  }).catch(() => {});
 
   ok(res, { entry: { ...entry, position }, queue_length: position }, 'Added to waitlist');
 });

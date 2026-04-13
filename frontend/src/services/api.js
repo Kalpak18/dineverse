@@ -208,4 +208,10 @@ export const getReservations = (params) => api.get('/reservations', { params });
 export const updateReservation = (id, data) => api.patch(`/reservations/${id}`, data);
 export const deleteReservation = (id) => api.delete(`/reservations/${id}`);
 
+// ─── Notifications ────────────────────────────────────────────
+export const getNotifications  = ()   => api.get('/notifications');
+export const markAllRead       = ()   => api.patch('/notifications/read-all');
+export const markOneRead       = (id) => api.patch(`/notifications/${id}/read`);
+export const clearNotifications= ()   => api.delete('/notifications');
+
 export default api;
