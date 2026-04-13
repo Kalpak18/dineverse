@@ -34,6 +34,7 @@ import StaffPage from './pages/owner/StaffPage';
 import InventoryPage from './pages/owner/InventoryPage';
 import CustomersPage from './pages/owner/CustomersPage';
 import WaitlistPage from './pages/owner/WaitlistPage';
+import SchedulePage from './pages/owner/SchedulePage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -109,7 +110,8 @@ export default function App() {
         <Route path="staff" element={<StaffPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="customers" element={<CustomersPage />} />
-        <Route path="waitlist" element={<WaitlistPage />} />
+        <Route path="waitlist"  element={<WaitlistPage />} />
+        <Route path="schedule" element={<SchedulePage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

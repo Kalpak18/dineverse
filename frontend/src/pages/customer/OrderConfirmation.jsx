@@ -29,7 +29,8 @@ const STATUS_LABELS = {
   cancelled: { label: 'Cancelled',      color: 'text-red-600 bg-red-50',      icon: '❌' },
 };
 
-const POLL_MS = 10000; // fallback poll every 10s (socket handles real-time)
+const POLL_MS      = 10000;               // fallback poll every 10s (socket handles real-time)
+const POLL_MAX_MS  = 2 * 60 * 60 * 1000; // stop polling after 2 hours regardless
 
 export default function OrderConfirmation() {
   const { slug } = useParams();
@@ -43,13 +44,15 @@ export default function OrderConfirmation() {
   const [tableBill, setTableBill] = useState(null);
   const [loadingBill, setLoadingBill] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null); // digital receipt modal
+  const [lostConnection, setLostConnection] = useState(false); // socket gave up reconnecting
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
     catch { return new Set(); }
   });
-  const socketRef  = useRef(null);
-  const pollRef    = useRef(null);
-  const trackedIds = useRef(new Set()); // order IDs we've already joined rooms for
+  const socketRef   = useRef(null);
+  const pollRef     = useRef(null);
+  const pollStartTs = useRef(null);     // timestamp when polling began
+  const trackedIds  = useRef(new Set()); // order IDs we've already joined rooms for
 
   // ─── Refresh state from localStorage ───────────────────────────
   const refresh = useCallback(() => {
@@ -97,14 +100,19 @@ export default function OrderConfirmation() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
+      reconnectionAttempts: 10,
     });
     socketRef.current = socket;
 
     // 4. On connect / reconnect — re-join all tracked rooms
     const onConnect = () => {
+      setLostConnection(false);
       trackedIds.current.forEach((id) => socket.emit('track_order', id));
     };
     socket.on('connect', onConnect);
+
+    // If socket exhausts all reconnection attempts, show stale-data warning
+    socket.on('reconnect_failed', () => setLostConnection(true));
 
     // 5. Real-time status update from owner's action
     const onOrderUpdated = (updated) => {
@@ -125,10 +133,21 @@ export default function OrderConfirmation() {
     });
 
     // 7. Immediate poll on mount so we don't start stale
+    pollStartTs.current = Date.now();
+
     const pollAll = async () => {
+      // Stop if we've been polling for longer than POLL_MAX_MS (2 hours)
+      if (Date.now() - pollStartTs.current > POLL_MAX_MS) {
+        clearInterval(pollRef.current);
+        return;
+      }
       const current = loadOrders(slug);
       const live = current.filter((o) => !['paid', 'cancelled'].includes(o.status));
-      if (live.length === 0) return;
+      // All orders reached terminal state — no more polling needed
+      if (live.length === 0) {
+        clearInterval(pollRef.current);
+        return;
+      }
       await Promise.all(live.map(pollOrder));
     };
 
@@ -262,6 +281,26 @@ export default function OrderConfirmation() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 px-4 py-8">
       <div className="max-w-sm mx-auto space-y-4">
+
+        {/* Lost-connection warning — shown when socket exhausted all reconnect attempts */}
+        {lostConnection && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+            <span className="text-amber-500 text-lg flex-shrink-0">⚠️</span>
+            <div>
+              <p className="text-amber-800 text-sm font-medium">Live updates paused</p>
+              <p className="text-amber-600 text-xs mt-0.5">
+                Connection lost. Your order status may be out of date.{' '}
+                <button
+                  className="underline font-medium"
+                  onClick={() => window.location.reload()}
+                >
+                  Refresh
+                </button>{' '}
+                to get the latest.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Header */}
         <div className="text-center mb-2">

@@ -201,6 +201,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
               pan_number, tax_inclusive, gst_verified, business_type, country,
+              opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
               plan_type, plan_start_date, plan_expiry_date, created_at,
               parent_cafe_id
        FROM cafes WHERE id = $1`,
@@ -248,6 +249,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     name_style, latitude, longitude,
     gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
     pan_number, tax_inclusive, business_type, country,
+    opening_hours, timezone,
   } = req.body;
 
   // Validate GSTIN format if provided — set gst_verified accordingly
@@ -287,14 +289,16 @@ exports.updateProfile = asyncHandler(async (req, res) => {
            tax_inclusive   = COALESCE($21, tax_inclusive),
            gst_verified    = $22,
            business_type   = COALESCE($23, business_type),
-           country         = COALESCE($24, country)
-       WHERE id = $25
+           country         = COALESCE($24, country),
+           opening_hours   = COALESCE($25::jsonb, opening_hours),
+           timezone        = COALESCE($26, timezone)
+       WHERE id = $27
        RETURNING id, name, slug, email, description,
                  address, address_line2, city, state, pincode,
                  phone, logo_url, cover_image_url, name_style, latitude, longitude,
                  gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
                  pan_number, tax_inclusive, gst_verified, business_type, country,
-                 parent_cafe_id`,
+                 opening_hours, timezone, parent_cafe_id`,
       [name, description,
        address, address_line2 || null, city || null, state || null, pincode || null,
        phone.trim(), logo_url, cover_image_url,
@@ -306,6 +310,8 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        tax_inclusive != null ? Boolean(tax_inclusive) : null,
        gstVerified,
        business_type || null, country || null,
+       opening_hours ? JSON.stringify(opening_hours) : null,
+       timezone || null,
        req.cafeId]
     );
   } catch {

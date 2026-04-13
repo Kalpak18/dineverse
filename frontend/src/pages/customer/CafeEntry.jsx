@@ -5,6 +5,7 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
+import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
@@ -221,13 +222,35 @@ export default function CafeEntry() {
           </button>
         ) : null}
 
-        {/* Closed banner */}
-        {cafe.is_open === false && (
-          <div className="mb-5 bg-red-50 border border-red-200 rounded-2xl px-4 py-4 text-center">
-            <p className="text-red-700 font-semibold text-sm">🔴 This café is currently closed</p>
-            <p className="text-red-500 text-xs mt-1">You can still browse the menu, but ordering is not available right now.</p>
-          </div>
-        )}
+        {/* Closed / schedule banner */}
+        {(() => {
+          const status = getScheduleStatus(cafe.opening_hours, cafe.timezone, cafe.is_open);
+          const todayHours = getTodayHours(cafe.opening_hours, cafe.timezone);
+          if (!status.isOpen) {
+            return (
+              <div className="mb-5 bg-red-50 border border-red-200 rounded-2xl px-4 py-4 text-center">
+                <p className="text-red-700 font-semibold text-sm">🔴 {status.reason}</p>
+                {todayHours && <p className="text-red-500 text-xs mt-1">Today's hours: {todayHours}</p>}
+                <p className="text-red-400 text-xs mt-0.5">You can browse the menu but cannot place orders right now.</p>
+              </div>
+            );
+          }
+          if (status.closingSoon) {
+            return (
+              <div className="mb-5 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 text-center">
+                <p className="text-amber-700 font-semibold text-sm">⚠️ {status.reason}</p>
+              </div>
+            );
+          }
+          if (todayHours) {
+            return (
+              <div className="mb-5 bg-green-50 border border-green-200 rounded-2xl px-4 py-2.5 text-center">
+                <p className="text-green-700 text-xs font-medium">🟢 Open today: {todayHours}</p>
+              </div>
+            );
+          }
+          return null;
+        })()}
 
         {/* Café header */}
         <div className="text-center mb-8">

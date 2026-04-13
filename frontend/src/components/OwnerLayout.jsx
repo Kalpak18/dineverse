@@ -20,6 +20,7 @@ const navItems = [
   { to: '/owner/inventory',    label: 'Inventory',    icon: '📦' },
   { to: '/owner/customers',    label: 'Customers',    icon: '🧑‍🤝‍🧑' },
   { to: '/owner/waitlist',     label: 'Waitlist',     icon: '🕐' },
+  { to: '/owner/schedule',     label: 'Schedule',     icon: '🗓️' },
   { to: '/owner/billing',      label: 'Billing',      icon: '💳' },
   { to: '/owner/help',         label: 'Help',         icon: '🎫' },
 ];

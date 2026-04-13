@@ -5,6 +5,7 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { loadOrders } from '../../utils/cafeOrderStorage';
+import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
 
@@ -114,6 +115,7 @@ export default function MenuPage() {
     socket.on('connect', () => socket.emit('join_menu', slug));
     socket.on('cafe_status', ({ is_open }) => {
       setCafeOpen(is_open);
+      setCafe((prev) => prev ? { ...prev, is_open } : prev);
       // Keep session in sync so CartPage reads fresh value
       const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
       sessionStorage.setItem(`session_${slug}`, JSON.stringify({ ...existing, is_open }));
@@ -229,12 +231,34 @@ export default function MenuPage() {
         </div>
       </header>
 
-      {/* ── Closed Banner (live) ── */}
-      {!cafeOpen && (
-        <div className="flex items-center gap-2 bg-red-50 border-b border-red-200 px-4 py-2.5 text-xs text-red-700 font-medium flex-shrink-0">
-          🔴 This café is currently closed — you can browse but cannot place orders right now.
-        </div>
-      )}
+      {/* ── Schedule / Closed Banner (live) ── */}
+      {(() => {
+        const status = getScheduleStatus(cafe?.opening_hours, cafe?.timezone, cafeOpen ? true : false);
+        const todayHours = getTodayHours(cafe?.opening_hours, cafe?.timezone);
+        if (!status.isOpen) {
+          return (
+            <div className="flex items-center justify-between gap-2 bg-red-50 border-b border-red-200 px-4 py-2.5 text-xs flex-shrink-0">
+              <span className="text-red-700 font-medium">🔴 {status.reason} — browsing only, no orders</span>
+              {todayHours && <span className="text-red-400">Today: {todayHours}</span>}
+            </div>
+          );
+        }
+        if (status.closingSoon) {
+          return (
+            <div className="flex items-center gap-2 bg-amber-50 border-b border-amber-200 px-4 py-2.5 text-xs text-amber-700 font-medium flex-shrink-0">
+              ⚠️ {status.reason}
+            </div>
+          );
+        }
+        if (todayHours) {
+          return (
+            <div className="flex items-center gap-2 bg-green-50 border-b border-green-100 px-4 py-2 text-xs text-green-700 flex-shrink-0">
+              🟢 Open today: {todayHours}
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {/* ── Offers Banner ── */}
       {offers.length > 0 && (

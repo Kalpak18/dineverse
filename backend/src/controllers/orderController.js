@@ -7,6 +7,43 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { applyBestOffer } = require('./offerController');
 
+// ─── Schedule helper ────────────────────────────────────────────
+// Returns null (open) or a string reason why orders are blocked.
+// opening_hours is the JSONB value from DB; tz is IANA timezone string.
+function scheduleBlock(opening_hours, tz) {
+  if (!opening_hours) return null; // no schedule set — rely on is_open toggle only
+
+  // Convert UTC now to café local time using Intl
+  const localStr = new Date().toLocaleString('en-CA', { timeZone: tz || 'Asia/Kolkata', hour12: false });
+  // en-CA gives "YYYY-MM-DD, HH:MM:SS"
+  const [, timePart] = localStr.split(', ');
+  const [hh, mm] = timePart.split(':').map(Number);
+  const nowMins = hh * 60 + mm;
+
+  const dayIndex = new Date().toLocaleDateString('en-US', { timeZone: tz || 'Asia/Kolkata', weekday: 'short' });
+  // 'Sun', 'Mon' … → lowercase 3-letter
+  const dayKey = dayIndex.slice(0, 3).toLowerCase();
+  const daySchedule = opening_hours[dayKey];
+
+  if (!daySchedule) return null; // day not configured — allow
+  if (daySchedule.closed) return `Closed today — no orders accepted`;
+
+  const [oh, om] = (daySchedule.open  || '00:00').split(':').map(Number);
+  const [ch, cm] = (daySchedule.close || '23:59').split(':').map(Number);
+  const openMins  = oh * 60 + om;
+  const closeMins = ch * 60 + cm;
+
+  if (nowMins < openMins) {
+    const opensAt = daySchedule.open;
+    return `Café not open yet — opens at ${opensAt}`;
+  }
+  if (nowMins >= closeMins) {
+    const closedAt = daySchedule.close;
+    return `Café is closed for the day — closed at ${closedAt}`;
+  }
+  return null; // within open window
+}
+
 const razorpay = new Razorpay({
   key_id:     process.env.RAZORPAY_KEY_ID     || process.env.RAZORPAY_TEST_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET,
@@ -41,11 +78,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Verify café exists and is open — scoped by slug; fetch tax config too
+    // Verify café exists and is open — scoped by slug; fetch tax config + schedule
     const cafeResult = await client.query(
       `SELECT id, is_open,
               COALESCE(gst_rate, 0)::int     AS gst_rate,
-              COALESCE(tax_inclusive, true)  AS tax_inclusive
+              COALESCE(tax_inclusive, true)  AS tax_inclusive,
+              opening_hours,
+              COALESCE(timezone, 'Asia/Kolkata') AS timezone
        FROM cafes WHERE slug = $1 AND is_active = true`,
       [slug]
     );
@@ -53,11 +92,18 @@ exports.createOrder = asyncHandler(async (req, res) => {
       await client.query('ROLLBACK');
       return fail(res, 'Café not found', 404);
     }
-    if (cafeResult.rows[0].is_open === false) {
+    const cafe = cafeResult.rows[0];
+    if (cafe.is_open === false) {
       await client.query('ROLLBACK');
       return fail(res, 'This café is currently closed and not accepting orders', 403);
     }
-    const { id: cafeId, gst_rate, tax_inclusive } = cafeResult.rows[0];
+    // Check time-based schedule (only when opening_hours are configured)
+    const scheduleReason = scheduleBlock(cafe.opening_hours, cafe.timezone);
+    if (scheduleReason) {
+      await client.query('ROLLBACK');
+      return fail(res, scheduleReason, 403);
+    }
+    const { id: cafeId, gst_rate, tax_inclusive } = cafe;
 
     // Validate all items belong to this café and are available — multi-tenant scoped
     const itemIds = items.map((i) => i.menu_item_id);

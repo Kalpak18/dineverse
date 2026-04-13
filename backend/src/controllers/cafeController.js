@@ -11,7 +11,9 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
             gst_rate, gst_number, fssai_number,
             COALESCE(tax_inclusive, true) AS tax_inclusive,
             COALESCE(business_type, 'restaurant') AS business_type,
-            COALESCE(country, 'India') AS country
+            COALESCE(country, 'India') AS country,
+            opening_hours,
+            COALESCE(timezone, 'Asia/Kolkata') AS timezone
      FROM cafes WHERE slug = $1 AND is_active = true`,
     [slug]
   );

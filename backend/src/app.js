@@ -167,10 +167,42 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/waitlist',    waitlistRoutes);
 app.use('/api/customers',   customerRoutes);
 
-// Root + health check — Render/load balancers hit both
+// Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date() });
+app.get('/health', async (_req, res) => {
+  const start = Date.now();
+  const checks = { db: 'ok', redis: 'ok' };
+  let httpStatus = 200;
+
+  // DB liveness — fast single-row query, should be <20ms on warm pool
+  try {
+    await db.query('SELECT 1');
+  } catch (err) {
+    checks.db = `error: ${err.message}`;
+    httpStatus = 503;
+  }
+
+  // Redis liveness — ping pub client if adapter is active
+  try {
+    const { redisClients } = require('./config/redis');
+    if (redisClients.pub) {
+      await redisClients.pub.ping();
+    } else {
+      checks.redis = 'not_configured';
+    }
+  } catch (err) {
+    checks.redis = `error: ${err.message}`;
+    // Redis failure degrades real-time but doesn't kill the app — warn only
+  }
+
+  res.status(httpStatus).json({
+    status: httpStatus === 200 ? 'ok' : 'degraded',
+    uptime_s: Math.floor(process.uptime()),
+    latency_ms: Date.now() - start,
+    checks,
+    timestamp: new Date().toISOString(),
+    instance: process.env.RENDER_INSTANCE_ID || process.env.HOSTNAME || 'local',
+  });
 });
 
 // 404 handler for unknown API routes

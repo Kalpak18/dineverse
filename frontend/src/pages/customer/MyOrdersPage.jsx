@@ -42,9 +42,10 @@ export default function MyOrdersPage() {
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
   const [activeTab, setActiveTab]     = useState(TABS.ACTIVE);
-  const socketRef  = useRef(null);
-  const pollRef    = useRef(null);
-  const trackedIds = useRef(new Set());
+  const socketRef   = useRef(null);
+  const pollRef     = useRef(null);
+  const pollStartTs = useRef(null);
+  const trackedIds  = useRef(new Set());
 
   const refreshOrders = useCallback(() => setOrders(loadOrders(slug)), [slug]);
   const refreshRes    = useCallback(() => setReservations(loadReservations(slug)), [slug]);
@@ -109,9 +110,16 @@ export default function MyOrdersPage() {
       if (updated.status === 'cancelled') toast.error('Reservation cancelled by café.');
     });
 
-    // Fallback polling
+    // Fallback polling — stops after 2h or when all orders reach terminal state
+    const POLL_MAX_MS = 2 * 60 * 60 * 1000;
+    pollStartTs.current = Date.now();
     const pollAll = async () => {
+      if (Date.now() - pollStartTs.current > POLL_MAX_MS) {
+        clearInterval(pollRef.current);
+        return;
+      }
       const live = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
+      if (live.length === 0) { clearInterval(pollRef.current); return; }
       await Promise.all(live.map(pollOrder));
     };
     pollAll();
