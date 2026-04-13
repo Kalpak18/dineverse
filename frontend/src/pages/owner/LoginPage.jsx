@@ -48,7 +48,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-3">
-            <DineLogo size="xl" pill />
+            <DineLogo size="xl" />
           </div>
           <p className="text-gray-500 text-sm mt-1">Owner dashboard</p>
         </div>

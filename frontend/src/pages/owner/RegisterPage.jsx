@@ -157,7 +157,7 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
-            <DineLogo size="xl" pill />
+            <DineLogo size="xl" />
           </div>
           <h1 className="text-2xl font-bold text-gray-900">Register your Café</h1>
           <p className="text-gray-500 text-sm mt-1">Start accepting orders in minutes</p>

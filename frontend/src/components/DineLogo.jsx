@@ -2,10 +2,9 @@
  * DineLogo — renders the DineVerse logo icon + wordmark.
  *
  * Props:
- *   size   — 'sm' | 'md' | 'lg' | 'xl'  (default 'md')
- *   white  — bool, render "Verse" in white (for dark backgrounds)
- *   icon   — bool, icon-only mode (no wordmark)
- *   pill   — bool, wraps in dark navy rounded background (matches brand image)
+ *   size  — 'sm' | 'md' | 'lg' | 'xl'  (default 'md')
+ *   white — bool, render "Verse" in white (for dark backgrounds)
+ *   icon  — bool, icon-only mode (no wordmark)
  *
  * Size reference:
  *   sm  (h-9  ≈ 36px)  → navbar / sidebar
@@ -22,13 +21,17 @@ const ICON_SRC = {
 };
 const ICON_FALLBACK = '/icons/favicon-256x256.png';
 
-export default function DineLogo({ size = 'md', white = false, icon = false, pill = false }) {
-  const dims    = { sm: 'h-9',  md: 'h-12',  lg: 'h-20',  xl: 'h-28'  };
-  const text    = { sm: 'text-lg', md: 'text-xl', lg: 'text-3xl', xl: 'text-4xl' };
-  const gap     = { sm: 'gap-2',   md: 'gap-2.5', lg: 'gap-3',   xl: 'gap-4'    };
-  const padding = { sm: 'px-4 py-2',   md: 'px-5 py-2.5', lg: 'px-7 py-3.5', xl: 'px-8 py-4' };
+// Accent sizes for the orange V notch (relative to font size)
+const NOTCH_SIZE = { sm: '0.38em', md: '0.38em', lg: '0.36em', xl: '0.35em' };
 
-  const inner = (
+export default function DineLogo({ size = 'md', white = false, icon = false }) {
+  const dims = { sm: 'h-9',  md: 'h-12',  lg: 'h-20',  xl: 'h-28'  };
+  const text = { sm: 'text-lg', md: 'text-xl', lg: 'text-3xl', xl: 'text-4xl' };
+  const gap  = { sm: 'gap-2',   md: 'gap-2.5', lg: 'gap-3',   xl: 'gap-4'    };
+
+  const verseColor = white ? '#ffffff' : '#0f1535';
+
+  return (
     <div className={`flex items-center ${gap[size]} select-none`}>
       <img
         src={ICON_SRC[size]}
@@ -41,23 +44,31 @@ export default function DineLogo({ size = 'md', white = false, icon = false, pil
           className={`${text[size]} tracking-tight leading-none`}
           style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 900 }}
         >
-          <span className="text-[#f97316]">Dine</span>
-          <span className={white || pill ? 'text-white' : 'text-[#0f1535]'}>Verse</span>
+          <span style={{ color: '#f97316' }}>Dine</span>
+          <span style={{ color: verseColor }}>
+            {/* V with orange accent notch at the base */}
+            <span style={{ position: 'relative', display: 'inline-block' }}>
+              V
+              <span
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  bottom: '0.05em',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  display: 'block',
+                  width: NOTCH_SIZE[size],
+                  height: NOTCH_SIZE[size],
+                  background: '#f97316',
+                  borderRadius: '50%',
+                  opacity: 0.92,
+                }}
+              />
+            </span>
+            erse
+          </span>
         </span>
       )}
     </div>
   );
-
-  if (pill) {
-    return (
-      <div
-        className={`inline-flex items-center rounded-2xl ${padding[size]}`}
-        style={{ backgroundColor: '#0f1535' }}
-      >
-        {inner}
-      </div>
-    );
-  }
-
-  return inner;
 }
