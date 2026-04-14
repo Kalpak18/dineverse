@@ -1,5 +1,6 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { BadgeProvider, useBadges } from '../context/BadgeContext';
 import { getOutlets, switchOutlet } from '../services/api';
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
@@ -40,6 +41,15 @@ function daysLeft(cafe) {
 }
 
 export default function OwnerLayout() {
+  return (
+    <BadgeProvider>
+      <OwnerLayoutInner />
+    </BadgeProvider>
+  );
+}
+
+function OwnerLayoutInner() {
+  const { badges } = useBadges();
   const { cafe, logout, updateCafe } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
@@ -172,23 +182,31 @@ export default function OwnerLayout() {
 
         {/* Nav — scrollable so Profile always reachable */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              onClick={() => setMobileOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-brand-50 text-brand-700'
-                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                }`
-              }
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </NavLink>
-          ))}
+          {navItems.map((item) => {
+            const badgeCount = badges[item.to] || 0;
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                onClick={() => setMobileOpen(false)}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-brand-50 text-brand-700'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  }`
+                }
+              >
+                <span>{item.icon}</span>
+                <span className="flex-1">{item.label}</span>
+                {badgeCount > 0 && (
+                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                    {badgeCount > 99 ? '99+' : badgeCount}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         {/* Profile + Logout pinned at bottom */}

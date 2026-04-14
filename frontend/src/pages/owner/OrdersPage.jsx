@@ -3,6 +3,7 @@ import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { getOrders, updateOrderStatus, getOwnerMessages, postOwnerMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { getApiError } from '../../utils/apiError';
@@ -47,6 +48,7 @@ function SearchInput({ value, onChange, placeholder }) {
 
 export default function OrdersPage() {
   const { cafe } = useAuth();
+  const { setBadge } = useBadges();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
@@ -227,6 +229,12 @@ export default function OrdersPage() {
     orders.forEach((o) => { counts[o.status] = (counts[o.status] || 0) + 1; });
     return counts;
   }, [orders]);
+
+  // Push active (non-paid, non-cancelled) order count to sidebar badge
+  useEffect(() => {
+    const activeCount = orders.filter((o) => !['paid', 'cancelled'].includes(o.status)).length;
+    setBadge('/owner/orders', activeCount);
+  }, [orders, setBadge]);
 
   if (loading) return <LoadingSpinner />;
 
@@ -1137,22 +1145,51 @@ function OwnerChatPanel({ order, messages, loading }) {
 
 // ─── History View ─────────────────────────────────────────────────────────
 
+const HISTORY_DATE_PRESETS = [
+  { key: 'today',     label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7d',        label: 'Last 7 days' },
+  { key: '30d',       label: 'Last 30 days' },
+  { key: 'all',       label: 'All time' },
+];
+
 function HistoryView({ orders }) {
   const { cafe } = useAuth();
   const [search, setSearch] = useState('');
+  const [dateRange, setDateRange] = useState('today');
+
+  const todayStart   = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const yesterdayStart = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-1); return d; }, []);
+  const yesterdayEnd   = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+
+  const dateFiltered = useMemo(() => {
+    if (dateRange === 'all') return orders;
+    return orders.filter((o) => {
+      const t = new Date(o.created_at).getTime();
+      if (dateRange === 'today')     return t >= todayStart.getTime();
+      if (dateRange === 'yesterday') return t >= yesterdayStart.getTime() && t < yesterdayEnd.getTime();
+      if (dateRange === '7d')        return t >= Date.now() - 7  * 86400000;
+      if (dateRange === '30d')       return t >= Date.now() - 30 * 86400000;
+      return true;
+    });
+  }, [orders, dateRange, todayStart, yesterdayStart, yesterdayEnd]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter((o) => {
-      const token = String(o.daily_order_number || '');
+    if (!q) return dateFiltered;
+    return dateFiltered.filter((o) => {
+      const rawToken = String(o.daily_order_number || '');
+      const fmtTok   = fmtToken(o.daily_order_number, o.order_type).toLowerCase();
       return (
-        token.includes(q) ||
+        rawToken.includes(q) ||
+        fmtTok.includes(q) ||
         o.customer_name.toLowerCase().includes(q) ||
-        o.table_number.toLowerCase().includes(q)
+        (o.table_number || '').toLowerCase().includes(q)
       );
     });
-  }, [orders, search]);
+  }, [dateFiltered, search]);
+
+  const dateLabel = HISTORY_DATE_PRESETS.find((p) => p.key === dateRange)?.label ?? 'Period';
 
   if (orders.length === 0) {
     return (
@@ -1166,11 +1203,48 @@ function HistoryView({ orders }) {
 
   return (
     <div className="space-y-4">
+      {/* Date filter pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {HISTORY_DATE_PRESETS.map((preset) => (
+          <button
+            key={preset.key}
+            onClick={() => setDateRange(preset.key)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              dateRange === preset.key
+                ? 'bg-brand-500 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary line */}
       <p className="text-xs text-gray-400">
-        Paid orders — revenue is counted from these.{' '}
-        Total: {fmtCurrency(orders.reduce((s, o) => s + parseFloat(o.total_amount), 0))}
+        {dateLabel} · {dateFiltered.length} order{dateFiltered.length !== 1 ? 's' : ''} ·{' '}
+        Revenue: <span className="font-semibold text-gray-600">
+          {fmtCurrency(dateFiltered.reduce((s, o) => s + parseFloat(o.total_amount), 0))}
+        </span>
       </p>
-      <SearchInput value={search} onChange={setSearch} placeholder="Search by token #, customer or table..." />
+
+      <SearchInput value={search} onChange={setSearch} placeholder="Search by token (e.g. T-05, TK-3), customer or table..." />
+
+      {filtered.length === 0 && (
+        <div className="text-center py-10 text-gray-400">
+          <p className="text-2xl mb-1">🔍</p>
+          <p className="text-sm">No orders match{search ? ' your search' : ` for ${dateLabel.toLowerCase()}`}.</p>
+          {!search && dateRange !== 'all' && (
+            <button
+              onClick={() => setDateRange('all')}
+              className="mt-2 text-xs text-brand-500 hover:underline"
+            >
+              View all history →
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map((order) => {
           const token = order.daily_order_number;
