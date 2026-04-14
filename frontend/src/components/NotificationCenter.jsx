@@ -1,22 +1,21 @@
 /**
  * NotificationCenter — persistent, DB-backed owner alerts.
  *
- * On mount:
- *   1. Fetches unread notifications from DB  → catches up after offline/refresh
- *   2. Requests Browser Notification permission → OS-level popups when tab is background
- *   3. Connects socket → live events while online
- *
- * On new event (socket 'notification'):
- *   - Already persisted by backend, so no duplicate DB write needed
- *   - Shown in UI banner + Browser Notification (if permitted)
- *   - Sound plays
- *
- * Unread badge on the bell icon is synced with DB unread_count.
+ * Lifecycle of a notification:
+ *  1. Created on backend → persisted in DB → socket fires 'notification'
+ *  2. On mount, fetches all unread from DB (catch-up after offline/refresh)
+ *  3. Fresh socket events show a toast banner AND appear in the bell panel
+ *  4. A notification disappears from the UI in exactly three ways:
+ *       a. Owner navigates to the notification's related section (auto-dismiss)
+ *       b. Owner clicks "View →" on a toast / panel entry (navigate + dismiss)
+ *       c. Owner clicks "✕" / "Dismiss" on an individual notification
+ *     → "Mark all read" in the panel is an explicit bulk-clear option
+ *  5. Each dismiss is independent — acting on one notification never removes another.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../utils/socketUrl';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { playNotificationSound } from '../hooks/useSocketIO';
 import { getNotifications, markAllRead, markOneRead } from '../services/api';
 
@@ -30,6 +29,15 @@ const TYPE_CONFIG = {
   new_waitlist:    { icon: '🕐', bg: 'bg-purple-600', border: 'border-purple-700', label: 'Waitlist Join',   path: '/owner/waitlist'     },
 };
 
+// Which notification types to clear when arriving at a route
+const ROUTE_CLEARS = {
+  '/owner/orders':       ['new_order', 'order_ready'],
+  '/owner/kitchen':      ['order_ready'],
+  '/owner/reservations': ['new_reservation'],
+  '/owner/inventory':    ['item_sold_out'],
+  '/owner/waitlist':     ['new_waitlist'],
+};
+
 function requestBrowserNotifPermission() {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'default') Notification.requestPermission();
@@ -37,21 +45,19 @@ function requestBrowserNotifPermission() {
 
 function showBrowserNotif(title, body) {
   if (!('Notification' in window) || Notification.permission !== 'granted') return;
-  // Only fire when tab is hidden (don't double-alert when owner is watching)
   if (!document.hidden) return;
-  try {
-    new Notification(title, { body, icon: '/icons/favicon-96x96.png', tag: title });
-  } catch {}
+  try { new Notification(title, { body, icon: '/icons/favicon-96x96.png', tag: title }); } catch {}
 }
 
 export default function NotificationCenter({ cafeId }) {
-  const [alerts, setAlerts]         = useState([]);
+  const [alerts, setAlerts]           = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [panelOpen, setPanelOpen]   = useState(false);
-  const navigate = useNavigate();
-  const seenIds  = useRef(new Set()); // DB ids already shown this session
+  const [panelOpen, setPanelOpen]     = useState(false);
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const seenIds   = useRef(new Set());
 
-  // ── Load unread from DB on mount (catch-up after refresh/offline) ──
+  // ── Load unread from DB on mount ───────────────────────────────────────
   useEffect(() => {
     if (!cafeId) return;
     requestBrowserNotifPermission();
@@ -60,12 +66,12 @@ export default function NotificationCenter({ cafeId }) {
         setUnreadCount(data.unread_count || 0);
         const unread = (data.notifications || []).filter((n) => !n.is_read);
         unread.forEach((n) => seenIds.current.add(n.id));
-        setAlerts(unread.slice(0, 8).map(dbToAlert));
+        setAlerts(unread.slice(0, 20).map((n) => dbToAlert(n, false)));
       })
       .catch(() => {});
   }, [cafeId]);
 
-  // ── Socket: live notifications while online ──
+  // ── Socket: live notifications ─────────────────────────────────────────
   useEffect(() => {
     if (!cafeId) return;
     if (!globalSocket) {
@@ -81,16 +87,14 @@ export default function NotificationCenter({ cafeId }) {
     const onConnect = () => socket.emit('join_cafe', cafeId);
 
     const onNotification = (notif) => {
-      // Skip if already loaded from DB catch-up
       if (notif.id && seenIds.current.has(notif.id)) return;
       if (notif.id) seenIds.current.add(notif.id);
 
-      setAlerts((prev) => [dbToAlert(notif), ...prev].slice(0, 8));
+      setAlerts((prev) => [dbToAlert(notif, true), ...prev].slice(0, 20));
       setUnreadCount((c) => c + 1);
       playNotificationSound();
       showBrowserNotif(notif.title, notif.body || '');
 
-      // Update document title when tab is hidden
       if (document.hidden) {
         const prev = document.title;
         document.title = `🔔 ${notif.title}`;
@@ -99,26 +103,20 @@ export default function NotificationCenter({ cafeId }) {
       }
     };
 
-    // Legacy socket events (still emitted by controllers for backwards compat)
-    const onNewOrder = (order) => {
-      onNotification({
-        id: null,
-        type: 'new_order',
-        title: `New order from ${order.customer_name ?? 'customer'}`,
-        body: order.order_type === 'takeaway' ? 'Takeaway order' : `Table ${order.table_number ?? ''}`,
+    // Legacy socket events for backwards compat
+    const onNewOrder = (order) => onNotification({
+      id: null, type: 'new_order',
+      title: `New order from ${order.customer_name ?? 'customer'}`,
+      body: order.order_type === 'takeaway' ? 'Takeaway order' : `Table ${order.table_number ?? ''}`,
+      ref_id: order.id,
+    });
+    const onOrderUpdated = (order) => {
+      if (order.status === 'ready') onNotification({
+        id: null, type: 'order_ready',
+        title: `Order #${order.order_number ?? '—'} is ready`,
+        body: order.order_type === 'takeaway' ? 'Pickup' : `Table ${order.table_number ?? ''}`,
         ref_id: order.id,
       });
-    };
-    const onOrderUpdated = (order) => {
-      if (order.status === 'ready') {
-        onNotification({
-          id: null,
-          type: 'order_ready',
-          title: `Order #${order.order_number ?? '—'} is ready`,
-          body: order.order_type === 'takeaway' ? 'Pickup' : `Table ${order.table_number ?? ''}`,
-          ref_id: order.id,
-        });
-      }
     };
 
     socket.on('connect',       onConnect);
@@ -134,12 +132,29 @@ export default function NotificationCenter({ cafeId }) {
     };
   }, [cafeId]);
 
+  // ── Auto-dismiss when owner navigates to the related section ───────────
+  useEffect(() => {
+    const typesToClear = ROUTE_CLEARS[location.pathname];
+    if (!typesToClear) return;
+
+    setAlerts((prev) => {
+      const toRemove = prev.filter((a) => typesToClear.includes(a.type));
+      if (toRemove.length === 0) return prev;
+      // Mark each as read in DB
+      toRemove.forEach((a) => { if (a.dbId) markOneRead(a.dbId).catch(() => {}); });
+      setUnreadCount((c) => Math.max(0, c - toRemove.length));
+      return prev.filter((a) => !typesToClear.includes(a.type));
+    });
+  }, [location.pathname]);
+
+  // ── Per-notification dismiss ────────────────────────────────────────────
   const dismiss = useCallback((alert) => {
     setAlerts((prev) => prev.filter((a) => a.uid !== alert.uid));
     setUnreadCount((c) => Math.max(0, c - 1));
     if (alert.dbId) markOneRead(alert.dbId).catch(() => {});
   }, []);
 
+  // ── Bulk clear ─────────────────────────────────────────────────────────
   const handleMarkAllRead = useCallback(() => {
     setAlerts([]);
     setUnreadCount(0);
@@ -147,6 +162,7 @@ export default function NotificationCenter({ cafeId }) {
     markAllRead().catch(() => {});
   }, []);
 
+  // ── Navigate to section and dismiss that specific notification ──────────
   const goTo = useCallback((alert) => {
     dismiss(alert);
     setPanelOpen(false);
@@ -155,7 +171,7 @@ export default function NotificationCenter({ cafeId }) {
 
   return (
     <>
-      {/* ── Bell button with unread badge ── */}
+      {/* ── Bell button ── */}
       <button
         onClick={() => setPanelOpen((o) => !o)}
         className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -169,7 +185,7 @@ export default function NotificationCenter({ cafeId }) {
         )}
       </button>
 
-      {/* ── Dropdown panel ── */}
+      {/* ── Panel dropdown ── */}
       {panelOpen && (
         <>
           <div className="fixed inset-0 z-[9990]" onClick={() => setPanelOpen(false)} />
@@ -178,13 +194,13 @@ export default function NotificationCenter({ cafeId }) {
               <span className="font-semibold text-gray-800 text-sm">Notifications</span>
               {alerts.length > 0 && (
                 <button onClick={handleMarkAllRead} className="text-xs text-brand-600 hover:underline font-medium">
-                  Mark all read
+                  Clear all
                 </button>
               )}
             </div>
             <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
               {alerts.length === 0 ? (
-                <p className="text-center text-gray-400 text-sm py-8">No new notifications</p>
+                <p className="text-center text-gray-400 text-sm py-8">No pending notifications</p>
               ) : (
                 alerts.map((alert) => {
                   const cfg = TYPE_CONFIG[alert.type] || TYPE_CONFIG.new_order;
@@ -197,8 +213,18 @@ export default function NotificationCenter({ cafeId }) {
                         <p className="text-[10px] text-gray-400 mt-1">{alert.age}</p>
                       </div>
                       <div className="flex flex-col gap-1 flex-shrink-0">
-                        <button onClick={() => goTo(alert)} className="text-[11px] text-brand-600 hover:underline font-medium whitespace-nowrap">View →</button>
-                        <button onClick={() => dismiss(alert)} className="text-[11px] text-gray-400 hover:text-gray-600">Dismiss</button>
+                        <button
+                          onClick={() => goTo(alert)}
+                          className="text-[11px] text-brand-600 hover:underline font-medium whitespace-nowrap"
+                        >
+                          View →
+                        </button>
+                        <button
+                          onClick={() => dismiss(alert)}
+                          className="text-[11px] text-gray-400 hover:text-gray-600"
+                        >
+                          Dismiss
+                        </button>
                       </div>
                     </div>
                   );
@@ -209,15 +235,16 @@ export default function NotificationCenter({ cafeId }) {
         </>
       )}
 
-      {/* ── Toast banners (new arrivals only, not catch-up) ── */}
+      {/* ── Toast banners (fresh live events only) ── */}
       <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none">
         {alerts.filter((a) => a.fresh).map((alert) => {
           const cfg = TYPE_CONFIG[alert.type] || TYPE_CONFIG.new_order;
           return (
             <div
               key={alert.uid}
-              className={`${cfg.bg} ${cfg.border} border rounded-xl shadow-2xl text-white overflow-hidden pointer-events-auto`}
+              className={`${cfg.bg} ${cfg.border} border rounded-xl shadow-2xl text-white overflow-hidden pointer-events-auto cursor-pointer`}
               style={{ animation: 'slideInRight 0.25s ease-out' }}
+              onClick={() => goTo(alert)}
             >
               <div className="h-1 bg-white/30 animate-pulse" />
               <div className="px-4 py-3">
@@ -228,15 +255,16 @@ export default function NotificationCenter({ cafeId }) {
                       <p className="text-xs font-bold uppercase tracking-wide opacity-80 mb-0.5">{cfg.label}</p>
                       <p className="text-sm font-medium leading-snug">{alert.title}</p>
                       {alert.body && <p className="text-xs opacity-80 mt-0.5">{alert.body}</p>}
+                      <p className="text-xs opacity-60 mt-1">Tap to view →</p>
                     </div>
                   </div>
-                  <button onClick={() => dismiss(alert)} className="text-white/60 hover:text-white text-lg leading-none flex-shrink-0" aria-label="Dismiss">×</button>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => goTo(alert)} className="flex-1 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-colors border border-white/20">
-                    {cfg.label} →
+                  <button
+                    onClick={(e) => { e.stopPropagation(); dismiss(alert); }}
+                    className="text-white/60 hover:text-white text-lg leading-none flex-shrink-0 mt-0.5"
+                    aria-label="Dismiss"
+                  >
+                    ×
                   </button>
-                  <button onClick={() => dismiss(alert)} className="px-3 py-1.5 rounded-lg text-white/70 hover:text-white text-xs">Dismiss</button>
                 </div>
               </div>
             </div>
@@ -254,12 +282,14 @@ export default function NotificationCenter({ cafeId }) {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 let uidCounter = 0;
 
-function dbToAlert(n, fresh = false) {
+function dbToAlert(n, fresh) {
   const secs = Math.floor((Date.now() - new Date(n.created_at)) / 1000);
-  const age  = secs < 60 ? `${secs}s ago` : secs < 3600 ? `${Math.floor(secs / 60)}m ago` : `${Math.floor(secs / 3600)}h ago`;
+  const age  = secs < 60 ? `${secs}s ago`
+             : secs < 3600 ? `${Math.floor(secs / 60)}m ago`
+             : `${Math.floor(secs / 3600)}h ago`;
   return {
     uid:   ++uidCounter,
     dbId:  n.id || null,

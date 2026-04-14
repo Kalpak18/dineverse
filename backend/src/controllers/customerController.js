@@ -9,7 +9,6 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const result = await db.query(
     `SELECT
-       COALESCE(NULLIF(customer_phone, ''), 'no-phone-' || MIN(id)::text) AS key,
        customer_name,
        customer_phone,
        COUNT(*)                                                         AS total_orders,

@@ -698,9 +698,11 @@ function CustomerChatWidget({ order, slug, socketRef }) {
     if (!msg || sending) return;
     setSending(true);
     try {
-      const { data } = await postCustomerMessage(slug, order.id, msg);
-      setMessages((prev) => [...prev, data.message]);
+      await postCustomerMessage(slug, order.id, msg);
       setText('');
+      // Do NOT append here — backend broadcasts via socket to order:<id>
+      // and the socket handler (with dedup) adds it. Appending from the API
+      // response too causes the message to appear twice.
     } catch { /* silent */ }
     finally { setSending(false); }
   };
