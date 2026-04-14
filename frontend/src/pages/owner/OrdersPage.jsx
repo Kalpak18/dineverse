@@ -61,6 +61,8 @@ export default function OrdersPage() {
   // Chat
   const [chatOrderId, setChatOrderId] = useState(null);
   const [unreadChats, setUnreadChats] = useState({}); // { orderId: count }
+  const [chatMessages, setChatMessages] = useState({}); // { orderId: Message[] }
+  const [chatLoading, setChatLoading] = useState({}); // { orderId: bool }
   const socketRef = useRef(null);
 
   const loadOrders = useCallback(async () => {
@@ -129,10 +131,17 @@ export default function OrdersPage() {
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));
 
-    // Page-level listener: notify owner when a customer message arrives
+    // Page-level listener: handles ALL chat messages (both directions)
     socket.on('order_message', (msg) => {
+      // Always add message to state (dedup by id)
+      setChatMessages((prev) => {
+        const existing = prev[msg.order_id] || [];
+        if (existing.find((m) => m.id === msg.id)) return prev;
+        return { ...prev, [msg.order_id]: [...existing, msg] };
+      });
+
+      // Toast + unread badge only for incoming customer messages when chat panel is closed
       if (msg.sender_type !== 'customer') return;
-      // Only bump unread count if chat panel isn't already open for this order
       setChatOrderId((currentChatId) => {
         if (currentChatId !== msg.order_id) {
           setUnreadChats((prev) => ({ ...prev, [msg.order_id]: (prev[msg.order_id] || 0) + 1 }));
@@ -318,16 +327,39 @@ export default function OrdersPage() {
                   order={order}
                   onStatusUpdate={handleStatusUpdate}
                   onCancelClick={(o) => setCancelTarget(o)}
-                  onChatClick={(o) => {
-                    setChatOrderId(chatOrderId === o.id ? null : o.id);
+                  onChatClick={async (o) => {
+                    const newChatId = chatOrderId === o.id ? null : o.id;
+                    setChatOrderId(newChatId);
                     setUnreadChats((prev) => ({ ...prev, [o.id]: 0 }));
+                    // Fetch message history the first time this order's chat is opened
+                    if (newChatId && !chatLoading[o.id]) {
+                      setChatLoading((prev) => ({ ...prev, [o.id]: true }));
+                      try {
+                        const { data } = await getOwnerMessages(o.id);
+                        setChatMessages((prev) => {
+                          // Merge HTTP history with any messages already received via socket
+                          const socketMsgs = prev[o.id] || [];
+                          const merged = [...(data.messages || [])];
+                          socketMsgs.forEach((sm) => {
+                            if (!merged.find((m) => m.id === sm.id)) merged.push(sm);
+                          });
+                          merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                          return { ...prev, [o.id]: merged };
+                        });
+                      } catch {
+                        // Leave whatever socket messages we already have
+                      } finally {
+                        setChatLoading((prev) => ({ ...prev, [o.id]: false }));
+                      }
+                    }
                   }}
                   onOpenBilling={openOrderBilling}
                   chatOpen={chatOrderId === order.id}
                   chatUnread={unreadChats[order.id] || 0}
+                  chatMessages={chatMessages[order.id] || []}
+                  chatMessagesLoading={chatLoading[order.id] || false}
                   expanded={expandedId === order.id}
                   onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
-                  socketRef={socketRef}
                 />
               ))}
             </div>
@@ -376,7 +408,7 @@ export default function OrdersPage() {
 
 // ─── Order Card (Grid Item) ───────────────────────────────────────────────
 
-function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, expanded, onToggle, socketRef }) {
+function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
   const statusCfg = STATUS_CONFIG[order.status];
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
@@ -479,7 +511,7 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
 
       {/* Inline chat panel */}
       {chatOpen && (
-        <OwnerChatPanel order={order} socketRef={socketRef} />
+        <OwnerChatPanel order={order} messages={chatMessages} loading={chatMessagesLoading} />
       )}
     </div>
   );
@@ -1035,29 +1067,13 @@ function CancelReasonModal({ order, onConfirm, onClose }) {
 }
 
 // ─── Owner Chat Panel (inline on OrderCard) ────────────────────
-function OwnerChatPanel({ order, socketRef }) {
-  const [messages, setMessages] = useState([]);
+// messages and loading are lifted to OrdersPage level.
+// The page-level socket handler updates chatMessages state, which flows down here.
+// No socket subscription or HTTP fetch needed in this component.
+function OwnerChatPanel({ order, messages, loading }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [loadingMsgs, setLoadingMsgs] = useState(true);
   const bottomRef = useRef(null);
-
-  useEffect(() => {
-    getOwnerMessages(order.id)
-      .then(({ data }) => setMessages(data.messages || []))
-      .catch(() => {})
-      .finally(() => setLoadingMsgs(false));
-  }, [order.id]);
-
-  useEffect(() => {
-    if (!socketRef?.current) return;
-    const handler = (msg) => {
-      if (msg.order_id !== order.id) return;
-      setMessages((prev) => prev.find((m) => m.id === msg.id) ? prev : [...prev, msg]);
-    };
-    socketRef.current.on('order_message', handler);
-    return () => socketRef.current?.off('order_message', handler);
-  }, [order.id, socketRef]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
@@ -1068,9 +1084,7 @@ function OwnerChatPanel({ order, socketRef }) {
     try {
       await postOwnerMessage(order.id, msg);
       setText('');
-      // Do NOT append here — the backend broadcasts via socket and the
-      // order_message handler (with dedup) adds it. Appending here too
-      // causes the message to appear twice.
+      // Message appears via socket → page-level handler → chatMessages state update
     } catch { toast.error('Could not send message'); }
     finally { setSending(false); }
   };
@@ -1081,8 +1095,8 @@ function OwnerChatPanel({ order, socketRef }) {
         <span className="text-xs font-semibold text-gray-500">💬 Customer Chat</span>
       </div>
       <div className="px-3 py-2 space-y-1.5 max-h-40 overflow-y-auto">
-        {loadingMsgs && <p className="text-xs text-gray-400">Loading…</p>}
-        {!loadingMsgs && messages.length === 0 && (
+        {loading && <p className="text-xs text-gray-400">Loading…</p>}
+        {!loading && messages.length === 0 && (
           <p className="text-xs text-gray-400 text-center py-2">No messages yet.</p>
         )}
         {messages.map((m) => (
