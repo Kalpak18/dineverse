@@ -203,7 +203,13 @@ exports.getMe = asyncHandler(async (req, res) => {
               pan_number, tax_inclusive, gst_verified, business_type, country,
               opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
               plan_type, plan_start_date, plan_expiry_date, created_at,
-              parent_cafe_id
+              parent_cafe_id,
+              COALESCE(delivery_enabled, false)   AS delivery_enabled,
+              COALESCE(delivery_radius_km, 5)     AS delivery_radius_km,
+              COALESCE(delivery_fee_base, 0)      AS delivery_fee_base,
+              COALESCE(delivery_fee_per_km, 0)    AS delivery_fee_per_km,
+              COALESCE(delivery_min_order, 0)     AS delivery_min_order,
+              COALESCE(delivery_est_mins, 30)     AS delivery_est_mins
        FROM cafes WHERE id = $1`,
       [req.cafeId]
     );
@@ -250,6 +256,8 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
     pan_number, tax_inclusive, business_type, country,
     opening_hours, timezone,
+    delivery_enabled, delivery_radius_km, delivery_fee_base,
+    delivery_fee_per_km, delivery_min_order, delivery_est_mins,
   } = req.body;
 
   // Validate GSTIN format if provided — set gst_verified accordingly
@@ -290,15 +298,27 @@ exports.updateProfile = asyncHandler(async (req, res) => {
            gst_verified    = $22,
            business_type   = COALESCE($23, business_type),
            country         = COALESCE($24, country),
-           opening_hours   = COALESCE($25::jsonb, opening_hours),
-           timezone        = COALESCE($26, timezone)
+           opening_hours      = COALESCE($25::jsonb, opening_hours),
+           timezone           = COALESCE($26, timezone),
+           delivery_enabled   = COALESCE($28, delivery_enabled),
+           delivery_radius_km = COALESCE($29, delivery_radius_km),
+           delivery_fee_base  = COALESCE($30, delivery_fee_base),
+           delivery_fee_per_km = COALESCE($31, delivery_fee_per_km),
+           delivery_min_order = COALESCE($32, delivery_min_order),
+           delivery_est_mins  = COALESCE($33, delivery_est_mins)
        WHERE id = $27
        RETURNING id, name, slug, email, description,
                  address, address_line2, city, state, pincode,
                  phone, logo_url, cover_image_url, name_style, latitude, longitude,
                  gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
                  pan_number, tax_inclusive, gst_verified, business_type, country,
-                 opening_hours, timezone, parent_cafe_id`,
+                 opening_hours, timezone, parent_cafe_id,
+                 COALESCE(delivery_enabled, false)    AS delivery_enabled,
+                 COALESCE(delivery_radius_km, 5)      AS delivery_radius_km,
+                 COALESCE(delivery_fee_base, 0)       AS delivery_fee_base,
+                 COALESCE(delivery_fee_per_km, 0)     AS delivery_fee_per_km,
+                 COALESCE(delivery_min_order, 0)      AS delivery_min_order,
+                 COALESCE(delivery_est_mins, 30)      AS delivery_est_mins`,
       [name, description,
        address, address_line2 || null, city || null, state || null, pincode || null,
        phone.trim(), logo_url, cover_image_url,
@@ -312,7 +332,13 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        business_type || null, country || null,
        opening_hours ? JSON.stringify(opening_hours) : null,
        timezone || null,
-       req.cafeId]
+       req.cafeId,
+       delivery_enabled != null ? Boolean(delivery_enabled) : null,
+       delivery_radius_km != null ? parseFloat(delivery_radius_km) : null,
+       delivery_fee_base != null ? parseFloat(delivery_fee_base) : null,
+       delivery_fee_per_km != null ? parseFloat(delivery_fee_per_km) : null,
+       delivery_min_order != null ? parseFloat(delivery_min_order) : null,
+       delivery_est_mins != null ? parseInt(delivery_est_mins) : null]
     );
   } catch {
     // Migration 016/027 not applied — fall back to base columns only

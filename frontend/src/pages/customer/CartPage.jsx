@@ -20,6 +20,21 @@ export default function CartPage() {
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
 
+  // Delivery address form state
+  const [deliveryForm, setDeliveryForm] = useState({
+    delivery_address:      '',
+    delivery_address2:     '',
+    delivery_city:         '',
+    delivery_zipcode:      '',
+    delivery_phone:        session?.customer_phone || '',
+    delivery_instructions: '',
+  });
+
+  const isDelivery = session?.order_type === 'delivery';
+  const deliveryFeeBase = parseFloat(session?.delivery_fee_base || 0);
+  const deliveryEstMins = parseInt(session?.delivery_est_mins || 30);
+  const deliveryMinOrder = parseFloat(session?.delivery_min_order || 0);
+
   const TIP_OPTIONS = [0, 10, 20, 50];
 
   const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
@@ -47,17 +62,17 @@ export default function CartPage() {
       // Prices include GST — extract tax: tax = total × rate / (100 + rate)
       taxableAmt = total / (1 + gstRate / 100);
       totalTax   = total - taxableAmt;
-      grandTotal = total - discountAmt + tip;
+      grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
     } else {
       // Prices are pre-tax — add GST on top
       taxableAmt = total - discountAmt; // base after discount
       totalTax   = taxableAmt * gstRate / 100;
-      grandTotal = taxableAmt + totalTax + tip;
+      grandTotal = taxableAmt + totalTax + tip + (isDelivery ? deliveryFeeBase : 0);
     }
   } else {
     taxableAmt = total;
     totalTax   = 0;
-    grandTotal = total - discountAmt + tip;
+    grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
   }
   const activeOrders = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
 
@@ -107,6 +122,15 @@ export default function CartPage() {
 
   const handlePlaceOrder = async () => {
     if (loading) return; // prevent double submission
+    // Validate delivery form
+    if (isDelivery) {
+      if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
+      if (!deliveryForm.delivery_phone.trim())   { toast.error('Please enter your phone number for delivery'); return; }
+      if (deliveryMinOrder > 0 && total < deliveryMinOrder) {
+        toast.error(`Minimum order for delivery is ₹${deliveryMinOrder.toFixed(0)}`);
+        return;
+      }
+    }
     setLoading(true);
     setShowConfirm(false);
     try {
@@ -120,6 +144,14 @@ export default function CartPage() {
         // Idempotency key: same key = same order, prevents double-submit on network retry
         client_order_id: crypto.randomUUID(),
         items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+        ...(isDelivery && {
+          delivery_address:      deliveryForm.delivery_address.trim(),
+          delivery_address2:     deliveryForm.delivery_address2.trim() || undefined,
+          delivery_city:         deliveryForm.delivery_city.trim() || undefined,
+          delivery_zipcode:      deliveryForm.delivery_zipcode.trim() || undefined,
+          delivery_phone:        deliveryForm.delivery_phone.trim(),
+          delivery_instructions: deliveryForm.delivery_instructions.trim() || undefined,
+        }),
       };
 
       const { data } = await placeOrder(slug, orderPayload);
@@ -173,7 +205,59 @@ export default function CartPage() {
         ))}
       </div>
 
-      <div className="px-4">
+      {/* Delivery address form — only for delivery orders */}
+      {isDelivery && (
+        <div className="px-4 mt-4 space-y-3">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-lg">🛵</span>
+            <h3 className="font-semibold text-gray-800">Delivery Details</h3>
+          </div>
+          {deliveryEstMins > 0 && (
+            <p className="text-xs text-gray-500">Estimated delivery: ~{deliveryEstMins} min</p>
+          )}
+          <input
+            className="input"
+            placeholder="Street address *"
+            value={deliveryForm.delivery_address}
+            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_address: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Apartment, floor, landmark (optional)"
+            value={deliveryForm.delivery_address2}
+            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_address2: e.target.value }))}
+          />
+          <div className="flex gap-2">
+            <input
+              className="input flex-1"
+              placeholder="City"
+              value={deliveryForm.delivery_city}
+              onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_city: e.target.value }))}
+            />
+            <input
+              className="input w-28"
+              placeholder="Pincode"
+              value={deliveryForm.delivery_zipcode}
+              onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_zipcode: e.target.value }))}
+            />
+          </div>
+          <input
+            className="input"
+            placeholder="Phone for delivery *"
+            type="tel"
+            value={deliveryForm.delivery_phone}
+            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_phone: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Delivery instructions (optional)"
+            value={deliveryForm.delivery_instructions}
+            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_instructions: e.target.value }))}
+          />
+        </div>
+      )}
+
+      <div className="px-4 mt-4">
         <label className="label">Special Instructions (optional)</label>
         <textarea
           className="input resize-none"
@@ -263,6 +347,12 @@ export default function CartPage() {
             <div className="flex justify-between text-gray-600">
               <span>Tip</span>
               <span>₹{tip.toFixed(2)}</span>
+            </div>
+          )}
+          {isDelivery && (
+            <div className="flex justify-between text-gray-600">
+              <span>🛵 Delivery fee</span>
+              <span>{deliveryFeeBase > 0 ? `₹${deliveryFeeBase.toFixed(2)}` : 'Free'}</span>
             </div>
           )}
           <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">

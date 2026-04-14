@@ -129,6 +129,7 @@ export default function CafeEntry() {
     if (form.order_type === 'dine-in') {
       if (!form.table_number.trim()) e.table_number = 'Please enter your table number';
     }
+    // delivery: address is collected at CartPage — no table needed here
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -143,8 +144,19 @@ export default function CafeEntry() {
     const session = {
       customer_name:  form.customer_name.trim(),
       customer_phone: form.customer_phone || '',
-      table_number:   form.order_type === 'takeaway' ? 'Takeaway' : tableLabel,
+      table_number:   form.order_type === 'takeaway' ? 'Takeaway' : form.order_type === 'delivery' ? 'Delivery' : tableLabel,
       order_type:     form.order_type,
+      // GST + delivery config forwarded to CartPage
+      gst_rate:         cafe?.gst_rate,
+      gst_number:       cafe?.gst_number,
+      tax_inclusive:    cafe?.tax_inclusive,
+      is_open:          cafe?.is_open,
+      delivery_enabled:   cafe?.delivery_enabled,
+      delivery_fee_base:  cafe?.delivery_fee_base,
+      delivery_fee_per_km: cafe?.delivery_fee_per_km,
+      delivery_min_order: cafe?.delivery_min_order,
+      delivery_est_mins:  cafe?.delivery_est_mins,
+      delivery_radius_km: cafe?.delivery_radius_km,
     };
     sessionStorage.setItem(`session_${slug}`, JSON.stringify(session));
     navigate(`/cafe/${slug}/menu`);
@@ -263,6 +275,12 @@ export default function CafeEntry() {
           )}
           <h1 className={nameClass}>{cafe.name}</h1>
           {cafe.description && <p className="text-gray-500 text-sm mt-1">{cafe.description}</p>}
+          {cafe.delivery_enabled && (
+            <div className="inline-flex items-center gap-1.5 mt-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium px-3 py-1 rounded-full">
+              <span>🛵</span>
+              <span>Delivery available{cafe.delivery_est_mins ? ` · Est. ${cafe.delivery_est_mins} min` : ''}</span>
+            </div>
+          )}
         </div>
 
         {/* Entry form */}
@@ -274,16 +292,20 @@ export default function CafeEntry() {
             <div>
               <label className="label">Order Type</label>
               <div className="flex rounded-xl border border-gray-200 overflow-hidden">
-                {['dine-in', 'takeaway'].map((type) => (
+                {[
+                  { key: 'dine-in',  label: '🍽️ Dine In'  },
+                  { key: 'takeaway', label: '🥡 Takeaway' },
+                  ...(cafe?.delivery_enabled ? [{ key: 'delivery', label: '🛵 Delivery' }] : []),
+                ].map(({ key, label }) => (
                   <button
-                    key={type}
+                    key={key}
                     type="button"
-                    onClick={() => setForm({ ...form, order_type: type })}
+                    onClick={() => setForm({ ...form, order_type: key })}
                     className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
-                      form.order_type === type ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                      form.order_type === key ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
                     }`}
                   >
-                    {type === 'dine-in' ? '🍽️ Dine In' : '🥡 Takeaway'}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -328,6 +350,23 @@ export default function CafeEntry() {
               <p className="text-xs text-gray-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
                 Your order will be prepared and ready for pickup at the counter.
               </p>
+            )}
+
+            {form.order_type === 'delivery' && (
+              <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-0.5">
+                <p className="font-semibold text-blue-800">🛵 Delivery to your address</p>
+                {cafe?.delivery_fee_base > 0
+                  ? <p className="text-blue-600">Delivery fee: ₹{parseFloat(cafe.delivery_fee_base).toFixed(0)}</p>
+                  : <p className="text-blue-600">Free delivery!</p>
+                }
+                {cafe?.delivery_est_mins > 0 && (
+                  <p className="text-blue-600">Estimated time: ~{cafe.delivery_est_mins} min</p>
+                )}
+                {cafe?.delivery_min_order > 0 && (
+                  <p className="text-blue-600">Min order: ₹{parseFloat(cafe.delivery_min_order).toFixed(0)}</p>
+                )}
+                <p className="text-blue-500 mt-1">You'll enter your delivery address at checkout.</p>
+              </div>
             )}
 
             <button type="submit" className="btn-primary w-full mt-2">

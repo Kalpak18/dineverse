@@ -51,19 +51,38 @@ const razorpay = new Razorpay({
 });
 
 // ─── Public: Customer places an order ─────────────────────────
+// Haversine distance in km between two lat/lng points
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 exports.validateOrder = [
   body('customer_name').trim().notEmpty().withMessage('Your name is required'),
   body('order_type')
     .optional()
-    .isIn(['dine-in', 'takeaway']).withMessage('order_type must be dine-in or takeaway'),
+    .isIn(['dine-in', 'takeaway', 'delivery']).withMessage('order_type must be dine-in, takeaway, or delivery'),
   body('table_number')
     .if(body('order_type').not().equals('takeaway'))
+    .if(body('order_type').not().equals('delivery'))
     .trim().notEmpty().withMessage('Table number is required for dine-in orders'),
   body('customer_phone').optional().trim().isLength({ max: 20 }),
   body('client_order_id').optional().trim().isLength({ max: 64 }),
   body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
   body('items.*.menu_item_id').notEmpty().withMessage('menu_item_id is required'),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
+  body('delivery_address')
+    .if(body('order_type').equals('delivery'))
+    .trim().notEmpty().withMessage('Delivery address is required'),
+  body('delivery_phone')
+    .if(body('order_type').equals('delivery'))
+    .trim().notEmpty().withMessage('Phone number is required for delivery'),
 ];
 
 exports.createOrder = asyncHandler(async (req, res) => {
@@ -71,21 +90,34 @@ exports.createOrder = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { slug } = req.params;
-  const { customer_name, customer_phone, table_number, items, notes, order_type = 'dine-in', client_order_id, tip_amount = 0 } = req.body;
+  const {
+    customer_name, customer_phone, table_number, items, notes,
+    order_type = 'dine-in', client_order_id, tip_amount = 0,
+    // delivery fields
+    delivery_address, delivery_address2, delivery_city, delivery_zipcode,
+    delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
+  } = req.body;
   const tip = Math.max(0, parseFloat(tip_amount) || 0);
-  const tableNum = order_type === 'takeaway' ? 'Takeaway' : (table_number || '');
+  const tableNum = (order_type === 'takeaway' || order_type === 'delivery') ? (order_type === 'delivery' ? 'Delivery' : 'Takeaway') : (table_number || '');
 
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
 
-    // Verify café exists and is open — scoped by slug; fetch tax config + schedule + email
+    // Verify café exists and is open — scoped by slug; fetch tax config + schedule + email + delivery config
     const cafeResult = await client.query(
       `SELECT id, email, is_open,
               COALESCE(gst_rate, 0)::int     AS gst_rate,
               COALESCE(tax_inclusive, true)  AS tax_inclusive,
               opening_hours,
-              COALESCE(timezone, 'Asia/Kolkata') AS timezone
+              COALESCE(timezone, 'Asia/Kolkata') AS timezone,
+              latitude, longitude,
+              COALESCE(delivery_enabled, false)   AS delivery_enabled,
+              COALESCE(delivery_radius_km, 5)     AS delivery_radius_km,
+              COALESCE(delivery_fee_base, 0)      AS delivery_fee_base,
+              COALESCE(delivery_fee_per_km, 0)    AS delivery_fee_per_km,
+              COALESCE(delivery_min_order, 0)     AS delivery_min_order,
+              COALESCE(delivery_est_mins, 30)     AS delivery_est_mins
        FROM cafes WHERE slug = $1 AND is_active = true`,
       [slug]
     );
@@ -105,6 +137,32 @@ exports.createOrder = asyncHandler(async (req, res) => {
       return fail(res, scheduleReason, 403);
     }
     const { id: cafeId, email: cafeEmail, gst_rate, tax_inclusive } = cafe;
+
+    // Delivery-specific validation
+    let deliveryFee = 0;
+    if (order_type === 'delivery') {
+      if (!cafe.delivery_enabled) {
+        await client.query('ROLLBACK');
+        return fail(res, 'This café does not offer delivery', 400);
+      }
+      // Validate customer is within delivery radius if café has coordinates and customer provided coords
+      if (cafe.latitude && cafe.longitude && delivery_lat && delivery_lng) {
+        const distKm = haversineKm(
+          parseFloat(cafe.latitude), parseFloat(cafe.longitude),
+          parseFloat(delivery_lat), parseFloat(delivery_lng)
+        );
+        if (distKm > parseFloat(cafe.delivery_radius_km)) {
+          await client.query('ROLLBACK');
+          return fail(res, `Delivery is only available within ${cafe.delivery_radius_km} km of this café`, 400);
+        }
+        // Calculate delivery fee: base + per_km * distance
+        deliveryFee = parseFloat(cafe.delivery_fee_base) +
+          parseFloat(cafe.delivery_fee_per_km) * distKm;
+        deliveryFee = parseFloat(deliveryFee.toFixed(2));
+      } else {
+        deliveryFee = parseFloat(cafe.delivery_fee_base) || 0;
+      }
+    }
 
     // Validate all items belong to this café and are available — multi-tenant scoped
     const itemIds = items.map((i) => i.menu_item_id);
@@ -156,7 +214,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       if (tax_inclusive) {
         // GST is baked into item prices — extract: tax = total × rate/(100+rate)
         taxAmount  = parseFloat((total * rate / (100 + rate)).toFixed(2));
-        trueFinal  = finalAmount + tip;
+        trueFinal  = finalAmount + tip + deliveryFee;
       } else {
         // GST is added on top of item prices
         taxAmount  = parseFloat((total * rate / 100).toFixed(2));
@@ -164,10 +222,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
         // Discount applies to pre-tax subtotal; tax on discounted base
         const discountedBase = total - discountAmount;
         taxAmount  = parseFloat((discountedBase * rate / 100).toFixed(2));
-        trueFinal  = discountedBase + taxAmount + tip;
+        trueFinal  = discountedBase + taxAmount + tip + deliveryFee;
       }
     } else {
-      trueFinal = finalAmount + tip;
+      trueFinal = finalAmount + tip + deliveryFee;
     }
 
     // Insert order
@@ -178,15 +236,30 @@ exports.createOrder = asyncHandler(async (req, res) => {
            (cafe_id, customer_name, customer_phone, table_number, order_type,
             total_amount, discount_amount, tip_amount, final_amount,
             tax_amount, tax_rate,
-            offer_id, notes, client_order_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+            offer_id, notes, client_order_id,
+            delivery_address, delivery_address2, delivery_city, delivery_zipcode,
+            delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
+            delivery_fee, delivery_status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
-                   tax_amount, tax_rate, notes, created_at`,
+                   tax_amount, tax_rate, notes, created_at,
+                   delivery_address, delivery_phone, delivery_fee, delivery_status`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
          trueTotal, discountAmount, tip, trueFinal,
          taxAmount, rate,
-         offerId || null, notes || null, client_order_id || null]
+         offerId || null, notes || null, client_order_id || null,
+         order_type === 'delivery' ? (delivery_address || null) : null,
+         order_type === 'delivery' ? (delivery_address2 || null) : null,
+         order_type === 'delivery' ? (delivery_city || null) : null,
+         order_type === 'delivery' ? (delivery_zipcode || null) : null,
+         order_type === 'delivery' ? (delivery_phone || null) : null,
+         order_type === 'delivery' ? (delivery_lat || null) : null,
+         order_type === 'delivery' ? (delivery_lng || null) : null,
+         order_type === 'delivery' ? (delivery_instructions || null) : null,
+         deliveryFee || 0,
+         order_type === 'delivery' ? 'pending' : null]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
@@ -254,7 +327,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const fullOrder = await getOrderWithItems(order.id);
 
     // Notify owner — persists in DB so they see it even after reconnect
-    const orderLabel = order_type === 'takeaway' ? 'Takeaway' : `Table ${tableNum}`;
+    const orderLabel = order_type === 'delivery' ? 'Delivery' : order_type === 'takeaway' ? 'Takeaway' : `Table ${tableNum}`;
     const itemCount  = items.reduce((s, i) => s + i.quantity, 0);
     notify(req.io, cafeId, cafeEmail, {
       type:  'new_order',
@@ -587,7 +660,10 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.order_type, o.status,
               o.total_amount, o.discount_amount, o.final_amount,
               o.payment_verified, o.cancellation_reason,
-              o.notes, o.created_at, o.updated_at
+              o.notes, o.created_at, o.updated_at,
+              o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
+              o.delivery_phone, o.delivery_instructions, o.delivery_fee, o.delivery_status,
+              o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason
        FROM orders o WHERE o.id = $1${cafeFilter}`,
       params
     ),

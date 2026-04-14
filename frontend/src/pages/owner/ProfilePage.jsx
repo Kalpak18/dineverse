@@ -86,6 +86,13 @@ export default function ProfilePage() {
     tax_inclusive:   cafe?.tax_inclusive !== false,
     business_type:   cafe?.business_type || 'restaurant',
     country:         cafe?.country || 'India',
+    // Delivery config
+    delivery_enabled:    cafe?.delivery_enabled ?? false,
+    delivery_radius_km:  cafe?.delivery_radius_km ?? 5,
+    delivery_fee_base:   cafe?.delivery_fee_base ?? 0,
+    delivery_fee_per_km: cafe?.delivery_fee_per_km ?? 0,
+    delivery_min_order:  cafe?.delivery_min_order ?? 0,
+    delivery_est_mins:   cafe?.delivery_est_mins ?? 30,
   });
   const [saving, setSaving] = useState(false);
 
@@ -562,6 +569,136 @@ export default function ProfilePage() {
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </form>
+
+      {/* ── Delivery Settings ── */}
+      <div className="card space-y-5 mt-2">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Delivery Settings</h2>
+          <p className="text-xs text-gray-400 mt-0.5">Enable delivery orders and configure fees &amp; radius</p>
+        </div>
+
+        {/* Enable / Disable toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-800">Accept delivery orders</p>
+            <p className="text-xs text-gray-400 mt-0.5">When enabled, customers can choose Delivery at checkout</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setForm((f) => ({ ...f, delivery_enabled: !f.delivery_enabled }))}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              form.delivery_enabled ? 'bg-brand-500' : 'bg-gray-200'
+            }`}
+          >
+            <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+              form.delivery_enabled ? 'translate-x-6' : 'translate-x-1'
+            }`} />
+          </button>
+        </div>
+
+        {form.delivery_enabled && (
+          <div className="space-y-4 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Delivery Radius (km)</label>
+                <input
+                  type="number" min="0.5" step="0.5" className="input"
+                  value={form.delivery_radius_km}
+                  onChange={(e) => setForm((f) => ({ ...f, delivery_radius_km: parseFloat(e.target.value) || 5 }))}
+                />
+              </div>
+              <div>
+                <label className="label">Est. Delivery Time (min)</label>
+                <input
+                  type="number" min="5" step="5" className="input"
+                  value={form.delivery_est_mins}
+                  onChange={(e) => setForm((f) => ({ ...f, delivery_est_mins: parseInt(e.target.value) || 30 }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Base Delivery Fee (₹)</label>
+                <input
+                  type="number" min="0" step="1" className="input"
+                  value={form.delivery_fee_base}
+                  onChange={(e) => setForm((f) => ({ ...f, delivery_fee_base: parseFloat(e.target.value) || 0 }))}
+                />
+              </div>
+              <div>
+                <label className="label">Per-km Fee (₹)</label>
+                <input
+                  type="number" min="0" step="0.5" className="input"
+                  value={form.delivery_fee_per_km}
+                  onChange={(e) => setForm((f) => ({ ...f, delivery_fee_per_km: parseFloat(e.target.value) || 0 }))}
+                />
+                <p className="text-xs text-gray-400 mt-1">Added on top of base fee based on distance</p>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Minimum Order Amount for Delivery (₹)</label>
+              <input
+                type="number" min="0" step="10" className="input"
+                value={form.delivery_min_order}
+                onChange={(e) => setForm((f) => ({ ...f, delivery_min_order: parseFloat(e.target.value) || 0 }))}
+              />
+              <p className="text-xs text-gray-400 mt-1">Set to 0 for no minimum</p>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">Preview for customers:</p>
+              <p>🛵 Delivery fee: {form.delivery_fee_base > 0 ? `₹${form.delivery_fee_base}` : 'Free'}{form.delivery_fee_per_km > 0 ? ` + ₹${form.delivery_fee_per_km}/km` : ''}</p>
+              <p>⏱️ Estimated time: ~{form.delivery_est_mins} min</p>
+              <p>📍 Radius: {form.delivery_radius_km} km</p>
+              {form.delivery_min_order > 0 && <p>💰 Min order: ₹{form.delivery_min_order}</p>}
+            </div>
+
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                try {
+                  const { data } = await updateProfile(form);
+                  updateCafe(data.cafe);
+                  toast.success('Delivery settings saved!');
+                } catch {
+                  toast.error('Failed to save');
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              className="btn-primary"
+            >
+              {saving ? 'Saving...' : 'Save Delivery Settings'}
+            </button>
+          </div>
+        )}
+
+        {!form.delivery_enabled && (
+          <button
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                const { data } = await updateProfile({ ...form, delivery_enabled: false });
+                updateCafe(data.cafe);
+                toast.success('Delivery disabled');
+              } catch {
+                toast.error('Failed to save');
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            {saving ? 'Saving...' : 'Save (delivery off)'}
+          </button>
+        )}
+      </div>
 
       {/* ── Outlets Section ── */}
       {!cafe?.parent_cafe_id && (

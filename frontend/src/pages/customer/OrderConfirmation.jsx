@@ -125,6 +125,31 @@ export default function OrderConfirmation() {
     };
     socket.on('order_updated', onOrderUpdated);
 
+    // 5b. Delivery partner status updates
+    const onDeliveryUpdated = (update) => {
+      // Merge delivery fields into the cached order
+      const current = loadOrders(slug);
+      const target = current.find((o) => o.id === update.order_id);
+      if (target) {
+        upsertOrder(slug, {
+          ...target,
+          delivery_status: update.delivery_status,
+          driver_name:     update.driver_name,
+          driver_phone:    update.driver_phone,
+          delivered_at:    update.delivered_at,
+        });
+        setOrders(loadOrders(slug));
+      }
+      if (update.delivery_status === 'delivered') {
+        toast.success('Your order has been delivered! 🛵');
+      } else if (update.delivery_status === 'out_for_delivery') {
+        toast('Your order is on the way! 🛵', { icon: '🛵' });
+      } else if (update.delivery_status === 'assigned') {
+        toast('Driver assigned — getting ready to pick up your order', { icon: '🏍️' });
+      }
+    };
+    socket.on('delivery_updated', onDeliveryUpdated);
+
     // 6. Join a room for every currently active order
     const liveOrders = stored.filter((o) => !['paid', 'cancelled'].includes(o.status));
     liveOrders.forEach((o) => {
@@ -160,6 +185,7 @@ export default function OrderConfirmation() {
       clearInterval(pollRef.current);
       socket.off('connect', onConnect);
       socket.off('order_updated', onOrderUpdated);
+      socket.off('delivery_updated', onDeliveryUpdated);
       socket.disconnect();
       socketRef.current = null;
       trackedIds.current.clear();
@@ -416,8 +442,20 @@ export default function OrderConfirmation() {
                 </div>
               )}
 
-              {/* Ready banners */}
-              {isReady && (
+              {/* Delivery status bar — only for delivery orders */}
+              {order.order_type === 'delivery' && (
+                <DeliveryStatusBar
+                  deliveryStatus={order.delivery_status}
+                  driverName={order.driver_name}
+                  driverPhone={order.driver_phone}
+                  deliveredAt={order.delivered_at}
+                  deliveryFailedReason={order.delivery_failed_reason}
+                  deliveryAddress={order.delivery_address}
+                />
+              )}
+
+              {/* Ready banners — only for non-delivery orders */}
+              {isReady && order.order_type !== 'delivery' && (
                 <div className="mt-3 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 text-xs text-teal-800 font-medium">
                   {order.order_type === 'takeaway'
                     ? '🔔 Your order is ready! Please collect at the counter.'
@@ -762,6 +800,75 @@ function CustomerChatWidget({ order, slug, socketRef }) {
               {sending ? '…' : 'Send'}
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Delivery Status Bar ───────────────────────────────────────
+const DELIVERY_STEPS = [
+  { key: 'pending',          icon: '⏳', label: 'Order received'    },
+  { key: 'assigned',         icon: '🏍️', label: 'Driver assigned'   },
+  { key: 'picked_up',        icon: '📦', label: 'Picked up'         },
+  { key: 'out_for_delivery', icon: '🛵', label: 'On the way'        },
+  { key: 'delivered',        icon: '✅', label: 'Delivered'         },
+];
+
+function DeliveryStatusBar({ deliveryStatus, driverName, driverPhone, deliveredAt, deliveryFailedReason, deliveryAddress }) {
+  if (!deliveryStatus) {
+    return (
+      <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-xs text-blue-700">
+        🛵 Delivery order · {deliveryAddress || 'Address on file'}
+      </div>
+    );
+  }
+
+  if (deliveryStatus === 'failed') {
+    return (
+      <div className="mt-3 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
+        <p className="font-semibold">❌ Delivery could not be completed</p>
+        {deliveryFailedReason && <p className="mt-0.5">{deliveryFailedReason}</p>}
+      </div>
+    );
+  }
+
+  const currentIdx = DELIVERY_STEPS.findIndex((s) => s.key === deliveryStatus);
+
+  return (
+    <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-3">
+      {/* Step dots */}
+      <div className="flex items-center justify-between mb-3">
+        {DELIVERY_STEPS.map((step, i) => (
+          <div key={step.key} className="flex flex-col items-center gap-0.5 flex-1">
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm transition-all ${
+              i <= currentIdx ? 'bg-brand-500 text-white' : 'bg-gray-200 text-gray-400'
+            }`}>
+              {step.icon}
+            </div>
+            <span className={`text-[9px] text-center leading-tight ${i <= currentIdx ? 'text-brand-700 font-semibold' : 'text-gray-400'}`}>
+              {step.label}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* Current status message */}
+      <p className="text-xs text-blue-800 font-medium text-center">
+        {deliveryStatus === 'delivered'
+          ? `Delivered${deliveredAt ? ` at ${new Date(deliveredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}!`
+          : DELIVERY_STEPS[currentIdx]?.label || deliveryStatus}
+      </p>
+
+      {/* Driver info — show once assigned */}
+      {driverName && (
+        <div className="mt-2 flex items-center justify-between bg-white rounded-lg px-3 py-2 text-xs">
+          <span className="text-gray-600">🏍️ <span className="font-medium">{driverName}</span></span>
+          {driverPhone && (
+            <a href={`tel:${driverPhone}`} className="text-brand-600 font-semibold hover:underline">
+              {driverPhone}
+            </a>
+          )}
         </div>
       )}
     </div>
