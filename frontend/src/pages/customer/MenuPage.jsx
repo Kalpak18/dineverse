@@ -8,6 +8,7 @@ import { loadOrders } from '../../utils/cafeOrderStorage';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
+import CustomerTour from '../../components/CustomerTour';
 
 // Fallback emoji map (used if API fetch fails)
 const FALLBACK_EMOJI_MAP = {
@@ -184,6 +185,7 @@ export default function MenuPage() {
       className="max-w-2xl mx-auto bg-white flex flex-col overflow-hidden"
       style={{ height: '100dvh' }}
     >
+      <CustomerTour />
       {/* ── Header ── */}
       <header
         className="relative text-white px-4 pt-8 pb-3.5 flex-shrink-0"

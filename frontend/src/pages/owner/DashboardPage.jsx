@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getDashboardStats, getMenuItems, getPublicSetting, toggleCafeOpen } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import SetupWizard from '../../components/SetupWizard';
+import CafeQRCard from '../../components/CafeQRCard';
 import { Link } from 'react-router-dom';
 import { STATUS_CONFIG } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency } from '../../utils/formatters';
@@ -170,20 +171,7 @@ export default function DashboardPage() {
       </div>
 
       {/* QR / Link share */}
-      <div className="card bg-brand-50 border-brand-200">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <p className="text-sm font-semibold text-brand-800">Your Customer Ordering Link</p>
-            <p className="text-xs text-brand-600 mt-0.5 break-all">{cafeUrl}</p>
-          </div>
-          <button
-            onClick={() => { navigator.clipboard.writeText(cafeUrl); }}
-            className="text-sm font-medium text-brand-700 bg-white border border-brand-300 px-3 py-1.5 rounded-lg hover:bg-brand-50 transition-colors"
-          >
-            Copy Link
-          </button>
-        </div>
-      </div>
+      <CafeQRCard url={cafeUrl} cafeName={cafe?.name} />
 
       {/* Today stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
