@@ -84,7 +84,13 @@ export default function OrdersPage() {
     cafe?.id,
     (order) => {
       setOrders((prev) => [order, ...prev]);
-      toast.success(`New order ${fmtToken(order.daily_order_number, order.order_type)} from ${order.customer_name}!`);
+      const token = fmtToken(order.daily_order_number, order.order_type);
+      toast.success(`New order ${token} from ${order.customer_name}!`);
+      // Native OS notification when running as Electron desktop app
+      window.electronAPI?.notifyNewOrder(
+        `New Order — ${token}`,
+        `${order.customer_name} · ${order.order_type === 'takeaway' ? 'Takeaway' : `Table ${order.table_number}`}`
+      );
     },
     (updated) => {
       setOrders((prev) =>

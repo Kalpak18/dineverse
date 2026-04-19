@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { exploreCafes, getAvailableTables } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -92,6 +92,13 @@ export default function ExplorePage() {
               Search
             </button>
           </form>
+          <Link
+            to="/scan"
+            className="flex items-center gap-1.5 bg-brand-50 border border-brand-200 hover:bg-brand-100 text-brand-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+            title="Scan café QR code"
+          >
+            📷 Scan
+          </Link>
           <button
             type="button"
             onClick={() => navigate('/map')}

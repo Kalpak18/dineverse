@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
 
@@ -13,6 +14,7 @@ import MenuPage from './pages/customer/MenuPage';
 import CartPage from './pages/customer/CartPage';
 import OrderConfirmation from './pages/customer/OrderConfirmation';
 import MyOrdersPage from './pages/customer/MyOrdersPage';
+import ScanPage from './pages/customer/ScanPage';
 
 // Owner pages
 import LoginPage from './pages/owner/LoginPage';
@@ -67,13 +69,28 @@ function AdminRoute({ children }) {
   return children;
 }
 
+// Register the Electron deep-link navigate callback once the router is ready
+function ElectronBridge() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (window.electronAPI?.registerNavigate) {
+      window.electronAPI.registerNavigate((route) => navigate(route));
+    }
+  }, [navigate]);
+  return null;
+}
+
 export default function App() {
   return (
     <Routes>
+      {/* Electron navigate bridge (no-op on web/mobile) */}
+      <Route path="*" element={<ElectronBridge />} />
+
       {/* Landing + Explore */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/explore" element={<ExplorePage />} />
       <Route path="/map"     element={<MapPage />} />
+      <Route path="/scan"    element={<ScanPage />} />
 
       {/* Customer routes */}
       <Route path="/cafe/:slug" element={<CafeEntry />} />
