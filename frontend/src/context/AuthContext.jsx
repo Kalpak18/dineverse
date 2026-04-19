@@ -62,8 +62,15 @@ export function AuthProvider({ children }) {
 
   const updateCafe = (updatedCafe) => setCafe((prev) => ({ ...prev, ...updatedCafe }));
 
+  const refreshCafe = useCallback(async () => {
+    try {
+      const { data } = await getMe();
+      setCafe(data.cafe);
+    } catch {}
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ cafe, role, loading, login, register, logout, updateCafe }}>
+    <AuthContext.Provider value={{ cafe, role, loading, login, register, logout, updateCafe, refreshCafe }}>
       {children}
     </AuthContext.Provider>
   );

@@ -9,6 +9,17 @@ function toSlug(str) {
   return str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
 }
 
+const BUSINESS_TYPES = [
+  { value: 'restaurant',    label: 'Restaurant' },
+  { value: 'restaurant_ac', label: 'Restaurant (AC)' },
+  { value: 'cafe',          label: 'Café / Coffee Shop' },
+  { value: 'bakery',        label: 'Bakery / Sweet Shop' },
+  { value: 'bar',           label: 'Bar / Pub' },
+  { value: 'food_stall',    label: 'Food Stall / Cloud Kitchen' },
+  { value: 'hotel_rest',    label: 'Hotel Restaurant' },
+  { value: 'unregistered',  label: 'Not GST Registered' },
+];
+
 const INDIAN_STATES = [
   'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
   'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
@@ -25,6 +36,7 @@ export default function RegisterPage() {
   const [form, setForm] = useState({
     name: '', slug: '', email: '', password: '', description: '', phone: '',
     address: '', address_line2: '', city: '', state: '', pincode: '',
+    business_type: 'restaurant',
   });
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -194,6 +206,16 @@ export default function RegisterPage() {
                     <p className="text-xs text-gray-400">yourapp.com/cafe/{form.slug || 'your-slug'}</p>
                     {slugIndicator()}
                   </div>
+                </div>
+
+                <div>
+                  <label className="label">Business Type *</label>
+                  <select className="input" value={form.business_type} onChange={set('business_type')} required>
+                    {BUSINESS_TYPES.map((b) => (
+                      <option key={b.value} value={b.value}>{b.label}</option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">Used to calculate the correct GST rate on orders.</p>
                 </div>
 
                 <div>

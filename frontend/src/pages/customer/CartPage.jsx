@@ -20,6 +20,8 @@ export default function CartPage() {
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
 
+  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+
   // Delivery address form state
   const [deliveryForm, setDeliveryForm] = useState({
     delivery_address:      '',
@@ -36,8 +38,6 @@ export default function CartPage() {
   const deliveryMinOrder = parseFloat(session?.delivery_min_order || 0);
 
   const TIP_OPTIONS = [0, 10, 20, 50];
-
-  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
   const [cafeOpen, setCafeOpen] = useState(session?.is_open !== false);
 
   // Live open/closed updates — same room MenuPage uses
@@ -227,7 +227,7 @@ export default function CartPage() {
             value={deliveryForm.delivery_address2}
             onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_address2: e.target.value }))}
           />
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               className="input flex-1"
               placeholder="City"
@@ -235,7 +235,7 @@ export default function CartPage() {
               onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_city: e.target.value }))}
             />
             <input
-              className="input w-28"
+              className="input sm:w-32"
               placeholder="Pincode"
               value={deliveryForm.delivery_zipcode}
               onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_zipcode: e.target.value }))}

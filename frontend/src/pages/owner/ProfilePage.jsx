@@ -61,7 +61,7 @@ const NAME_STYLES = [
 ];
 
 export default function ProfilePage() {
-  const { cafe, updateCafe } = useAuth();
+  const { cafe, updateCafe, refreshCafe } = useAuth();
   const [form, setForm] = useState({
     name:            cafe?.name || '',
     description:     cafe?.description || '',
@@ -95,6 +95,43 @@ export default function ProfilePage() {
     delivery_est_mins:   cafe?.delivery_est_mins ?? 30,
   });
   const [saving, setSaving] = useState(false);
+
+  // Re-sync form whenever the cafe context refreshes (e.g. after another tab saves or on re-login)
+  useEffect(() => {
+    if (!cafe) return;
+    setForm({
+      name:            cafe.name || '',
+      description:     cafe.description || '',
+      address:         cafe.address || '',
+      address_line2:   cafe.address_line2 || '',
+      city:            cafe.city || '',
+      state:           cafe.state || '',
+      pincode:         cafe.pincode || '',
+      phone:           cafe.phone || '',
+      logo_url:        cafe.logo_url || '',
+      cover_image_url: cafe.cover_image_url || '',
+      name_style:      cafe.name_style || 'normal',
+      latitude:        cafe.latitude  || null,
+      longitude:       cafe.longitude || null,
+      gst_number:      cafe.gst_number  || '',
+      gst_rate:        cafe.gst_rate ?? 5,
+      fssai_number:    cafe.fssai_number || '',
+      upi_id:          cafe.upi_id    || '',
+      bill_prefix:     cafe.bill_prefix || 'INV',
+      bill_footer:     cafe.bill_footer || '',
+      pan_number:      cafe.pan_number  || '',
+      tax_inclusive:   cafe.tax_inclusive !== false,
+      business_type:   cafe.business_type || 'restaurant',
+      country:         cafe.country || 'India',
+      delivery_enabled:    cafe.delivery_enabled ?? false,
+      delivery_radius_km:  cafe.delivery_radius_km ?? 5,
+      delivery_fee_base:   cafe.delivery_fee_base ?? 0,
+      delivery_fee_per_km: cafe.delivery_fee_per_km ?? 0,
+      delivery_min_order:  cafe.delivery_min_order ?? 0,
+      delivery_est_mins:   cafe.delivery_est_mins ?? 30,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cafe?.id]);
 
   // Outlets
   const [outlets, setOutlets]         = useState([]);
@@ -154,8 +191,8 @@ export default function ProfilePage() {
     if (!form.phone.trim()) { toast.error('Phone number is required'); return; }
     setSaving(true);
     try {
-      const { data } = await updateProfile(form);
-      updateCafe(data.cafe);
+      await updateProfile(form);
+      await refreshCafe();
       toast.success('Profile updated successfully');
     } catch {
       toast.error('Failed to update profile');
@@ -661,8 +698,8 @@ export default function ProfilePage() {
               onClick={async () => {
                 setSaving(true);
                 try {
-                  const { data } = await updateProfile(form);
-                  updateCafe(data.cafe);
+                  await updateProfile(form);
+                  await refreshCafe();
                   toast.success('Delivery settings saved!');
                 } catch {
                   toast.error('Failed to save');
@@ -684,8 +721,8 @@ export default function ProfilePage() {
             onClick={async () => {
               setSaving(true);
               try {
-                const { data } = await updateProfile({ ...form, delivery_enabled: false });
-                updateCafe(data.cafe);
+                await updateProfile({ ...form, delivery_enabled: false });
+                await refreshCafe();
                 toast.success('Delivery disabled');
               } catch {
                 toast.error('Failed to save');
