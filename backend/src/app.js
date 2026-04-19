@@ -132,7 +132,7 @@ io.on('connection', (socket) => {
 });
 
 // ─── Middleware ────────────────────────────────────────────────
-app.use(express.json({ limit: '10kb' })); // limit body size
+app.use(express.json({ limit: '8mb' })); // raised for AI menu import (base64 image payloads)
 
 // HTTP request logging (skip in test env)
 if (process.env.NODE_ENV !== 'test') {

@@ -176,6 +176,10 @@ export const exportOrdersCSV = (params) => api.get('/analytics/export', { params
 export const updateStock   = (id, data) => api.patch(`/menu/items/${id}/stock`, data);
 export const getInventory  = ()         => api.get('/menu/inventory');
 
+// ─── AI Menu Import (Owner) ───────────────────────────────────
+export const aiMenuImport  = (imageBase64, mimeType) =>
+  api.post('/menu/ai-import', { image: imageBase64, mimeType }, { timeout: 60000 });
+
 // ─── Customers CRM (Owner) ────────────────────────────────────
 export const getCustomers      = (params) => api.get('/customers', { params });
 export const getCustomerOrders = (params) => api.get('/customers/orders', { params });

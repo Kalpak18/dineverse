@@ -6,6 +6,7 @@ import {
 } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ImageUpload from '../../components/ImageUpload';
+import AIMenuImport from '../../components/AIMenuImport';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
@@ -32,6 +33,7 @@ export default function MenuManagementPage() {
   const [catModal, setCatModal] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [restockItem, setRestockItem] = useState(null); // item being restocked
+  const [aiImportOpen, setAiImportOpen] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -103,9 +105,17 @@ export default function MenuManagementPage() {
     <div className="max-w-4xl space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
-        <button onClick={() => setItemModal('new')} className="btn-primary text-sm">
-          + Add Item
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setAiImportOpen(true)}
+            className="btn-secondary text-sm flex items-center gap-1.5"
+          >
+            📷 Import from Photo
+          </button>
+          <button onClick={() => setItemModal('new')} className="btn-primary text-sm">
+            + Add Item
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -230,6 +240,20 @@ export default function MenuManagementPage() {
           item={restockItem}
           onClose={() => setRestockItem(null)}
           onSave={(qty) => handleRestock(restockItem.id, qty)}
+        />
+      )}
+      {aiImportOpen && (
+        <AIMenuImport
+          existingCategories={categories}
+          onDone={(newItems, newCats) => {
+            setItems((prev) => [...prev, ...newItems]);
+            setCategories((prev) => {
+              const ids = new Set(prev.map((c) => c.id));
+              return [...prev, ...newCats.filter((c) => !ids.has(c.id))];
+            });
+            setAiImportOpen(false);
+          }}
+          onClose={() => setAiImportOpen(false)}
         />
       )}
     </div>
