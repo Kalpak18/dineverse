@@ -35,6 +35,7 @@ import InventoryPage from './pages/owner/InventoryPage';
 import CustomersPage from './pages/owner/CustomersPage';
 import WaitlistPage from './pages/owner/WaitlistPage';
 import SchedulePage from './pages/owner/SchedulePage';
+import MessagesPage from './pages/owner/MessagesPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -112,6 +113,7 @@ export default function App() {
         <Route path="customers" element={<CustomersPage />} />
         <Route path="waitlist"  element={<WaitlistPage />} />
         <Route path="schedule" element={<SchedulePage />} />
+        <Route path="messages" element={<MessagesPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

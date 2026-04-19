@@ -2,6 +2,37 @@ const db = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
+// ─── Owner: all conversations (orders with ≥1 message) ───────
+exports.getConversations = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `SELECT
+       o.id            AS order_id,
+       o.daily_order_number,
+       o.order_type,
+       o.customer_name,
+       o.table_number,
+       o.status,
+       o.created_at    AS order_created_at,
+       latest.message  AS last_message,
+       latest.sender_type AS last_sender_type,
+       latest.created_at  AS last_message_at,
+       (SELECT COUNT(*)::int FROM order_messages WHERE order_id = o.id) AS total_messages
+     FROM orders o
+     JOIN LATERAL (
+       SELECT message, sender_type, created_at
+       FROM order_messages
+       WHERE order_id = o.id
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) latest ON true
+     WHERE o.cafe_id = $1
+     ORDER BY latest.created_at DESC
+     LIMIT 200`,
+    [req.cafeId]
+  );
+  ok(res, { conversations: result.rows });
+});
+
 // ─── Helper: fetch messages for an order ─────────────────────
 async function fetchMessages(orderId) {
   const result = await db.query(

@@ -14,6 +14,7 @@ const {
 const {
   getCustomerMessages, postCustomerMessage,
   getOwnerMessages, postOwnerMessage,
+  getConversations,
 } = require('../controllers/messageController');
 
 // Public: combined bill for a table
@@ -42,7 +43,10 @@ router.get('/', authenticate, checkSubscription, getOrders);
 router.get('/:id', authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status', authenticate, checkSubscription, updateOrderStatus);
 
-// Owner chat
+// Owner: all conversations inbox
+router.get('/messages/conversations', authenticate, checkSubscription, getConversations);
+
+// Owner chat per order
 router.get('/:id/messages',  authenticate, checkSubscription, getOwnerMessages);
 router.post('/:id/messages', authenticate, checkSubscription, postOwnerMessage);
 

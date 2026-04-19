@@ -10,6 +10,7 @@ import DineLogo from './DineLogo';
 const navItems = [
   { to: '/owner/dashboard',    label: 'Dashboard',    icon: '📊' },
   { to: '/owner/orders',       label: 'Orders',       icon: '📋' },
+  { to: '/owner/messages',     label: 'Messages',     icon: '💬' },
   { to: '/owner/kitchen',      label: 'Kitchen',      icon: '🍳' },
   { to: '/owner/menu',         label: 'Menu',         icon: '🍽️' },
   { to: '/owner/offers',       label: 'Offers',       icon: '🏷️' },
