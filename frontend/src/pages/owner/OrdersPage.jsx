@@ -9,7 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
-import { fmtToken, fmtCurrency, fmtTime } from '../../utils/formatters';
+import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
 
 const QUICK_REASONS = [
@@ -1264,7 +1264,7 @@ function HistoryView({ orders }) {
                 <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
-                  {' · '}{fmtTime(order.created_at)}
+                  {' · '}{fmtDateTime(order.created_at)}
                 </p>
                 <div className="mt-2 space-y-0.5">
                   {(order.items || []).slice(0, 3).map((item) => (

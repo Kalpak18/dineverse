@@ -10,6 +10,17 @@ export const fmtCurrency  = (n)   => `₹${fmtPrice(n)}`;
 export const fmtTime      = (str) =>
   new Date(str).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+// Shows "Today, 02:30 PM" / "Yesterday, 11:00 AM" / "12 Apr 2025, 02:30 PM"
+export const fmtDateTime  = (str) => {
+  const d       = new Date(str);
+  const today   = new Date().toDateString();
+  const yest    = new Date(Date.now() - 86400000).toDateString();
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  if (d.toDateString() === today) return `Today, ${timeStr}`;
+  if (d.toDateString() === yest)  return `Yesterday, ${timeStr}`;
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + timeStr;
+};
+
 // Group orders by date — returns array of { label, orders }
 export const groupByDate  = (orders) => {
   const today     = new Date().toDateString();

@@ -21,7 +21,9 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   const orderNum   = bill.orders?.[0]?.order_number || dailyNum;
   const invoiceNo  = `${prefix}-${String(orderNum).padStart(4, '0')}`;
 
-  const now      = new Date();
+  // Use the order's actual timestamp — not today's date
+  const orderTimestamp = bill.orders?.[0]?.created_at;
+  const now      = orderTimestamp ? new Date(orderTimestamp) : new Date();
   const dateStr  = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
   const timeStr  = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
 
