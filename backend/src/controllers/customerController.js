@@ -9,7 +9,8 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const result = await db.query(
     `SELECT
-       customer_name,
+       -- Use the most recent version of the name as canonical display name
+       (ARRAY_AGG(customer_name ORDER BY created_at DESC))[1]          AS customer_name,
        customer_phone,
        COUNT(*)                                                         AS total_orders,
        COUNT(*) FILTER (WHERE status = 'paid')                         AS paid_orders,
@@ -21,7 +22,7 @@ exports.getCustomers = asyncHandler(async (req, res) => {
      FROM orders
      WHERE cafe_id = $1
        AND ($2 = '%%' OR LOWER(customer_name) LIKE $2 OR customer_phone LIKE $2)
-     GROUP BY customer_name, customer_phone
+     GROUP BY LOWER(TRIM(customer_name)), customer_phone
      ORDER BY total_orders DESC, last_visit DESC
      LIMIT $3 OFFSET $4`,
     [req.cafeId, q, parseInt(limit), parseInt(offset)]
@@ -29,7 +30,7 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   // Total unique count for pagination
   const countRes = await db.query(
-    `SELECT COUNT(DISTINCT (customer_name, customer_phone)) AS total
+    `SELECT COUNT(DISTINCT (LOWER(TRIM(customer_name)), customer_phone)) AS total
      FROM orders WHERE cafe_id = $1`,
     [req.cafeId]
   );
@@ -50,7 +51,7 @@ exports.getCustomerOrders = asyncHandler(async (req, res) => {
      FROM orders
      WHERE cafe_id = $1
        AND ($2::text IS NULL OR customer_phone = $2)
-       AND ($3::text IS NULL OR customer_name  = $3)
+       AND ($3::text IS NULL OR LOWER(TRIM(customer_name)) = LOWER(TRIM($3)))
      ORDER BY created_at DESC
      LIMIT 30`,
     [req.cafeId, phone || null, name || null]
