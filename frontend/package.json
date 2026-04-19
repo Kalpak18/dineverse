@@ -28,7 +28,6 @@
     "react-router-dom":                   "^6.24.0",
     "socket.io-client":                   "^4.7.5",
     "@capacitor/core":                    "^6.0.0",
-    "@capacitor-community/barcode-scanner": "^3.0.3",
     "jsqr":                               "^1.4.0"
   },
   "devDependencies": {

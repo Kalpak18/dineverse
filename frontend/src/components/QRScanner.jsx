@@ -18,7 +18,7 @@ const isNative = () =>
 // ── Native (Capacitor) scanner ────────────────────────────────
 async function startNativeScanner(onScan, onError) {
   try {
-    const { BarcodeScanner } = await import('@capacitor-community/barcode-scanner');
+    const { BarcodeScanner } = await import(/* @vite-ignore */ '@capacitor-community/barcode-scanner');
     await BarcodeScanner.checkPermission({ force: true });
     document.body.classList.add('scanner-active'); // make body transparent
     await BarcodeScanner.hideBackground();
@@ -34,7 +34,7 @@ async function startNativeScanner(onScan, onError) {
 
 async function stopNativeScanner() {
   try {
-    const { BarcodeScanner } = await import('@capacitor-community/barcode-scanner');
+    const { BarcodeScanner } = await import(/* @vite-ignore */ '@capacitor-community/barcode-scanner');
     await BarcodeScanner.stopScan();
     await BarcodeScanner.showBackground();
     document.body.classList.remove('scanner-active');
@@ -81,7 +81,7 @@ function WebScanner({ onScan, onClose }) {
         barcodes = await detector.detect(canvas);
       } else {
         // jsQR fallback
-        const { default: jsQR } = await import('jsqr');
+        const { default: jsQR } = await import(/* @vite-ignore */ 'jsqr');
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, imageData.width, imageData.height);
         if (code) barcodes = [{ rawValue: code.data }];
