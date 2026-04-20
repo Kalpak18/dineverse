@@ -1,5 +1,4 @@
-const express = require('express');
-const router = express.Router();
+const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
@@ -28,6 +27,6 @@ router.delete('/items/:id', requireOwner, deleteMenuItem);
 router.patch('/items/:id/toggle', requireOwner, toggleAvailability);
 router.patch('/items/:id/stock',  requireOwner, updateStock);
 router.get('/inventory',          requireOwner, getInventory);
-router.post('/ai-import',         requireOwner, aiImportLimiter, express.json({ limit: '5mb' }), aiMenuImport);
+router.post('/ai-import',         requireOwner, aiImportLimiter, aiMenuImport);
 
 module.exports = router;
