@@ -54,8 +54,20 @@ export default function ScanPage() {
       {/* Card */}
       <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
         {/* Icon */}
-        <div className="w-20 h-20 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-5">
-          <span className="text-4xl">📷</span>
+        <div className="w-20 h-20 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-5 text-brand-500">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none" />
+            <rect x="14" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+            <rect x="18" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+            <rect x="14" y="18" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+            <rect x="18" y="18" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+            <rect x="16" y="16" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+          </svg>
         </div>
         <h1 className="text-2xl font-extrabold text-gray-900 mb-2">Scan to Order</h1>
         <p className="text-gray-500 text-sm mb-8 leading-relaxed">

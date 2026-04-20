@@ -6,26 +6,27 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
 import DineLogo from './DineLogo';
+import NavIcon from './NavIcon';
 
 // All nav items — filtered by role below
 const ALL_NAV = [
-  { to: '/owner/dashboard',    label: 'Dashboard',    icon: '📊', roles: ['owner', 'manager'] },
-  { to: '/owner/orders',       label: 'Orders',       icon: '📋', roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/messages',     label: 'Messages',     icon: '💬', roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/kitchen',      label: 'Kitchen',      icon: '🍳', roles: ['owner', 'manager', 'cashier', 'kitchen'] },
-  { to: '/owner/menu',         label: 'Menu',         icon: '🍽️', roles: ['owner', 'manager'] },
-  { to: '/owner/offers',       label: 'Offers',       icon: '🏷️', roles: ['owner', 'manager'] },
-  { to: '/owner/reservations', label: 'Reservations', icon: '📅', roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/ratings',      label: 'Ratings',      icon: '⭐', roles: ['owner', 'manager'] },
-  { to: '/owner/analytics',    label: 'Analytics',    icon: '📈', roles: ['owner', 'manager'] },
-  { to: '/owner/staff',        label: 'Staff',        icon: '👥', roles: ['owner'] },
-  { to: '/owner/tables',       label: 'Tables',       icon: '🪑', roles: ['owner', 'manager'] },
-  { to: '/owner/inventory',    label: 'Inventory',    icon: '📦', roles: ['owner', 'manager'] },
-  { to: '/owner/customers',    label: 'Customers',    icon: '🧑‍🤝‍🧑', roles: ['owner', 'manager'] },
-  { to: '/owner/waitlist',     label: 'Waitlist',     icon: '🕐', roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/schedule',     label: 'Schedule',     icon: '🗓️', roles: ['owner', 'manager'] },
-  { to: '/owner/billing',      label: 'Billing',      icon: '💳', roles: ['owner'] },
-  { to: '/owner/help',         label: 'Help',         icon: '🎫', roles: ['owner', 'manager'] },
+  { to: '/owner/dashboard',    label: 'Dashboard',    icon: 'dashboard',    roles: ['owner', 'manager'] },
+  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/messages',     label: 'Messages',     icon: 'messages',     roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen'] },
+  { to: '/owner/menu',         label: 'Menu',         icon: 'menu',         roles: ['owner', 'manager'] },
+  { to: '/owner/offers',       label: 'Offers',       icon: 'offers',       roles: ['owner', 'manager'] },
+  { to: '/owner/reservations', label: 'Reservations', icon: 'reservations', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/ratings',      label: 'Ratings',      icon: 'ratings',      roles: ['owner', 'manager'] },
+  { to: '/owner/analytics',    label: 'Analytics',    icon: 'analytics',    roles: ['owner', 'manager'] },
+  { to: '/owner/staff',        label: 'Staff',        icon: 'staff',        roles: ['owner'] },
+  { to: '/owner/tables',       label: 'Tables',       icon: 'tables',       roles: ['owner', 'manager'] },
+  { to: '/owner/inventory',    label: 'Inventory',    icon: 'inventory',    roles: ['owner', 'manager'] },
+  { to: '/owner/customers',    label: 'Customers',    icon: 'customers',    roles: ['owner', 'manager'] },
+  { to: '/owner/waitlist',     label: 'Waitlist',     icon: 'waitlist',     roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/schedule',     label: 'Schedule',     icon: 'schedule',     roles: ['owner', 'manager'] },
+  { to: '/owner/billing',      label: 'Billing',      icon: 'billing',      roles: ['owner'] },
+  { to: '/owner/help',         label: 'Help',         icon: 'help',         roles: ['owner', 'manager'] },
 ];
 
 const ROLE_BADGE = {
@@ -143,8 +144,8 @@ function OwnerLayoutInner() {
           {/* Owner: café profile link. Staff: their name + role badge */}
           {isStaff ? (
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
-                {effectiveRole === 'kitchen' ? '🍳' : effectiveRole === 'cashier' ? '💰' : '🧑‍💼'}
+              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-600">
+                <NavIcon name={effectiveRole === 'kitchen' ? 'chef' : effectiveRole === 'cashier' ? 'cashier' : 'manager'} className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 truncate text-sm">
@@ -169,7 +170,7 @@ function OwnerLayoutInner() {
                 </p>
                 <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
               </div>
-              <span className="text-gray-300 group-hover:text-brand-400 text-xs flex-shrink-0">⚙️</span>
+              <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
             </NavLink>
           )}
 
@@ -180,7 +181,7 @@ function OwnerLayoutInner() {
                 onClick={() => setOutletOpen((v) => !v)}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs text-gray-600 font-medium transition-colors"
               >
-                <span>🏪 {outlets.find((o) => o.id === cafe?.id)?.parent_cafe_id ? 'Outlet' : 'Main branch'}</span>
+                <span>{outlets.find((o) => o.id === cafe?.id)?.parent_cafe_id ? 'Outlet' : 'Main branch'}</span>
                 <span className="text-gray-400">{outletOpen ? '▲' : '▼'}</span>
               </button>
               {outletOpen && (
@@ -231,7 +232,7 @@ function OwnerLayoutInner() {
                   }`
                 }
               >
-                <span>{item.icon}</span>
+                <NavIcon name={item.icon} />
                 <span className="flex-1">{item.label}</span>
                 {badgeCount > 0 && (
                   <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
@@ -257,14 +258,14 @@ function OwnerLayoutInner() {
                 }`
               }
             >
-              <span>⚙️</span> Profile
+              <NavIcon name="profile" /> Profile
             </NavLink>
           )}
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
           >
-            <span>🚪</span> Logout
+            <NavIcon name="logout" /> Logout
           </button>
         </div>
       </aside>

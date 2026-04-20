@@ -68,10 +68,16 @@ export default function LandingPage() {
                 to="/scan"
                 className="inline-flex items-center gap-2 text-sm text-brand-600 font-medium bg-brand-50 border border-brand-200 hover:bg-brand-100 transition-colors px-4 py-2.5 rounded-xl"
               >
-                📷 Scan café QR code to order
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" /><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none" />
+                  <rect x="14" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" /><rect x="18" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+                </svg>
+                Scan café QR code to order
               </Link>
             </div>
-            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · ₹2,999/year after trial</p>
+            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · From ₹499/month after trial</p>
           </div>
 
           {/* Mockup */}
@@ -271,50 +277,94 @@ export default function LandingPage() {
 
       {/* ── Pricing ─────────────────────────────────────────────── */}
       <section id="pricing" className="py-20 px-6">
-        <div className="max-w-3xl mx-auto text-center">
-          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Transparent Pricing</span>
-          <h2 className="text-3xl font-extrabold text-gray-900 mt-2 mb-12">Simple & Affordable</h2>
-          <div className="grid sm:grid-cols-2 gap-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Transparent Pricing</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Simple & Affordable</h2>
+            <p className="text-gray-500 mt-3 text-sm">Start free. Upgrade when you're ready. No hidden fees.</p>
+          </div>
+
+          {/* Free Trial + Pro plans */}
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
             {/* Free Trial */}
-            <div className="border-2 border-gray-200 rounded-3xl p-8 text-left">
-              <p className="font-bold text-gray-900 text-lg mb-1">Free Trial</p>
-              <p className="text-4xl font-extrabold text-gray-900 mb-1">₹0</p>
-              <p className="text-sm text-gray-400 mb-6">30 days, no credit card</p>
-              <ul className="space-y-2.5 mb-8">
-                {['Full access to all features', 'Unlimited orders', 'QR menu + billing', 'Analytics & reports'].map((f) => (
-                  <li key={f} className="text-sm text-gray-700 flex items-center gap-2">
-                    <span className="text-green-500">✓</span> {f}
+            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Free Trial</p>
+              <p className="text-3xl font-extrabold text-gray-900">₹0</p>
+              <p className="text-sm text-gray-400 mt-1 mb-5">30 days · No card</p>
+              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
+                {['Full feature access', 'Unlimited orders', 'QR menu + billing', 'Analytics & reports'].map((f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    {f}
                   </li>
                 ))}
               </ul>
-              <button
-                onClick={() => navigate('/owner/register')}
-                className="w-full py-3 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors"
-              >
+              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors text-sm">
                 Start Free Trial
               </button>
             </div>
-            {/* Yearly */}
-            <div className="border-2 border-brand-500 rounded-3xl p-8 text-left relative bg-brand-50">
-              <span className="absolute -top-3.5 left-6 bg-brand-500 text-white text-xs font-bold px-3 py-1 rounded-full">Most Popular</span>
-              <p className="font-bold text-gray-900 text-lg mb-1">Yearly Plan</p>
-              <p className="text-4xl font-extrabold text-gray-900 mb-1">₹2,999</p>
-              <p className="text-sm text-gray-400 mb-6">per year · ₹250/month</p>
-              <ul className="space-y-2.5 mb-8">
-                {['Everything in Free Trial', 'Priority support', 'Data never deleted', 'Invoice for GST input credit'].map((f) => (
-                  <li key={f} className="text-sm text-gray-700 flex items-center gap-2">
-                    <span className="text-green-500">✓</span> {f}
+
+            {/* 1 Year */}
+            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">1 Year</p>
+              <p className="text-3xl font-extrabold text-gray-900">₹499<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-400 mt-1 mb-5">₹5,988 billed yearly</p>
+              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
+                {['Everything in Free Trial', 'Priority support', 'Data never deleted', 'GST invoice for input credit'].map((f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    {f}
                   </li>
                 ))}
               </ul>
-              <button
-                onClick={() => navigate('/owner/register')}
-                className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors"
-              >
+              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:border-brand-400 hover:text-brand-600 transition-colors text-sm">
                 Get Started
               </button>
             </div>
+
+            {/* 2 Years */}
+            <div className="border-2 border-brand-500 rounded-2xl p-6 text-left flex flex-col relative bg-brand-50">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">SAVE 10%</span>
+              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">2 Years</p>
+              <p className="text-3xl font-extrabold text-gray-900">₹449<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-500 mt-1 mb-1">₹10,788 billed for 2 years</p>
+              <p className="text-xs text-green-600 font-semibold mb-4">Save ₹1,188 vs. 1-year</p>
+              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-700">
+                {['Everything in 1 Year', 'Multi-outlet management', 'API access (coming soon)', 'Dedicated account manager'].map((f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm">
+                Get Started
+              </button>
+            </div>
+
+            {/* 3 Years */}
+            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col relative">
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">BEST VALUE</span>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">3 Years</p>
+              <p className="text-3xl font-extrabold text-gray-900">₹444<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-400 mt-1 mb-1">₹15,999 billed for 3 years</p>
+              <p className="text-xs text-green-600 font-semibold mb-4">Save ₹1,965 vs. 1-year</p>
+              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
+                {['Everything in 2 Years', 'Lowest per-month cost', 'Price locked for 3 years', 'Early access to new features'].map((f) => (
+                  <li key={f} className="flex items-center gap-2">
+                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:border-brand-400 hover:text-brand-600 transition-colors text-sm">
+                Get Started
+              </button>
+            </div>
+
           </div>
+          <p className="text-center text-xs text-gray-400 mt-6">All plans include GST · Secure payment via Razorpay · Instant activation</p>
         </div>
       </section>
 

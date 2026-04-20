@@ -98,7 +98,13 @@ export default function ExplorePage() {
             className="flex items-center gap-1.5 bg-brand-50 border border-brand-200 hover:bg-brand-100 text-brand-700 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
             title="Scan café QR code"
           >
-            <span>📷</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+              <rect x="14" y="3" width="7" height="7" rx="1" /><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none" />
+              <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none" />
+              <rect x="14" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" /><rect x="18" y="14" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+              <rect x="14" y="18" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" /><rect x="18" y="18" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
+            </svg>
             <span className="hidden sm:inline">Scan</span>
           </Link>
           <button
@@ -106,7 +112,10 @@ export default function ExplorePage() {
             onClick={() => navigate('/map')}
             className="flex items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
           >
-            <span>🗺️</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+              <line x1="8" y1="2" x2="8" y2="18" /><line x1="16" y1="6" x2="16" y2="22" />
+            </svg>
             <span className="hidden sm:inline">Map</span>
           </button>
         </div>
