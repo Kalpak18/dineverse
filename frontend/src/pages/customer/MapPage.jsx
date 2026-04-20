@@ -1,7 +1,7 @@
 /**
  * MapPage — full-screen DineVerse café finder.
  *
- * Tile layer  : CartoDB Voyager — detailed tiles with buildings, POIs & roads (free, no API key)
+ * Tile layer  : OpenStreetMap standard — free, no key, richest building/road detail
  * Markers     : Custom SVG pins with café logo/initial + pulsing ring on select
  * Data source : /cafes/nearby → only active, subscribed DineVerse cafés with lat/lng
  */
@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 
 const RADIUS_OPTIONS = [3, 5, 10, 20, 50];
 const INDIA_CENTER   = [20.5937, 78.9629];
+const USER_ZOOM      = 16;   // buildings clearly visible at 16+
 
 // ── Modern pin icon ───────────────────────────────────────────────────────────
 function makePinIcon(cafe, selected) {
@@ -113,6 +114,7 @@ export default function MapPage() {
 
   const [cafes,        setCafes]        = useState([]);
   const [loading,      setLoading]      = useState(false);
+  const [locating,     setLocating]     = useState(true);  // true while waiting for GPS
   const [geoError,     setGeoError]     = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [selectedId,   setSelectedId]   = useState(null);
@@ -131,10 +133,10 @@ export default function MapPage() {
       attributionControl: true,
     }).setView(INDIA_CENTER, 5);
 
-    // CartoDB Voyager — detailed tiles with buildings, POIs & roads (free, no API key)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
-      subdomains:  'abcd',
+    // OpenStreetMap standard — richest free tile source: shows every building, road, POI
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
+      subdomains:  'abc',
       maxZoom:     19,
     }).addTo(map);
 
@@ -169,22 +171,46 @@ export default function MapPage() {
 
   // ── 3. Geolocation ──────────────────────────────────────────────────────────
   const requestGeo = useCallback((onSuccess) => {
-    if (!navigator.geolocation) { setGeoError('unavailable'); return; }
+    if (!navigator.geolocation) { setGeoError('unavailable'); setLocating(false); return; }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const loc = { lat: coords.latitude, lng: coords.longitude };
         setUserLocation(loc);
         setGeoError(null);
-        mapRef.current?.setView([loc.lat, loc.lng], 14);
+        setLocating(false);
+        mapRef.current?.setView([loc.lat, loc.lng], USER_ZOOM);
         onSuccess?.(loc);
       },
-      (err) => setGeoError(err.code === 1 ? 'denied' : 'unavailable'),
-      { timeout: 10000, enableHighAccuracy: true }
+      (err) => {
+        setGeoError(err.code === 1 ? 'denied' : 'unavailable');
+        setLocating(false);
+        // Fall back to India overview on error
+        mapRef.current?.setView(INDIA_CENTER, 5);
+      },
+      { timeout: 10000, enableHighAccuracy: false, maximumAge: 60000 }
     );
   }, []);
 
+  // On mount: check if permission already granted → skip India view, go straight to user location
   useEffect(() => {
-    requestGeo((loc) => fetchNearby(loc.lat, loc.lng, radius));
+    const run = async () => {
+      if (navigator.permissions) {
+        try {
+          const status = await navigator.permissions.query({ name: 'geolocation' });
+          if (status.state !== 'granted') {
+            // Permission not yet granted — show India overview, let user decide
+            setLocating(false);
+          }
+          // If granted, keep locating=true (hides India flash) and let getCurrentPosition run
+        } catch {
+          setLocating(false);
+        }
+      } else {
+        setLocating(false);
+      }
+      requestGeo((loc) => fetchNearby(loc.lat, loc.lng, radius));
+    };
+    run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -432,9 +458,13 @@ export default function MapPage() {
                 </div>
               )}
 
-              {!loading && !userLocation && (
+              {!loading && !locating && !userLocation && (
                 <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center text-3xl mb-4">📍</div>
+                  <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+                    </svg>
+                  </div>
                   <p className="text-sm font-bold text-gray-700 mb-1">Allow location or search</p>
                   <p className="text-xs text-gray-400 leading-relaxed">Nearby DineVerse cafés will appear on the map</p>
                 </div>
@@ -468,8 +498,24 @@ export default function MapPage() {
           <div className={`flex-1 relative ${mobileTab === 'list' ? 'hidden md:block' : 'block'}`}>
             <div ref={mapDivRef} className="absolute inset-0" />
 
+            {/* Locating overlay — shown while waiting for GPS when permission was pre-granted */}
+            {locating && (
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-[3px] flex flex-col items-center justify-center z-[900] pointer-events-none gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-gray-800">Getting your location…</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Finding cafés nearby</p>
+                </div>
+                <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+
             {/* Loading overlay */}
-            {loading && (
+            {!locating && loading && (
               <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] flex items-center justify-center z-[900] pointer-events-none">
                 <div className="bg-white rounded-2xl shadow-xl px-5 py-3.5 flex items-center gap-3 border border-gray-100">
                   <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
