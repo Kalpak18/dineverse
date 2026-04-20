@@ -24,8 +24,9 @@ function KitchenHint() {
 
 // ── Kitchen token print ────────────────────────────────────────
 function printKitchenToken(order, cafeName) {
-  const num = order.daily_order_number;
+  const num = String(order.daily_order_number).padStart(2, '0');
   const isTakeaway = order.order_type === 'takeaway';
+  const isDelivery = order.order_type === 'delivery';
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
@@ -132,8 +133,8 @@ function printKitchenToken(order, cafeName) {
 
   <div class="token-box">
     <div class="token-label">Order Token</div>
-    <div class="token-num">#${num}</div>
-    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : `🍽️ TABLE ${order.table_number}`}</div>
+    <div class="token-num">${isTakeaway ? `TK ${num}` : isDelivery ? `D ${num}` : `#${num}`}</div>
+    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ TABLE ${order.table_number}`}</div>
   </div>
 
   <div class="meta">${order.customer_name} &nbsp;·&nbsp; ${dateStr} ${timeStr}</div>
@@ -370,7 +371,7 @@ export default function KitchenPage() {
                         <div className="flex items-center justify-between mb-2">
                           <div>
                             <span className="font-bold text-white text-xl">
-                              #{fmtToken(order.daily_order_number)}
+                              {fmtToken(order.daily_order_number, order.order_type)}
                             </span>
                             <span className="text-gray-600 text-xs ml-1.5">today</span>
                           </div>

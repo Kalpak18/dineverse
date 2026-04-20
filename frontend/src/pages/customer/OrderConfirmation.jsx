@@ -387,7 +387,7 @@ export default function OrderConfirmation() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-xs text-gray-400 font-medium tracking-wide">TOKEN</p>
-                  <p className="font-black text-gray-900 text-3xl leading-none">#{fmtToken(order.daily_order_number)}</p>
+                  <p className="font-black text-gray-900 text-3xl leading-none">{fmtToken(order.daily_order_number, order.order_type)}</p>
                 </div>
                 <span className={`badge ${statusInfo.color} px-3 py-1.5 text-sm`}>
                   {statusInfo.icon} {statusInfo.label}
@@ -581,7 +581,7 @@ export default function OrderConfirmation() {
             <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
               {/* Order meta */}
               <div className="flex justify-between text-xs text-gray-500">
-                <span>Token #{fmtToken(receiptOrder.daily_order_number)}</span>
+                <span>Token {fmtToken(receiptOrder.daily_order_number, receiptOrder.order_type)}</span>
                 <span>{new Date(receiptOrder.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
               </div>
               <div className="flex justify-between text-xs text-gray-500">
@@ -661,7 +661,7 @@ export default function OrderConfirmation() {
               {(tableBill.orders || []).map((order, i) => (
                 <div key={order.id} className="border border-gray-100 rounded-xl p-3">
                   <p className="text-xs font-semibold text-gray-500 mb-1.5">
-                    Order #{order.daily_order_number} · {fmtTime(order.created_at)}
+                    Order {fmtToken(order.daily_order_number, order.order_type)} · {fmtTime(order.created_at)}
                   </p>
                   {(order.items || []).map((item, j) => (
                     <div key={j} className="flex justify-between text-sm text-gray-700 py-0.5">
@@ -904,7 +904,7 @@ function RatingModal({ order, slug, onDone, onSkip }) {
           <div className="text-center">
             <p className="text-3xl mb-2">⭐</p>
             <h3 className="font-bold text-gray-900 text-lg">How was your experience?</h3>
-            <p className="text-sm text-gray-500 mt-1">Rate your order #{fmtToken(order.daily_order_number)}</p>
+            <p className="text-sm text-gray-500 mt-1">Rate your order {fmtToken(order.daily_order_number, order.order_type)}</p>
           </div>
 
           {/* Stars */}

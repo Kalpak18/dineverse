@@ -415,7 +415,7 @@ export default function DashboardPage() {
                 {stats?.recentOrders?.map((order) => (
                   <div key={order.id} className="flex items-center justify-between text-sm py-2 border-b border-gray-50 last:border-0">
                     <div>
-                      <span className="font-medium text-gray-800">#{fmtToken(order.daily_order_number || order.order_number)}</span>
+                      <span className="font-medium text-gray-800">{fmtToken(order.daily_order_number || order.order_number, order.order_type)}</span>
                       <span className="text-gray-400 ml-2">{order.customer_name} · {order.table_number}</span>
                     </div>
                     <div className="flex items-center gap-2">

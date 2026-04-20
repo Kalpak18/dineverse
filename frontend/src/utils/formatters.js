@@ -1,9 +1,12 @@
 export const fmtOrderNum  = (n)   => String(n).padStart(4, '0');
-// fmtToken — dine-in: "T-12", takeaway: "TK-07"
-export const fmtToken     = (n, orderType) => {
+// fmtToken — the returned string includes the prefix; callers must NOT add '#'.
+// dine-in: "#42" | takeaway: "TK 42" | delivery: "D 42"
+export const fmtToken = (n, orderType) => {
   if (n == null) return '–';
   const num = String(n).padStart(2, '0');
-  return orderType === 'takeaway' ? `TK-${num}` : `T-${num}`;
+  if (orderType === 'takeaway') return `TK ${num}`;
+  if (orderType === 'delivery') return `D ${num}`;
+  return `#${num}`;
 };
 export const fmtPrice     = (n)   => parseFloat(n).toFixed(2);
 export const fmtCurrency  = (n)   => `₹${fmtPrice(n)}`;

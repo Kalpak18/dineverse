@@ -92,8 +92,8 @@ export default function RatingsPage() {
                   <p className="text-xs text-gray-400">{fmtTime(r.created_at)}</p>
                 </div>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Token #{fmtToken(r.daily_order_number)} ·{' '}
-                  {r.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${r.table_number}`}
+                  Token {fmtToken(r.daily_order_number, r.order_type)} ·{' '}
+                  {r.order_type === 'takeaway' ? '🥡 Takeaway' : r.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ ${r.table_number}`}
                 </p>
                 {r.comment && (
                   <p className="text-sm text-gray-700 mt-2 leading-relaxed">"{r.comment}"</p>
