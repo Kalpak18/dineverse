@@ -6,6 +6,10 @@ const s3 = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
+  // Disable automatic checksum injection — browsers cannot compute or send
+  // the CRC32 header that SDK v3 adds by default, which breaks presigned PUTs.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 });
 
 module.exports = s3;

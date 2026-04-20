@@ -48,7 +48,8 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
     Bucket: process.env.S3_BUCKET_NAME,
     Key: key,
     ContentType: contentType,
-    ContentLength: size,
+    // ContentLength intentionally omitted — browsers set this automatically and
+    // cannot override a signed Content-Length header, which breaks the PUT.
   });
 
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: URL_EXPIRY_SECONDS });
