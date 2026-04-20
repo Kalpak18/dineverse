@@ -15,7 +15,7 @@ const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId 
   const payload = { cafeId, slug, role, rootCafeId: rootCafeId || cafeId };
   if (staffId) payload.staffId = staffId;
   if (staffRole) payload.staffRole = staffRole;
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '24h' });
 };
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);

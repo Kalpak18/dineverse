@@ -7,6 +7,6 @@ RUN npm ci --only=production
 
 COPY . .
 
-EXPOSE 10000
+EXPOSE 5000
 
 CMD ["sh", "-c", "node scripts/migrate.js && node src/app.js"]

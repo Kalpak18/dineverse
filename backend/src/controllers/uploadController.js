@@ -34,7 +34,12 @@ exports.getPresignedUrl = asyncHandler(async (req, res) => {
     return fail(res, `File too large. Maximum size is ${MAX_SIZE_BYTES / 1024 / 1024} MB`);
   }
 
-  const folder = FOLDERS[uploadType] || 'misc';
+  const VALID_UPLOAD_TYPES = ['menu_item', 'logo', 'cover'];
+  if (!VALID_UPLOAD_TYPES.includes(uploadType)) {
+    return fail(res, `Invalid upload type. Allowed: ${VALID_UPLOAD_TYPES.join(', ')}`);
+  }
+
+  const folder = FOLDERS[uploadType];
   const ext = contentType.split('/')[1].replace('jpeg', 'jpg');
   // Namespace by cafeId to keep tenants' files separate
   const key = `${folder}/${req.cafeId}/${uuidv4()}.${ext}`;

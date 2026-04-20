@@ -12,8 +12,8 @@ const pool = new Pool({
   statement_timeout: 15000,
   // Idle connections returned to pool after 30 seconds
   idleTimeoutMillis: 30000,
-  // Max pool size — 10 is safe for a single-server deployment
-  max: 10,
+  // Max pool size — 20 handles production traffic; reduce to 5 if using PgBouncer
+  max: 20,
 });
 
 pool.on('error', (err) => {

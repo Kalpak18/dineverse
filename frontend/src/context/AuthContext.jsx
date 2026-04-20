@@ -84,6 +84,9 @@ export function AuthProvider({ children }) {
     setRole(null);
     setStaffRole(null);
     setStaffInfo(null);
+    // Disconnect the global notification socket so a re-login as a different café
+    // doesn't receive stale events from the previous session
+    window.dispatchEvent(new Event('auth:logout'));
   };
 
   const updateCafe = (updatedCafe) => setCafe((prev) => ({ ...prev, ...updatedCafe }));

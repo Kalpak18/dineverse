@@ -3,6 +3,7 @@ const validateEnv = require('./utils/validateEnv');
 validateEnv(); // crash early if config is incomplete
 
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
@@ -90,10 +91,26 @@ if (process.env.REDIS_URL) {
   );
 }
 
+// Parse JWT from socket handshake (optional — unauthenticated sockets still connect)
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) return next();
+  try {
+    socket.user = jwt.verify(token, process.env.JWT_SECRET);
+  } catch {
+    // Invalid token — allow connection but socket.user stays undefined
+  }
+  next();
+});
+
 io.on('connection', (socket) => {
   logger.debug('Socket connected: %s', socket.id);
 
   socket.on('join_cafe', (cafeId) => {
+    // Only authenticated staff whose token matches this café (or ADMIN) may join privileged room
+    if (socket.user && String(socket.user.cafeId) !== String(cafeId) && socket.user.role !== 'ADMIN') {
+      return;
+    }
     socket.join(`cafe:${cafeId}`);
     logger.debug('Socket %s joined cafe:%s', socket.id, cafeId);
   });
@@ -120,8 +137,9 @@ io.on('connection', (socket) => {
     socket.join(`reservation:${reservationId}`);
   });
 
-  // Admin joins a dedicated room to receive real-time ticket notifications
+  // Only platform admins may join the admin notification room
   socket.on('join_admin', () => {
+    if (socket.user?.role !== 'ADMIN') return;
     socket.join('admin_room');
     logger.debug('Socket %s joined admin_room', socket.id);
   });
@@ -132,7 +150,7 @@ io.on('connection', (socket) => {
 });
 
 // ─── Middleware ────────────────────────────────────────────────
-app.use(express.json({ limit: '8mb' })); // raised for AI menu import (base64 image payloads)
+app.use(express.json({ limit: '50kb' }));
 
 // HTTP request logging (skip in test env)
 if (process.env.NODE_ENV !== 'test') {

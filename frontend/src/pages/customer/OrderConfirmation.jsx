@@ -66,7 +66,7 @@ export default function OrderConfirmation() {
       upsertOrder(slug, data.order);
       refresh();
     } catch (err) {
-      console.error('[OrderConfirmation] status poll failed for', order.id, err?.response?.status);
+      if (import.meta.env.DEV) console.error('[OrderConfirmation] status poll failed for', order.id, err?.response?.status);
     }
   }, [slug, refresh]);
 

@@ -350,7 +350,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 // ─── Owner/Staff: get all orders ──────────────────────────────
 exports.getOrders = asyncHandler(async (req, res) => {
   const { status, date, page = 1 } = req.query;
-  const limit  = Math.min(parseInt(req.query.limit) || 50, 200); // cap at 200
+  const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
   const offset = (Math.max(parseInt(page), 1) - 1) * limit;
 
   let whereClause = 'WHERE o.cafe_id = $1';
@@ -760,7 +760,7 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT o.id, o.status, o.payment_order_id, o.payment_verified, o.cafe_id,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-            o.table_number, o.order_type
+            o.table_number, o.order_type, o.final_amount
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
@@ -773,6 +773,14 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   if (order.payment_verified) return fail(res, 'Already paid', 409);
   if (order.payment_order_id !== razorpay_order_id) {
     return fail(res, 'Order ID mismatch', 400);
+  }
+
+  // Verify the actual amount charged matches the order total — prevents underpayment
+  const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+  const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
+  if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
+    logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
+    return fail(res, 'Payment amount mismatch', 400);
   }
 
   // Mark paid

@@ -14,6 +14,7 @@ export default function CartPage() {
   const navigate = useNavigate();
   const { items, total, itemCount, updateQty, clearCart } = useCart();
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
@@ -121,8 +122,8 @@ export default function CartPage() {
   }
 
   const handlePlaceOrder = async () => {
-    if (loading) return; // prevent double submission
-    // Validate delivery form
+    if (submittingRef.current) return;
+    // Validate delivery form before locking — errors should be retryable
     if (isDelivery) {
       if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
       if (!deliveryForm.delivery_phone.trim())   { toast.error('Please enter your phone number for delivery'); return; }
@@ -131,6 +132,7 @@ export default function CartPage() {
         return;
       }
     }
+    submittingRef.current = true;
     setLoading(true);
     setShowConfirm(false);
     try {
@@ -155,14 +157,17 @@ export default function CartPage() {
       };
 
       const { data } = await placeOrder(slug, orderPayload);
-      clearCart();
-      // Save to device so order persists on refresh (session kept for future orders)
-      upsertOrder(slug, data.order);
-      navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
+      if (data?.order) {
+        // Save to device so order persists on refresh (session kept for future orders)
+        upsertOrder(slug, data.order);
+        clearCart(); // only clear after server confirms the order
+        navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
+      }
     } catch (err) {
       toast.error(getApiError(err));
     } finally {
       setLoading(false);
+      submittingRef.current = false;
     }
   };
 

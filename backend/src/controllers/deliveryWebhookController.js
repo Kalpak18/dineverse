@@ -18,8 +18,10 @@ const { notify } = require('../services/notificationService');
 exports.verifyWebhookSignature = (req, res, next) => {
   const secret = process.env.DELIVERY_WEBHOOK_SECRET;
   if (!secret) {
-    // No secret configured — skip signature check (useful during development)
-    logger.warn('DELIVERY_WEBHOOK_SECRET not set — skipping signature verification');
+    if (process.env.NODE_ENV === 'production') {
+      return fail(res, 'Webhook not configured', 503);
+    }
+    logger.warn('DELIVERY_WEBHOOK_SECRET not set — skipping signature verification (dev only)');
     return next();
   }
 

@@ -31,7 +31,7 @@ exports.authLimiter = rateLimit({
 // Very strict limiter for OTP sending (prevent email spam)
 exports.otpLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 3,
+  max: 1,
   store,
   message: { success: false, message: 'Too many OTP requests — wait a minute before trying again' },
   standardHeaders: true,

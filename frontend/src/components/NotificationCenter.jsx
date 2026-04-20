@@ -124,11 +124,20 @@ export default function NotificationCenter({ cafeId }) {
     socket.on('new_order',     onNewOrder);
     socket.on('order_updated', onOrderUpdated);
 
+    const onLogout = () => {
+      if (globalSocket) {
+        globalSocket.disconnect();
+        globalSocket = null;
+      }
+    };
+    window.addEventListener('auth:logout', onLogout);
+
     return () => {
       socket.off('connect',       onConnect);
       socket.off('notification',  onNotification);
       socket.off('new_order',     onNewOrder);
       socket.off('order_updated', onOrderUpdated);
+      window.removeEventListener('auth:logout', onLogout);
     };
   }, [cafeId]);
 

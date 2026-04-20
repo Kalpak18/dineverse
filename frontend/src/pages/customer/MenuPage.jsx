@@ -76,7 +76,7 @@ export default function MenuPage() {
       })
       .catch(() => {
         // Use fallback if fetch fails
-        console.log('Using fallback emoji map');
+        if (import.meta.env.DEV) console.log('Using fallback emoji map');
       });
   }, []);
 

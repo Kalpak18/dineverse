@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
 import { getOutlets, switchOutlet } from '../services/api';
@@ -352,11 +352,7 @@ function OwnerLayoutInner() {
           {pageAllowed ? (
             <Outlet />
           ) : (
-            <SubscriptionExpiredWall
-              cafe={cafe}
-              onBilling={() => navigate('/owner/billing')}
-              onLogout={handleLogout}
-            />
+            <Navigate to="/owner/billing" replace />
           )}
         </main>
       </div>

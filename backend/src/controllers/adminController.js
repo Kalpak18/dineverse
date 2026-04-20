@@ -13,6 +13,10 @@ const generateAdminToken = (adminId) =>
 
 // ─── POST /api/admin/setup (one-time, only when no admins exist) ─
 exports.setup = asyncHandler(async (req, res) => {
+  if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
+    return fail(res, 'Setup is disabled. Set ADMIN_SETUP_ENABLED=true to enable.', 403);
+  }
+
   const { name, email, password } = req.body;
   if (!name || !email || !password) return fail(res, 'name, email and password are required');
   if (password.length < 8) return fail(res, 'Password must be at least 8 characters');

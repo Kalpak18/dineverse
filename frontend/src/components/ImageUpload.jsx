@@ -63,7 +63,7 @@ export default function ImageUpload({
       onChange(objectUrl);
       toast.success('Image uploaded');
     } catch (err) {
-      console.error('Upload error:', err);
+      if (import.meta.env.DEV) console.error('Upload error:', err);
       toast.error('Upload failed — please try again');
     } finally {
       setUploading(false);
