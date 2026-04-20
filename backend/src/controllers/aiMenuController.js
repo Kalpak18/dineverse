@@ -78,7 +78,7 @@ exports.aiMenuImport = asyncHandler(async (req, res) => {
   } catch (err) {
     const msg = err.message || '';
     if (msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
-      return fail(res, 'AI quota exceeded — please try again later.', 503);
+      return fail(res, 'AI rate limit reached — please wait a minute and try again.', 503);
     }
     if (msg.includes('API_KEY') || msg.includes('401') || msg.includes('403')) {
       logger.error('Gemini API key error: %s', msg);
