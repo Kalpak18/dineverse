@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import DineLogo from '../components/DineLogo';
 
 export default function LandingPage() {
@@ -59,8 +59,17 @@ export default function LandingPage() {
                 onClick={() => navigate('/explore')}
                 className="px-7 py-3.5 bg-white hover:bg-gray-50 text-gray-800 font-bold rounded-xl text-base transition-colors border border-gray-200 shadow-sm"
               >
-                Explore Cafés Near You →
+                Explore Cafés →
               </button>
+            </div>
+            {/* Customer scanner shortcut */}
+            <div className="mt-4 flex justify-center md:justify-start">
+              <Link
+                to="/scan"
+                className="inline-flex items-center gap-2 text-sm text-brand-600 font-medium bg-brand-50 border border-brand-200 hover:bg-brand-100 transition-colors px-4 py-2.5 rounded-xl"
+              >
+                📷 Scan café QR code to order
+              </Link>
             </div>
             <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · ₹2,999/year after trial</p>
           </div>

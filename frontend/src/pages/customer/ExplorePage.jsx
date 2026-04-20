@@ -73,38 +73,41 @@ export default function ExplorePage() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
           <button
             onClick={() => navigate('/')}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+            className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 flex-shrink-0"
           >
             ←
           </button>
-          <form onSubmit={handleSubmit} className="flex-1 flex gap-2">
+          <form onSubmit={handleSubmit} className="flex-1 flex gap-2 min-w-0">
             <input
               ref={inputRef}
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-gray-50"
-              placeholder="Search by city (e.g. Bengaluru, Mumbai)"
+              className="flex-1 min-w-0 border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-gray-50"
+              placeholder="Search city…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
             <button
               type="submit"
-              className="bg-brand-500 hover:bg-brand-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium transition-colors"
+              className="bg-brand-500 hover:bg-brand-600 text-white px-3 sm:px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
             >
-              Search
+              <span className="hidden sm:inline">Search</span>
+              <span className="sm:hidden">→</span>
             </button>
           </form>
           <Link
             to="/scan"
-            className="flex items-center gap-1.5 bg-brand-50 border border-brand-200 hover:bg-brand-100 text-brand-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-brand-50 border border-brand-200 hover:bg-brand-100 text-brand-700 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
             title="Scan café QR code"
           >
-            📷 Scan
+            <span>📷</span>
+            <span className="hidden sm:inline">Scan</span>
           </Link>
           <button
             type="button"
             onClick={() => navigate('/map')}
-            className="flex items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors flex-shrink-0"
           >
-            🗺️ Map
+            <span>🗺️</span>
+            <span className="hidden sm:inline">Map</span>
           </button>
         </div>
       </div>
