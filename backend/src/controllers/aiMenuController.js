@@ -62,7 +62,7 @@ exports.aiMenuImport = asyncHandler(async (req, res) => {
   let raw;
   try {
     const genAI = getClient();
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
     const result = await model.generateContent([
       PROMPT,
