@@ -1,4 +1,4 @@
-const Anthropic = require('@anthropic-ai/sdk');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
@@ -9,14 +9,14 @@ const MAX_DECODED_BYTES = 5 * 1024 * 1024; // 5 MB
 let _client = null;
 function getClient() {
   if (!_client) {
-    if (!process.env.ANTHROPIC_API_KEY) throw new Error('ANTHROPIC_API_KEY is not configured');
-    _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    if (!process.env.Gemini_API_Key) throw new Error('Gemini_API_Key is not configured');
+    _client = new GoogleGenerativeAI(process.env.Gemini_API_Key);
   }
   return _client;
 }
 
-const SYSTEM_PROMPT = `You are a menu digitisation assistant for Indian restaurants and cafés.
-Your job is to extract every food and beverage item from a photographed physical menu card.
+const PROMPT = `You are a menu digitisation assistant for Indian restaurants and cafés.
+Extract every food and beverage item from this photographed physical menu card.
 
 Rules:
 1. Group items under their category headings exactly as printed (e.g. "Starters", "Main Course", "Beverages").
@@ -25,9 +25,9 @@ Rules:
    - name: the item name as printed
    - price: numeric value in INR. Omit currency symbols. Use null if price is unclear or missing.
    - description: any sub-text, ingredients, or serving note printed under the item name. Use null if none.
-   - is_veg: true if a green square/dot symbol (🟢) appears next to the item or if it is clearly a
-             vegetarian dish. false if a brown/red square/dot (🔴) appears, or if the dish contains
-             meat, seafood, or eggs. When genuinely ambiguous, default to true.
+   - is_veg: true if a green square/dot symbol appears next to the item or if it is clearly a vegetarian dish.
+             false if a brown/red square/dot appears, or if the dish contains meat, seafood, or eggs.
+             When genuinely ambiguous, default to true.
 3. Return ONLY a valid JSON object — no markdown fences, no explanation, no trailing text.
 4. The JSON must exactly match this schema:
 {
@@ -55,44 +55,36 @@ exports.aiMenuImport = asyncHandler(async (req, res) => {
   if (!mimeType || !ALLOWED_MIME.includes(mimeType)) {
     return fail(res, `mimeType must be one of: ${ALLOWED_MIME.join(', ')}`, 400);
   }
-  // Approximate decoded size: base64 length × 0.75
   if (image.length * 0.75 > MAX_DECODED_BYTES) {
     return fail(res, 'Image too large. Maximum size is 5 MB.', 400);
   }
 
   let raw;
   try {
-    const client = getClient();
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mimeType, data: image },
-            },
-            {
-              type: 'text',
-              text: 'Extract all menu items from this photo. Return only the JSON.',
-            },
-          ],
+    const genAI = getClient();
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+    const result = await model.generateContent([
+      PROMPT,
+      {
+        inlineData: {
+          mimeType,
+          data: image,
         },
-      ],
-    });
-    raw = response.content[0]?.text;
+      },
+    ]);
+
+    raw = result.response.text();
   } catch (err) {
-    if (err.status === 529 || err.message?.includes('overloaded')) {
-      return fail(res, 'AI service is busy — please try again in a moment.', 503);
+    const msg = err.message || '';
+    if (msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+      return fail(res, 'AI quota exceeded — please try again later.', 503);
     }
-    if (err.status === 401) {
-      logger.error('Anthropic API key invalid: %s', err.message);
+    if (msg.includes('API_KEY') || msg.includes('401') || msg.includes('403')) {
+      logger.error('Gemini API key error: %s', msg);
       return fail(res, 'AI service configuration error. Contact support.', 500);
     }
-    logger.error('Anthropic API error: %s', err.message);
+    logger.error('Gemini API error: %s', msg);
     return fail(res, 'AI processing failed. Please try again.', 502);
   }
 
@@ -101,7 +93,7 @@ exports.aiMenuImport = asyncHandler(async (req, res) => {
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
     parsed = JSON.parse(cleaned);
   } catch {
-    logger.error('Claude returned non-JSON: %s', raw?.slice(0, 300));
+    logger.error('Gemini returned non-JSON: %s', raw?.slice(0, 300));
     return fail(res, 'AI returned an unreadable response. Please try again or enter items manually.', 422);
   }
 
