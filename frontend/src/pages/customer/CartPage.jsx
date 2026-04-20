@@ -448,6 +448,14 @@ export default function CartPage() {
                 </div>
               </div>
 
+              <p className="text-center text-xs text-gray-400 leading-relaxed">
+                By placing this order you agree to the café's service terms.
+                See DineVerse{' '}
+                <a href="/terms" target="_blank" rel="noreferrer" className="underline hover:text-gray-600">Terms</a>
+                {' & '}
+                <a href="/privacy" target="_blank" rel="noreferrer" className="underline hover:text-gray-600">Privacy Policy</a>.
+              </p>
+
               <div className="flex flex-col gap-2 pt-1">
                 <button
                   onClick={handlePlaceOrder}

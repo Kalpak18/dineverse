@@ -45,6 +45,7 @@ export default function RegisterPage() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [slugStatus, setSlugStatus] = useState('idle'); // idle | checking | available | taken
   const [loading, setLoading] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const slugCheckTimer = useRef(null);
   const cooldownTimer  = useRef(null);
@@ -138,6 +139,7 @@ export default function RegisterPage() {
     if (!form.pincode.trim())  { toast.error('Pincode is required'); return; }
     if (slugStatus === 'taken')    { toast.error('Slug is already taken — please change it'); return; }
     if (slugStatus === 'checking') { toast.error('Please wait while slug is being checked'); return; }
+    if (!agreedToTerms) { toast.error('Please accept the Terms & Conditions to continue'); return; }
 
     setLoading(true);
     try {
@@ -328,9 +330,30 @@ export default function RegisterPage() {
               </p>
             )}
 
+            {/* T&C acceptance */}
+            <label className="flex items-start gap-3 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+              />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                I have read and agree to the{' '}
+                <Link to="/terms" target="_blank" className="text-brand-600 font-medium hover:underline">
+                  Terms & Conditions
+                </Link>{' '}
+                and{' '}
+                <Link to="/privacy" target="_blank" className="text-brand-600 font-medium hover:underline">
+                  Privacy Policy
+                </Link>
+                . I confirm I am authorised to register this food business on DineVerse.
+              </span>
+            </label>
+
             <button
               type="submit"
-              disabled={loading || !otpSent || slugStatus === 'taken' || slugStatus === 'checking'}
+              disabled={loading || !otpSent || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
               className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {loading ? 'Creating account...' : 'Create Café Account'}

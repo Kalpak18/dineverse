@@ -7,6 +7,8 @@ import { useAdminAuth } from './context/AdminAuthContext';
 import LandingPage from './pages/LandingPage';
 import ExplorePage from './pages/customer/ExplorePage';
 import MapPage from './pages/customer/MapPage';
+import TermsPage from './pages/TermsPage';
+import PrivacyPage from './pages/PrivacyPage';
 
 // Customer pages
 import CafeEntry from './pages/customer/CafeEntry';
@@ -104,6 +106,8 @@ export default function App() {
       <Route path="/explore" element={<ExplorePage />} />
       <Route path="/map"     element={<MapPage />} />
       <Route path="/scan"    element={<ScanPage />} />
+      <Route path="/terms"   element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
 
       {/* Customer routes */}
       <Route path="/cafe/:slug" element={<CafeEntry />} />

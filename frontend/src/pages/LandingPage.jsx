@@ -386,7 +386,10 @@ export default function LandingPage() {
           </div>
           <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-2">
             <p className="text-xs">© 2025 DineVerse. All rights reserved.</p>
-            <p className="text-xs">Powered by <span className="text-brand-400 font-medium">DineVerse</span></p>
+            <div className="flex items-center gap-4 text-xs">
+              <Link to="/terms" className="hover:text-white transition-colors">Terms & Conditions</Link>
+              <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+            </div>
           </div>
         </div>
       </footer>
