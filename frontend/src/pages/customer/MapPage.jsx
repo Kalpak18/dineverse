@@ -1,7 +1,7 @@
 /**
  * MapPage — full-screen DineVerse café finder.
  *
- * Tile layer  : CartoDB Positron — clean, minimal, modern (free, no API key)
+ * Tile layer  : CartoDB Voyager — detailed tiles with buildings, POIs & roads (free, no API key)
  * Markers     : Custom SVG pins with café logo/initial + pulsing ring on select
  * Data source : /cafes/nearby → only active, subscribed DineVerse cafés with lat/lng
  */
@@ -131,8 +131,8 @@ export default function MapPage() {
       attributionControl: true,
     }).setView(INDIA_CENTER, 5);
 
-    // CartoDB Positron — clean, modern, minimal tiles (free, no API key)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    // CartoDB Voyager — detailed tiles with buildings, POIs & roads (free, no API key)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
       subdomains:  'abcd',
       maxZoom:     19,

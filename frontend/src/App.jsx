@@ -55,6 +55,9 @@ import OwnerLayout from './components/OwnerLayout';
 import AdminLayout from './components/AdminLayout';
 import LoadingSpinner from './components/LoadingSpinner';
 
+// Staff default landing based on role
+const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard' };
+
 function ProtectedRoute({ children }) {
   const { cafe, loading } = useAuth();
   if (loading) return <LoadingSpinner />;
@@ -78,6 +81,16 @@ function ElectronBridge() {
     }
   }, [navigate]);
   return null;
+}
+
+// Redirect to role-appropriate default page after login
+function StaffAwareIndex() {
+  const { role, staffRole } = useAuth();
+  if (role === 'STAFF') {
+    const dest = STAFF_DEFAULT[staffRole] || '/owner/orders';
+    return <Navigate to={dest} replace />;
+  }
+  return <Navigate to="dashboard" replace />;
 }
 
 export default function App() {
@@ -104,7 +117,7 @@ export default function App() {
       <Route path="/owner/register" element={<RegisterPage />} />
       <Route path="/owner/forgot-password" element={<ForgotPasswordPage />} />
 
-      {/* Owner dashboard (protected) */}
+      {/* Owner dashboard (protected — also used by staff) */}
       <Route
         path="/owner"
         element={
@@ -113,7 +126,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="dashboard" replace />} />
+        <Route index element={<StaffAwareIndex />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="menu" element={<MenuManagementPage />} />
         <Route path="orders" element={<OrdersPage />} />

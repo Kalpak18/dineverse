@@ -7,27 +7,34 @@ import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
 import DineLogo from './DineLogo';
 
-const navItems = [
-  { to: '/owner/dashboard',    label: 'Dashboard',    icon: '📊' },
-  { to: '/owner/orders',       label: 'Orders',       icon: '📋' },
-  { to: '/owner/messages',     label: 'Messages',     icon: '💬' },
-  { to: '/owner/kitchen',      label: 'Kitchen',      icon: '🍳' },
-  { to: '/owner/menu',         label: 'Menu',         icon: '🍽️' },
-  { to: '/owner/offers',       label: 'Offers',       icon: '🏷️' },
-  { to: '/owner/reservations', label: 'Reservations', icon: '📅' },
-  { to: '/owner/ratings',      label: 'Ratings',      icon: '⭐' },
-  { to: '/owner/analytics',    label: 'Analytics',    icon: '📈' },
-  { to: '/owner/staff',        label: 'Staff',        icon: '👥' },
-  { to: '/owner/tables',       label: 'Tables',       icon: '🪑' },
-  { to: '/owner/inventory',    label: 'Inventory',    icon: '📦' },
-  { to: '/owner/customers',    label: 'Customers',    icon: '🧑‍🤝‍🧑' },
-  { to: '/owner/waitlist',     label: 'Waitlist',     icon: '🕐' },
-  { to: '/owner/schedule',     label: 'Schedule',     icon: '🗓️' },
-  { to: '/owner/billing',      label: 'Billing',      icon: '💳' },
-  { to: '/owner/help',         label: 'Help',         icon: '🎫' },
+// All nav items — filtered by role below
+const ALL_NAV = [
+  { to: '/owner/dashboard',    label: 'Dashboard',    icon: '📊', roles: ['owner', 'manager'] },
+  { to: '/owner/orders',       label: 'Orders',       icon: '📋', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/messages',     label: 'Messages',     icon: '💬', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/kitchen',      label: 'Kitchen',      icon: '🍳', roles: ['owner', 'manager', 'cashier', 'kitchen'] },
+  { to: '/owner/menu',         label: 'Menu',         icon: '🍽️', roles: ['owner', 'manager'] },
+  { to: '/owner/offers',       label: 'Offers',       icon: '🏷️', roles: ['owner', 'manager'] },
+  { to: '/owner/reservations', label: 'Reservations', icon: '📅', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/ratings',      label: 'Ratings',      icon: '⭐', roles: ['owner', 'manager'] },
+  { to: '/owner/analytics',    label: 'Analytics',    icon: '📈', roles: ['owner', 'manager'] },
+  { to: '/owner/staff',        label: 'Staff',        icon: '👥', roles: ['owner'] },
+  { to: '/owner/tables',       label: 'Tables',       icon: '🪑', roles: ['owner', 'manager'] },
+  { to: '/owner/inventory',    label: 'Inventory',    icon: '📦', roles: ['owner', 'manager'] },
+  { to: '/owner/customers',    label: 'Customers',    icon: '🧑‍🤝‍🧑', roles: ['owner', 'manager'] },
+  { to: '/owner/waitlist',     label: 'Waitlist',     icon: '🕐', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/schedule',     label: 'Schedule',     icon: '🗓️', roles: ['owner', 'manager'] },
+  { to: '/owner/billing',      label: 'Billing',      icon: '💳', roles: ['owner'] },
+  { to: '/owner/help',         label: 'Help',         icon: '🎫', roles: ['owner', 'manager'] },
 ];
 
-// Always accessible even when expired
+const ROLE_BADGE = {
+  cashier: { label: 'Cashier',  cls: 'bg-blue-100 text-blue-700' },
+  kitchen: { label: 'Kitchen',  cls: 'bg-orange-100 text-orange-700' },
+  manager: { label: 'Manager',  cls: 'bg-purple-100 text-purple-700' },
+};
+
+// Always accessible even when subscription expired (owner only)
 const ALWAYS_ALLOWED = ['/owner/billing', '/owner/profile', '/owner/tables'];
 
 function isExpired(cafe) {
@@ -51,7 +58,7 @@ export default function OwnerLayout() {
 
 function OwnerLayoutInner() {
   const { badges } = useBadges();
-  const { cafe, logout, updateCafe } = useAuth();
+  const { cafe, role, staffRole, staffInfo, logout, updateCafe } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -59,9 +66,15 @@ function OwnerLayoutInner() {
   const [outletOpen, setOutletOpen] = useState(false);
   const [switching, setSwitching]   = useState(false);
 
+  const isStaff    = role === 'STAFF';
+  const effectiveRole = isStaff ? (staffRole || 'cashier') : 'owner';
+
+  // Only load outlets for owners
   useEffect(() => {
-    getOutlets().then(({ data }) => setOutlets(data.outlets || [])).catch(() => {});
-  }, [cafe?.id]);
+    if (!isStaff) {
+      getOutlets().then(({ data }) => setOutlets(data.outlets || [])).catch(() => {});
+    }
+  }, [cafe?.id, isStaff]);
 
   const handleSwitchOutlet = async (id) => {
     if (id === cafe?.id) return;
@@ -83,8 +96,8 @@ function OwnerLayoutInner() {
     navigate('/owner/login');
   };
 
-  const expired    = isExpired(cafe);
-  const remaining  = daysLeft(cafe);
+  const expired     = !isStaff && isExpired(cafe);
+  const remaining   = !isStaff ? daysLeft(cafe) : null;
   const pageAllowed = !expired || ALWAYS_ALLOWED.some((p) => location.pathname.startsWith(p));
 
   useEffect(() => {
@@ -92,6 +105,9 @@ function OwnerLayoutInner() {
     window.addEventListener('subscription:expired', handle);
     return () => window.removeEventListener('subscription:expired', handle);
   }, [navigate]);
+
+  // Filter nav by role
+  const visibleNav = ALL_NAV.filter((item) => item.roles.includes(effectiveRole));
 
   // Avatar: logo image or first-letter fallback
   const Avatar = ({ size = 'md' }) => {
@@ -120,28 +136,45 @@ function OwnerLayoutInner() {
           md:translate-x-0 fixed md:static inset-y-0 left-0 z-40
           w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-200`}
       >
-        {/* DineVerse brand mark */}
+        {/* Brand + profile header */}
         <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex-shrink-0 space-y-3">
           <DineLogo size="sm" />
 
-          {/* Café profile link */}
-          <NavLink
-            to="/owner/profile"
-            onClick={() => setMobileOpen(false)}
-            className="flex items-center gap-3 min-w-0 group"
-          >
-            <Avatar />
-            <div className="flex-1 min-w-0">
-              <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
-                {cafe?.name}
-              </p>
-              <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
+          {/* Owner: café profile link. Staff: their name + role badge */}
+          {isStaff ? (
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl flex-shrink-0">
+                {effectiveRole === 'kitchen' ? '🍳' : effectiveRole === 'cashier' ? '💰' : '🧑‍💼'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 truncate text-sm">
+                  {staffInfo?.name || 'Staff'}
+                </p>
+                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_BADGE[effectiveRole]?.cls || 'bg-gray-100 text-gray-600'}`}>
+                  {ROLE_BADGE[effectiveRole]?.label || effectiveRole}
+                </span>
+                <span className="text-[11px] text-gray-400 ml-1">· {cafe?.name}</span>
+              </div>
             </div>
-            <span className="text-gray-300 group-hover:text-brand-400 text-xs flex-shrink-0">⚙️</span>
-          </NavLink>
+          ) : (
+            <NavLink
+              to="/owner/profile"
+              onClick={() => setMobileOpen(false)}
+              className="flex items-center gap-3 min-w-0 group"
+            >
+              <Avatar />
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
+                  {cafe?.name}
+                </p>
+                <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
+              </div>
+              <span className="text-gray-300 group-hover:text-brand-400 text-xs flex-shrink-0">⚙️</span>
+            </NavLink>
+          )}
 
-          {/* Outlet dropdown */}
-          {outlets.length > 1 && (
+          {/* Outlet dropdown (owner only) */}
+          {!isStaff && outlets.length > 1 && (
             <div className="relative mt-2">
               <button
                 onClick={() => setOutletOpen((v) => !v)}
@@ -181,9 +214,9 @@ function OwnerLayoutInner() {
           )}
         </div>
 
-        {/* Nav — scrollable so Profile always reachable */}
+        {/* Nav — scrollable */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-          {navItems.map((item) => {
+          {visibleNav.map((item) => {
             const badgeCount = badges[item.to] || 0;
             return (
               <NavLink
@@ -210,21 +243,23 @@ function OwnerLayoutInner() {
           })}
         </nav>
 
-        {/* Profile + Logout pinned at bottom */}
+        {/* Bottom: Profile (owner only) + Logout */}
         <div className="px-3 pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5">
-          <NavLink
-            to="/owner/profile"
-            onClick={() => setMobileOpen(false)}
-            className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-brand-50 text-brand-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              }`
-            }
-          >
-            <span>⚙️</span> Profile
-          </NavLink>
+          {!isStaff && (
+            <NavLink
+              to="/owner/profile"
+              onClick={() => setMobileOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-brand-50 text-brand-700'
+                    : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                }`
+              }
+            >
+              <span>⚙️</span> Profile
+            </NavLink>
+          )}
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
@@ -234,7 +269,7 @@ function OwnerLayoutInner() {
         </div>
       </aside>
 
-      {/* Expired: dim non-essential nav links */}
+      {/* Expired: dim non-essential nav links (owner only) */}
       {expired && (
         <style>{`
           nav a:not([href="/owner/billing"]):not([href="/owner/profile"]) {
@@ -269,18 +304,27 @@ function OwnerLayoutInner() {
               ? <img src={cafe.logo_url} alt={cafe.name} className="w-6 h-6 rounded object-cover" />
               : null
             }
-            <span className="font-semibold text-gray-800 text-sm">{cafe?.name}</span>
+            <span className="font-semibold text-gray-800 text-sm">
+              {isStaff ? (staffInfo?.name || 'Staff') : cafe?.name}
+            </span>
+            {isStaff && (
+              <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_BADGE[effectiveRole]?.cls || ''}`}>
+                {ROLE_BADGE[effectiveRole]?.label}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1 relative">
-            <NotificationCenter cafeId={cafe?.id} />
-            <NavLink to="/owner/profile" className="p-2 rounded-lg hover:bg-gray-100">
-              <span className="text-gray-500 text-sm">⚙️</span>
-            </NavLink>
+            {!isStaff && <NotificationCenter cafeId={cafe?.id} />}
+            {!isStaff && (
+              <NavLink to="/owner/profile" className="p-2 rounded-lg hover:bg-gray-100">
+                <span className="text-gray-500 text-sm">⚙️</span>
+              </NavLink>
+            )}
           </div>
         </header>
 
-        {/* Expiry warning */}
-        {!expired && remaining !== null && remaining <= 7 && (
+        {/* Expiry warning (owner only) */}
+        {!isStaff && !expired && remaining !== null && remaining <= 7 && (
           <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
             <p className="text-sm text-amber-800 font-medium">
               ⚠️ Your {cafe?.plan_type === 'free_trial' ? 'free trial' : 'subscription'} expires in{' '}
@@ -292,6 +336,13 @@ function OwnerLayoutInner() {
             >
               Renew Now
             </button>
+          </div>
+        )}
+
+        {/* Notification bell — desktop, owner only */}
+        {!isStaff && (
+          <div className="hidden md:flex absolute top-4 right-4 z-50 items-center gap-2">
+            <NotificationCenter cafeId={cafe?.id} />
           </div>
         )}
 
@@ -308,8 +359,6 @@ function OwnerLayoutInner() {
           )}
         </main>
       </div>
-
-      {/* Notification toasts rendered at root level (outside sidebar/main) */}
     </div>
   );
 }

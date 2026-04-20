@@ -13,8 +13,10 @@ function isValidIdentifier(val) {
   return false;
 }
 
+const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard' };
+
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, role, staffRole } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [errors, setErrors] = useState({});
@@ -34,8 +36,10 @@ export default function LoginPage() {
     if (!validate()) return;
     setLoading(true);
     try {
-      await login(form.identifier.trim(), form.password);
-      navigate('/owner/dashboard');
+      const cafe = await login(form.identifier.trim(), form.password);
+      // role/staffRole are set in context after login() resolves
+      // navigate to role-appropriate landing via the /owner index route
+      navigate('/owner');
     } catch (err) {
       toast.error(getApiError(err));
     } finally {
@@ -50,7 +54,7 @@ export default function LoginPage() {
           <div className="flex justify-center mb-3">
             <DineLogo size="xl" />
           </div>
-          <p className="text-gray-500 text-sm mt-1">Owner dashboard</p>
+          <p className="text-gray-500 text-sm mt-1">Owner & Staff dashboard</p>
         </div>
 
         <div className="card shadow-lg">

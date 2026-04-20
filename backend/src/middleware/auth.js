@@ -36,6 +36,7 @@ const authenticate = async (req, res, next) => {
   req.cafeSlug   = decoded.slug;
   req.role       = decoded.role || 'OWNER';
   req.staffId    = decoded.staffId || null;
+  req.staffRole  = decoded.staffRole || null; // cashier | kitchen | manager
   next();
 };
 

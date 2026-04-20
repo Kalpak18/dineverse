@@ -9,10 +9,12 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
 // role: 'OWNER' | 'STAFF'
+// staffRole: 'cashier' | 'kitchen' | 'manager' (only when role === 'STAFF')
 // rootCafeId: the brand account's ID — outlets inherit the parent's subscription
-const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId = null) => {
+const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId = null, staffRole = null) => {
   const payload = { cafeId, slug, role, rootCafeId: rootCafeId || cafeId };
   if (staffId) payload.staffId = staffId;
+  if (staffRole) payload.staffRole = staffRole;
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 };
 
@@ -145,9 +147,9 @@ exports.login = asyncHandler(async (req, res) => {
       return ok(res, { token, cafe: cafeData, role: 'OWNER' }, 'Login successful');
     }
 
-    // 2. Check staff accounts — match by email OR phone
+    // 2. Check staff accounts — match by email
     const staffResult = await db.query(
-      `SELECT cs.id AS staff_id, cs.name, cs.email, cs.password_hash,
+      `SELECT cs.id AS staff_id, cs.name, cs.email, cs.password_hash, cs.role AS staff_role,
               c.id AS cafe_id, c.slug, c.name AS cafe_name
        FROM cafe_staff cs
        JOIN cafes c ON cs.cafe_id = c.id
@@ -165,11 +167,12 @@ exports.login = asyncHandler(async (req, res) => {
       const isValid = await bcrypt.compare(password, staff.password_hash);
       if (!isValid) return fail(res, 'Invalid credentials', 401);
 
-      const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id);
+      const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role);
       return ok(res, {
         token,
         cafe: { id: staff.cafe_id, slug: staff.slug, name: staff.cafe_name },
         role: 'STAFF',
+        staffRole: staff.staff_role,
         staff: { id: staff.staff_id, name: staff.name, email: staff.email },
       }, 'Login successful');
     }
@@ -225,6 +228,21 @@ exports.getMe = asyncHandler(async (req, res) => {
     );
   }
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
+
+  // For staff sessions, also return name + role
+  if (req.staffId) {
+    const staffRow = await db.query(
+      'SELECT id, name, email, role FROM cafe_staff WHERE id = $1 AND cafe_id = $2',
+      [req.staffId, req.cafeId]
+    );
+    const staffData = staffRow.rows[0] || null;
+    return ok(res, {
+      cafe:      { ...result.rows[0], root_cafe_id: req.rootCafeId },
+      staff:     staffData,
+      staffRole: staffData?.role || null,
+    });
+  }
+
   ok(res, { cafe: { ...result.rows[0], root_cafe_id: req.rootCafeId } });
 });
 
