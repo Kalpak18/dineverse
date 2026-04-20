@@ -7,6 +7,7 @@ import {
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ImageUpload from '../../components/ImageUpload';
 import AIMenuImport from '../../components/AIMenuImport';
+import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
@@ -103,6 +104,19 @@ export default function MenuManagementPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
+      <PageHint
+        storageKey="dv_hint_menu"
+        title="Menu Management — add, edit, and organise your dishes"
+        items={[
+          { icon: '📷', text: 'Fastest setup: click "Import from Photo" → upload your printed menu → AI extracts all items, categories, veg/non-veg in ~20 seconds' },
+          { icon: '🟢', text: 'Mark each item Veg (green) or Non-Veg (red) — shown as dots to customers' },
+          { icon: '🏷️', text: 'Toggle availability Off to instantly hide a sold-out item without deleting it — toggle back On anytime' },
+          { icon: '📦', text: 'Enable stock tracking per item → when quantity hits 0, item auto-hides and you get a notification' },
+          { icon: '🖼️', text: 'Add food photos — items with photos get significantly more clicks and orders' },
+        ]}
+        tip='Use dietary tags (Spicy, Vegan, Gluten-Free) so customers with allergies can filter confidently.'
+      />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
         <div className="flex gap-2">

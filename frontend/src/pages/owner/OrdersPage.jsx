@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
@@ -246,6 +247,19 @@ export default function OrdersPage() {
 
   return (
     <div className="max-w-4xl space-y-5">
+      <PageHint
+        storageKey="dv_hint_orders"
+        title="Orders — manage every order from receipt to payment"
+        items={[
+          { icon: '📋', text: 'Orders tab: incoming live orders. Confirm → Prepare → Ready. Orders with status Pending need your attention first.' },
+          { icon: '🧾', text: 'Bills tab: collect payment. Click "Collect Payment" on a table — multiple rounds are combined into one bill automatically.' },
+          { icon: '🕐', text: 'History tab: all paid orders. Search by date range, reprint any bill, or check daily totals.' },
+          { icon: '💬', text: 'Each order has a chat button — reply to customer questions directly from the order card.' },
+          { icon: '❌', text: 'Cancel an order with a reason (item unavailable, duplicate, etc.) — customer sees the cancellation note.' },
+        ]}
+        tip="Keep this page open on your counter device. New orders arrive in real time with a sound alert."
+      />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
         <button onClick={loadOrders} className="btn-secondary text-sm">↻ Refresh</button>

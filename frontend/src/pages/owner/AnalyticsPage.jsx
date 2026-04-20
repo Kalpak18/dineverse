@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAnalytics, createExpense, deleteExpense, exportOrdersCSV } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
+import PageHint from '../../components/PageHint';
 import toast from 'react-hot-toast';
 
 const PERIODS = [
@@ -166,6 +167,19 @@ export default function AnalyticsPage() {
 
   return (
     <div className="max-w-4xl space-y-6">
+      <PageHint
+        storageKey="dv_hint_analytics"
+        title="Analytics — understand your revenue, costs, and best-sellers"
+        items={[
+          { icon: '📊', text: 'Switch periods: Today / This Week / This Month / This Year to compare performance' },
+          { icon: '💰', text: 'Revenue shows only paid orders. Profit = Revenue − Expenses you log here.' },
+          { icon: '🧾', text: 'Add expenses (rent, salaries, ingredients) using the form below — this gives you real profit numbers' },
+          { icon: '🥇', text: 'Top Items table shows what\'s selling — use it to decide what to promote or remove' },
+          { icon: '⬇', text: 'Export CSV sends order data to a spreadsheet — useful for monthly tax filing' },
+        ]}
+        tip="Log expenses regularly (weekly) to keep your profit calculation accurate."
+      />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Analytics</h1>
         <div className="flex gap-2">

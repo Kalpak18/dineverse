@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getInventory, updateStock } from '../../services/api';
+import PageHint from '../../components/PageHint';
 import toast from 'react-hot-toast';
 
 const LOW = 5;
@@ -78,6 +79,18 @@ export default function InventoryPage() {
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
+      <PageHint
+        storageKey="dv_hint_inventory"
+        title="Inventory — track stock so items auto-hide when sold out"
+        items={[
+          { icon: '📦', text: 'Enable stock tracking per item in Menu → Edit item → Stock tracking toggle' },
+          { icon: '🔴', text: 'When quantity hits 0, the item is hidden from your menu automatically and you get a notification' },
+          { icon: '↑', text: 'Click Restock on any item here to add quantity — it re-appears on the menu instantly' },
+          { icon: '🔎', text: 'Use filters: Out of Stock shows items to restock; Low Stock shows items with ≤5 units left' },
+        ]}
+        tip="Check this page at the end of each day to restock items before the next service."
+      />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Inventory</h1>

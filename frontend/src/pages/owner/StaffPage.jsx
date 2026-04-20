@@ -3,6 +3,7 @@ import { getStaff, createStaff, updateStaff, deleteStaff } from '../../services/
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import PageHint from '../../components/PageHint';
 
 const ROLES = [
   { value: 'cashier',  label: 'Cashier',  desc: 'Takes orders and processes payments' },
@@ -98,6 +99,19 @@ export default function StaffPage() {
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6">
+      <PageHint
+        storageKey="dv_hint_staff"
+        title="Staff — give your team their own logins with the right level of access"
+        items={[
+          { icon: '💰', text: 'Cashier: can see Orders, Bills, Kitchen queue, Reservations, Waitlist. Perfect for counter staff.' },
+          { icon: '🍳', text: 'Kitchen: sees only the Kitchen display. Can update order status (Preparing → Ready).' },
+          { icon: '🧑‍💼', text: 'Manager: sees everything except Billing and Profile — use for shift managers.' },
+          { icon: '🔐', text: 'Staff log in at the same /owner/login page with their own email + password.' },
+          { icon: '🔴', text: 'Deactivate a staff account instantly — they lose access immediately. Re-enable anytime.' },
+        ]}
+        tip="Never share the owner password. Create individual staff accounts so you can track and revoke access per person."
+      />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Staff</h1>

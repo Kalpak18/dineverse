@@ -6,6 +6,22 @@ import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import toast from 'react-hot-toast';
 
+function KitchenHint() {
+  const [open, setOpen] = useState(() => !localStorage.getItem('dv_hint_kitchen'));
+  if (!open) return null;
+  return (
+    <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-start gap-3 text-sm text-gray-300">
+      <span className="text-yellow-400 flex-shrink-0 mt-0.5">💡</span>
+      <div className="flex-1 space-y-1">
+        <p><strong className="text-white">Kitchen Display</strong> — keep this open on the kitchen screen throughout service.</p>
+        <p>Orders arrive in <strong className="text-yellow-400">Pending</strong> → tap the button to move them to <strong className="text-blue-400">Confirmed</strong> → <strong className="text-orange-400">Preparing</strong> → <strong className="text-green-400">Ready</strong>.</p>
+        <p>Red timer = order is <strong className="text-red-400">overdue (15+ min)</strong>. Customer notes are highlighted in amber.</p>
+      </div>
+      <button onClick={() => { localStorage.setItem('dv_hint_kitchen', '1'); setOpen(false); }} className="text-gray-500 hover:text-gray-300 text-lg leading-none flex-shrink-0">×</button>
+    </div>
+  );
+}
+
 // ── Kitchen token print ────────────────────────────────────────
 function printKitchenToken(order, cafeName) {
   const num = order.daily_order_number;
@@ -316,6 +332,8 @@ export default function KitchenPage() {
           </button>
         </div>
       </div>
+
+      <KitchenHint />
 
       {/* ── Columns ── */}
       <div className="flex-1 grid grid-cols-3 gap-0 divide-x divide-gray-800 overflow-hidden">
