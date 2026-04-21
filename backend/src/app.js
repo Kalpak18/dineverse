@@ -150,12 +150,7 @@ io.on('connection', (socket) => {
 });
 
 // ─── Middleware ────────────────────────────────────────────────
-// AI menu import sends a base64 photo (~5 MB); everything else is capped at 1 MB.
-// Using a single inline function avoids two separate body-parser passes.
-app.use((req, res, next) => {
-  const limit = req.path === '/api/menu/ai-import' ? '5mb' : '1mb';
-  express.json({ limit })(req, res, next);
-});
+app.use(express.json({ limit: '1mb' }));
 
 // HTTP request logging (skip in test env)
 if (process.env.NODE_ENV !== 'test') {

@@ -6,7 +6,6 @@ import {
 } from '../../services/api';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ImageUpload from '../../components/ImageUpload';
-import AIMenuImport from '../../components/AIMenuImport';
 import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
@@ -34,7 +33,6 @@ export default function MenuManagementPage() {
   const [catModal, setCatModal] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [restockItem, setRestockItem] = useState(null); // item being restocked
-  const [aiImportOpen, setAiImportOpen] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -108,8 +106,7 @@ export default function MenuManagementPage() {
         storageKey="dv_hint_menu"
         title="Menu Management — add, edit, and organise your dishes"
         items={[
-          { icon: '📷', text: 'Fastest setup: click "Import from Photo" → upload your printed menu → AI extracts all items, categories, veg/non-veg in ~20 seconds' },
-          { icon: '🟢', text: 'Mark each item Veg (green) or Non-Veg (red) — shown as dots to customers' },
+{ icon: '🟢', text: 'Mark each item Veg (green) or Non-Veg (red) — shown as dots to customers' },
           { icon: '🏷️', text: 'Toggle availability Off to instantly hide a sold-out item without deleting it — toggle back On anytime' },
           { icon: '📦', text: 'Enable stock tracking per item → when quantity hits 0, item auto-hides and you get a notification' },
           { icon: '🖼️', text: 'Add food photos — items with photos get significantly more clicks and orders' },
@@ -120,13 +117,7 @@ export default function MenuManagementPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
         <div className="flex gap-2">
-          <button
-            onClick={() => setAiImportOpen(true)}
-            className="btn-secondary text-sm flex items-center gap-1.5"
-          >
-            📷 Import from Photo
-          </button>
-          <button onClick={() => setItemModal('new')} className="btn-primary text-sm">
+<button onClick={() => setItemModal('new')} className="btn-primary text-sm">
             + Add Item
           </button>
         </div>
@@ -254,20 +245,6 @@ export default function MenuManagementPage() {
           item={restockItem}
           onClose={() => setRestockItem(null)}
           onSave={(qty) => handleRestock(restockItem.id, qty)}
-        />
-      )}
-      {aiImportOpen && (
-        <AIMenuImport
-          existingCategories={categories}
-          onDone={(newItems, newCats) => {
-            setItems((prev) => [...prev, ...newItems]);
-            setCategories((prev) => {
-              const ids = new Set(prev.map((c) => c.id));
-              return [...prev, ...newCats.filter((c) => !ids.has(c.id))];
-            });
-            setAiImportOpen(false);
-          }}
-          onClose={() => setAiImportOpen(false)}
         />
       )}
     </div>

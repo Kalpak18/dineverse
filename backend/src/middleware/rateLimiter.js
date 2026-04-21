@@ -57,14 +57,3 @@ exports.orderLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-// AI menu import — each call costs money; 10 per hour per café
-exports.aiImportLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 10,
-  store,
-  keyGenerator: (req) => req.cafeId || req.ip,
-  message: { success: false, message: 'AI import limit reached — try again in an hour' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
