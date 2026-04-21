@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { Helmet } from 'react-helmet-async';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
@@ -186,6 +187,34 @@ export default function MenuPage() {
       style={{ height: '100dvh' }}
     >
       <CustomerTour />
+
+      {/* ── Dynamic SEO ── */}
+      {cafe && (
+        <Helmet>
+          <title>{cafe.name}{cafe.city ? ` in ${cafe.city}` : ''} | Order Online | DineVerse</title>
+          <meta name="description" content={`Order food online from ${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''}. Browse the menu, place your order, and track it in real-time.`} />
+          <meta property="og:title" content={`${cafe.name} — Order Online | DineVerse`} />
+          <meta property="og:description" content={`Browse the menu and order from ${cafe.name}${cafe.city ? `, ${cafe.city}` : ''}.`} />
+          {cafe.cover_image_url && <meta property="og:image" content={cafe.cover_image_url} />}
+          <meta property="og:type" content="restaurant" />
+          <meta property="og:url" content={`https://dine-verse.com/cafe/${cafe.slug}`} />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:title" content={`${cafe.name} — Order Online | DineVerse`} />
+          {cafe.cover_image_url && <meta name="twitter:image" content={cafe.cover_image_url} />}
+          <script type="application/ld+json">{JSON.stringify({
+            '@context': 'https://schema.org',
+            '@type': 'Restaurant',
+            name: cafe.name,
+            url: `https://dine-verse.com/cafe/${cafe.slug}`,
+            ...(cafe.address && { address: { '@type': 'PostalAddress', streetAddress: cafe.address, addressLocality: cafe.city || '' } }),
+            ...(cafe.cover_image_url && { image: cafe.cover_image_url }),
+            ...(cafe.description && { description: cafe.description }),
+            servesCuisine: 'Various',
+            hasMenu: `https://dine-verse.com/cafe/${cafe.slug}`,
+          })}</script>
+        </Helmet>
+      )}
+
       {/* ── Header ── */}
       <header
         className="relative text-white px-4 pt-8 pb-3.5 flex-shrink-0"

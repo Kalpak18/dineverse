@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
@@ -60,6 +60,11 @@ import LoadingSpinner from './components/LoadingSpinner';
 // Staff default landing based on role
 const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard' };
 
+function CitySlugRedirect() {
+  const { slug } = useParams();
+  return <Navigate to={`/cafe/${slug}`} replace />;
+}
+
 function ProtectedRoute({ children }) {
   const { cafe, loading } = useAuth();
   if (loading) return <LoadingSpinner />;
@@ -115,6 +120,9 @@ export default function App() {
       <Route path="/cafe/:slug/cart" element={<CartPage />} />
       <Route path="/cafe/:slug/confirmation" element={<OrderConfirmation />} />
       <Route path="/cafe/:slug/my-orders"   element={<MyOrdersPage />} />
+
+      {/* SEO-friendly URL aliases — /restaurants/:city/:slug → /cafe/:slug */}
+      <Route path="/restaurants/:city/:slug" element={<CitySlugRedirect />} />
 
       {/* Owner auth */}
       <Route path="/owner/login" element={<LoginPage />} />
