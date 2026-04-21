@@ -1,10 +1,15 @@
 const db = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const cache = require('../utils/cache');
 
 // Public: get café by slug (for customer-facing pages)
 exports.getCafeBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
+  const cacheKey = `cafe:${slug}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return ok(res, { cafe: cached });
+
   const result = await db.query(
     `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
             name_style, latitude, longitude, city, is_open,
@@ -19,6 +24,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
     [slug]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
+  cache.set(cacheKey, result.rows[0], 60_000);
   ok(res, { cafe: result.rows[0] });
 });
 
@@ -109,6 +115,9 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
   if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
 
   const cafeId = cafeResult.rows[0].id;
+  const cacheKey = `menu:${cafeId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return ok(res, { menu: cached });
 
   const [categoriesResult, itemsResult] = await Promise.all([
     db.query(
@@ -136,6 +145,7 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
     menu.push({ id: null, name: 'Other', display_order: 999, items: uncategorized });
   }
 
+  cache.set(cacheKey, menu, 30_000);
   ok(res, { menu });
 });
 
@@ -147,6 +157,7 @@ exports.toggleCafeOpen = asyncHandler(async (req, res) => {
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
   const { is_open, slug } = result.rows[0];
+  cache.del(`cafe:${slug}`);
   // Broadcast live status to all customers on this café's menu/cart pages
   req.io.to(`menu:${slug}`).emit('cafe_status', { is_open });
   ok(res, { is_open });

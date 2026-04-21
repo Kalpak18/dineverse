@@ -7,6 +7,7 @@ const { sendOtpEmail, sendPasswordResetEmail } = require('../services/emailServi
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const cache = require('../utils/cache');
 
 // role: 'OWNER' | 'STAFF'
 // staffRole: 'cashier' | 'kitchen' | 'manager' (only when role === 'STAFF')
@@ -399,6 +400,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        req.cafeId]
     );
   }
+  cache.del(`cafe:${result.rows[0].slug}`);
   ok(res, { cafe: { ...result.rows[0], root_cafe_id: req.rootCafeId } });
 });
 
