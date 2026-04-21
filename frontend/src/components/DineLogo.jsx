@@ -14,12 +14,12 @@
  */
 
 const ICON_SRC = {
-  sm:  '/icons/favicon-96x96.png',
-  md:  '/icons/favicon-128x128.png',
-  lg:  '/icons/favicon-256x256.png',
-  xl:  '/icons/favicon-256x256.png',
+  sm:  '/icons/header_logo_round_192x192.png',
+  md:  '/icons/header_logo_round_192x192.png',
+  lg:  '/icons/header_logo_round_512x512.png',
+  xl:  '/icons/header_logo_round_512x512.png',
 };
-const ICON_FALLBACK = '/icons/favicon-256x256.png';
+const ICON_FALLBACK = '/icons/header_logo_round_192x192.png';
 
 // Accent sizes for the orange V notch (relative to font size)
 const NOTCH_SIZE = { sm: '0.38em', md: '0.38em', lg: '0.36em', xl: '0.35em' };
