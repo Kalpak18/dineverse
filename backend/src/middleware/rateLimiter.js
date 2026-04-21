@@ -11,7 +11,10 @@ function makeStore() {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
+    tls: {},
+    retryStrategy: (times) => (times > 5 ? null : Math.min(times * 500, 3000)),
   });
+  client.on('error', () => {}); // suppress unhandled error events
   client.connect().catch(() => {}); // best-effort
   return new RedisStore({ sendCommand: (...args) => client.call(...args) });
 }

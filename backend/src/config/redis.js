@@ -22,6 +22,8 @@ async function createRedisAdapter(io) {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
+    tls: {},
+    retryStrategy: (times) => (times > 20 ? null : Math.min(times * 300, 5000)),
   };
 
   const pub = new Redis(process.env.REDIS_URL, opts);
