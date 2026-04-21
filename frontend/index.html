@@ -1,48 +1,105 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-IN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- Viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1" />
+
+    <!-- Verification -->
     <meta name="google-site-verification" content="FWHG0HCZe3QuLQod0I7usXhlbjhhpeI-VW7mHMbFeL8" />
 
-    <!-- Primary -->
-    <title>DineVerse — Café Ordering Platform</title>
+    <!-- SEO -->
+    <title>DineVerse | Order Food Online, Book Tables & Café Management App</title>
     <meta name="description" content="Order food, book tables, and track your orders — all from your phone." />
+    <meta name="keywords" content="food ordering app, cafe ordering system, restaurant booking app, dineverse" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://dine-verse.com/" />
+
+    <!-- Theme -->
     <meta name="theme-color" content="#f97316" />
     <meta name="color-scheme" content="light" />
 
-    <!-- PWA / mobile -->
+    <!-- Performance -->
+    <link rel="dns-prefetch" href="//checkout.razorpay.com" />
+    <link rel="preload" href="/favicon.svg" as="image" type="image/svg+xml" />
+
+    <!-- PWA / Mobile -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="DineVerse" />
     <meta name="application-name" content="DineVerse" />
 
+    <!-- Open Graph -->
+    <meta property="og:title" content="DineVerse | Order Food Online, Book Tables & Café Management App" />
+    <meta property="og:description" content="Order food, book tables, and track your orders — all from your phone." />
+    <meta property="og:image" content="https://dine-verse.com/preview.png" />
+    <meta property="og:url" content="https://dine-verse.com/" />
+    <meta property="og:type" content="website" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="DineVerse | Order Food Online, Book Tables & Café Management App" />
+    <meta name="twitter:description" content="Order food, book tables, and track your orders — all from your phone." />
+    <meta name="twitter:image" content="https://dine-verse.com/preview.png" />
+
     <!-- Favicons -->
-    <link rel="icon" type="image/png" sizes="96x96"   href="/icons/favicon-96x96.png" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/icons/favicon-96x96.png" />
     <link rel="icon" type="image/png" sizes="128x128" href="/icons/favicon-128x128.png" />
     <link rel="icon" type="image/png" sizes="256x256" href="/icons/favicon-256x256.png" />
-    <link rel="icon" type="image/svg+xml"              href="/favicon.svg" />
-    <!-- Apple Touch Icon (iOS home screen) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- Apple -->
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
-    <!-- Windows tile -->
+    <link rel="apple-touch-icon-precomposed" href="/icons/apple-touch-icon.png" />
+
+    <!-- Windows -->
     <meta name="msapplication-TileImage" content="/icons/mstile-144x144.png" />
     <meta name="msapplication-TileColor" content="#f97316" />
-    <!-- PWA manifest -->
+
+    <!-- Manifest -->
     <link rel="manifest" href="/icons/site.webmanifest" />
 
-    <!-- Brand font: Poppins (matches DineVerse wordmark) -->
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap"
+      rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
+    />
 
-    <!-- Prevent text size adjust on orientation change -->
+    <!-- Misc -->
     <meta name="format-detection" content="telephone=no" />
   </head>
+
   <body>
     <div id="root"></div>
-    <!-- Razorpay checkout SDK — loaded globally so BillingPage + OrderConfirmation can use window.Razorpay -->
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+
+    <!-- Razorpay -->
+    <script src="https://checkout.razorpay.com/v1/checkout.js" defer></script>
+
+    <!-- App -->
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "DineVerse",
+        "url": "https://dine-verse.com",
+        "description": "Order food, book tables, and track your orders.",
+        "applicationCategory": "FoodOrderingApplication",
+        "operatingSystem": "Web",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "INR"
+        }
+      }
+    </script>
   </body>
 </html>
