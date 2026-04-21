@@ -7,6 +7,7 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { createOtp, verifyOtp } = require('../utils/otpStore');
 const { sendPasswordResetEmail, sendBroadcastEmail } = require('../services/emailService');
+const { notify } = require('../services/notificationService');
 
 const generateAdminToken = (adminId) =>
   jwt.sign({ adminId, role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '30d' });
@@ -470,7 +471,9 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
   const [cafe, orders, revenue, menuStats, ratings] = await Promise.all([
     // Cafe details
     db.query(
-      `SELECT id, name, email, slug, phone, is_active, plan_type, plan_start_date, plan_expiry_date, created_at
+      `SELECT id, name, email, slug, phone, is_active, plan_type, plan_start_date, plan_expiry_date, created_at,
+              address, city, country, description, logo_url, cover_image_url,
+              gst_number, gst_rate, fssai_number, business_type, tax_inclusive, opening_hours, timezone
        FROM cafes WHERE id = $1`,
       [id]
     ),
@@ -613,4 +616,29 @@ exports.broadcastEmail = asyncHandler(async (req, res) => {
     failed: failedEmails.length,
     failed_emails: failedEmails,
   }, `Broadcast sent to ${successCount} café(s)`);
+});
+
+// ─── POST /api/admin/cafes/:id/notify ─────────────────────────
+// Send an in-app notification (and optionally email) to a specific café owner
+exports.notifyCafe = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { title, message, send_email = false } = req.body;
+
+  if (!title || !message) return fail(res, 'title and message are required');
+
+  const result = await db.query(
+    `SELECT id, email FROM cafes WHERE id = $1 AND is_active = true`,
+    [id]
+  );
+  if (result.rows.length === 0) return fail(res, 'Café not found', 404);
+
+  const cafe = result.rows[0];
+  await notify(req.io, cafe.id, cafe.email, {
+    type: 'admin_notice',
+    title,
+    body: message,
+    email: send_email,
+  });
+
+  ok(res, {}, `Notification sent to café`);
 });

@@ -3,7 +3,7 @@ const requireAdmin = require('../middleware/requireAdmin');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimiter');
 const {
   setup, validateLogin, login, getMe,
-  getDashboard, getCafes, updateCafe, getCafeStats,
+  getDashboard, getCafes, updateCafe, getCafeStats, notifyCafe,
   getRevenue, getTickets, replyTicket, getAnalytics,
   forgotPassword, validateResetPassword, resetPassword,
   getSettings, updateSetting, getPublicSetting,
@@ -24,7 +24,8 @@ router.get('/me',              requireAdmin, getMe);
 router.get('/dashboard',       requireAdmin, getDashboard);
 router.get('/cafes',           requireAdmin, getCafes);
 router.patch('/cafes/:id',     requireAdmin, updateCafe);
-router.get('/cafes/:id/stats', requireAdmin, getCafeStats);
+router.get('/cafes/:id/stats',  requireAdmin, getCafeStats);
+router.post('/cafes/:id/notify', requireAdmin, notifyCafe);
 router.get('/revenue',         requireAdmin, getRevenue);
 router.get('/tickets',         requireAdmin, getTickets);
 router.patch('/tickets/:id',   requireAdmin, replyTicket);
