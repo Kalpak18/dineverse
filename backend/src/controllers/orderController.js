@@ -435,25 +435,21 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const idIdx   = idx++;
   const cafeIdx = idx;
 
-  // Fetch current status for audit log before updating
-  const currentRow = await db.query(
-    'SELECT status FROM orders WHERE id = $1 AND cafe_id = $2',
-    [id, req.cafeId]
-  );
-  if (currentRow.rows.length === 0) return fail(res, 'Order not found', 404);
-  const fromStatus = currentRow.rows[0].status;
-
+  // Atomic read + write: capture old status and apply update in one round-trip
   const result = await db.query(
-    `UPDATE orders SET ${setClauses.join(', ')}
+    `WITH prev AS (SELECT status FROM orders WHERE id = $${idIdx} AND cafe_id = $${cafeIdx})
+     UPDATE orders SET ${setClauses.join(', ')}
      WHERE id = $${idIdx} AND cafe_id = $${cafeIdx}
      RETURNING id, order_number,
                COALESCE(daily_order_number, order_number) AS daily_order_number,
                customer_name, table_number, order_type, status,
                total_amount, cash_received, change_amount,
-               cancellation_reason, updated_at`,
+               cancellation_reason, updated_at,
+               (SELECT status FROM prev) AS prev_status`,
     params
   );
   if (result.rows.length === 0) return fail(res, 'Order not found', 404);
+  const fromStatus = result.rows[0].prev_status;
 
   // Log the status transition (fire-and-forget — don't fail the request if this errors)
   db.query(
@@ -756,49 +752,73 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     return fail(res, 'Payment verification failed', 400);
   }
 
-  // Fetch order and validate
-  const result = await db.query(
-    `SELECT o.id, o.status, o.payment_order_id, o.payment_verified, o.cafe_id,
-            COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-            o.table_number, o.order_type, o.final_amount
-     FROM orders o
-     JOIN cafes c ON o.cafe_id = c.id
-     WHERE o.id = $1 AND c.slug = $2`,
-    [id, slug]
-  );
+  // Fetch and lock the order row — prevents duplicate payment processing under concurrent requests
+  const payClient = await db.pool.connect();
+  let updatedOrder;
+  let cafeId;
+  try {
+    await payClient.query('BEGIN');
 
-  if (result.rows.length === 0) return fail(res, 'Order not found', 404);
-  const order = result.rows[0];
+    const result = await payClient.query(
+      `SELECT o.id, o.status, o.payment_order_id, o.payment_verified, o.cafe_id,
+              COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
+              o.table_number, o.order_type, o.final_amount
+       FROM orders o
+       JOIN cafes c ON o.cafe_id = c.id
+       WHERE o.id = $1 AND c.slug = $2
+       FOR UPDATE`,
+      [id, slug]
+    );
 
-  if (order.payment_verified) return fail(res, 'Already paid', 409);
-  if (order.payment_order_id !== razorpay_order_id) {
-    return fail(res, 'Order ID mismatch', 400);
+    if (result.rows.length === 0) {
+      await payClient.query('ROLLBACK');
+      return fail(res, 'Order not found', 404);
+    }
+    const order = result.rows[0];
+    cafeId = order.cafe_id;
+
+    if (order.payment_verified) {
+      await payClient.query('ROLLBACK');
+      return fail(res, 'Already paid', 409);
+    }
+    if (order.payment_order_id !== razorpay_order_id) {
+      await payClient.query('ROLLBACK');
+      return fail(res, 'Order ID mismatch', 400);
+    }
+
+    // Verify the actual amount charged matches the order total — prevents underpayment
+    const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+    const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
+    if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
+      logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
+      await payClient.query('ROLLBACK');
+      return fail(res, 'Payment amount mismatch', 400);
+    }
+
+    // Mark paid inside the transaction so the lock is held until commit
+    const updated = await payClient.query(
+      `UPDATE orders
+       SET status = 'paid', payment_id = $1, payment_verified = true, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, order_number,
+                 COALESCE(daily_order_number, order_number) AS daily_order_number,
+                 customer_name, table_number, order_type, status,
+                 total_amount, final_amount, updated_at`,
+      [razorpay_payment_id, id]
+    );
+    updatedOrder = updated.rows[0];
+
+    await payClient.query('COMMIT');
+  } catch (err) {
+    await payClient.query('ROLLBACK');
+    throw err;
+  } finally {
+    payClient.release();
   }
-
-  // Verify the actual amount charged matches the order total — prevents underpayment
-  const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
-  const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
-  if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
-    logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
-    return fail(res, 'Payment amount mismatch', 400);
-  }
-
-  // Mark paid
-  const updated = await db.query(
-    `UPDATE orders
-     SET status = 'paid', payment_id = $1, payment_verified = true, updated_at = NOW()
-     WHERE id = $2
-     RETURNING id, order_number,
-               COALESCE(daily_order_number, order_number) AS daily_order_number,
-               customer_name, table_number, order_type, status,
-               total_amount, final_amount, updated_at`,
-    [razorpay_payment_id, id]
-  );
-  const updatedOrder = updated.rows[0];
 
   // Emit to owner/kitchen via socket
   if (req.io) {
-    req.io.to(`cafe:${order.cafe_id}`).emit('order_updated', updatedOrder);
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', updatedOrder);
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
