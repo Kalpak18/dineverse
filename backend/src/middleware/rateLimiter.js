@@ -60,3 +60,13 @@ exports.orderLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Health check limiter — Render pings ~every 30s, so 30/min is plenty
+// Prevents external actors from hammering /health to probe infrastructure state
+exports.healthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  store,
+  standardHeaders: true,
+  legacyHeaders: false,
+});

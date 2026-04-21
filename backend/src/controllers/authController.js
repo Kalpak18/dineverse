@@ -12,8 +12,8 @@ const cache = require('../utils/cache');
 // role: 'OWNER' | 'STAFF'
 // staffRole: 'cashier' | 'kitchen' | 'manager' (only when role === 'STAFF')
 // rootCafeId: the brand account's ID — outlets inherit the parent's subscription
-const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId = null, staffRole = null) => {
-  const payload = { cafeId, slug, role, rootCafeId: rootCafeId || cafeId };
+const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId = null, staffRole = null, tokenVersion = 1) => {
+  const payload = { cafeId, slug, role, rootCafeId: rootCafeId || cafeId, tv: tokenVersion };
   if (staffId) payload.staffId = staffId;
   if (staffRole) payload.staffRole = staffRole;
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '24h' });
@@ -129,7 +129,8 @@ exports.login = asyncHandler(async (req, res) => {
   try {
     // 1. Check owner accounts — match by email OR phone
     const ownerResult = await db.query(
-      `SELECT id, name, slug, email, password_hash, description, address, phone, logo_url
+      `SELECT id, name, slug, email, password_hash, description, address, phone, logo_url,
+              COALESCE(token_version, 1) AS token_version
        FROM cafes WHERE (email = $1 OR phone = $1) AND is_active = true`,
       [id]
     );
@@ -144,8 +145,8 @@ exports.login = asyncHandler(async (req, res) => {
       const isValid = await bcrypt.compare(password, cafe.password_hash);
       if (!isValid) return fail(res, 'Invalid credentials', 401);
 
-      const { password_hash, ...cafeData } = cafe;
-      const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+      const { password_hash, token_version, ...cafeData } = cafe;
+      const token = generateToken(cafe.id, cafe.slug, 'OWNER', null, null, null, token_version);
       return ok(res, { token, cafe: cafeData, role: 'OWNER' }, 'Login successful');
     }
 

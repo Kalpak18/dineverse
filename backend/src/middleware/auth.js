@@ -17,18 +17,25 @@ const authenticate = async (req, res, next) => {
     return res.status(401).json({ success: false, message: 'Invalid or expired token', error: 'Invalid or expired token' });
   }
 
-  // Verify the café still exists and is active (catches deleted/suspended accounts)
+  // Verify the café still exists, is active, and token version matches
+  // Token version is incremented on password reset or explicit invalidation,
+  // which forces re-login without needing to rotate JWT_SECRET
   try {
     const result = await db.query(
-      'SELECT id FROM cafes WHERE id = $1 AND is_active = true',
+      'SELECT id, COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1 AND is_active = true',
       [decoded.cafeId]
     );
     if (result.rows.length === 0) {
-      return res.status(401).json({ success: false, message: 'Account not found or deactivated', error: 'Account not found or deactivated' });
+      return res.status(401).json({ success: false, message: 'Account not found or deactivated' });
+    }
+    const dbVersion = result.rows[0].token_version;
+    const tokenVersion = decoded.tv ?? 1;
+    if (tokenVersion !== dbVersion) {
+      return res.status(401).json({ success: false, message: 'Session expired — please log in again' });
     }
   } catch {
     // DB unavailable — fail closed (deny access)
-    return res.status(503).json({ success: false, message: 'Service temporarily unavailable', error: 'Service temporarily unavailable' });
+    return res.status(503).json({ success: false, message: 'Service temporarily unavailable' });
   }
 
   req.cafeId     = decoded.cafeId;

@@ -11,8 +11,11 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const logger = require('./utils/logger');
 const db = require('./config/database');
-const { apiLimiter } = require('./middleware/rateLimiter');
+const { apiLimiter, healthLimiter } = require('./middleware/rateLimiter');
 const { createRedisAdapter, redisClients } = require('./config/redis');
+
+const hpp = require('hpp');
+const { v4: uuidv4 } = require('uuid');
 
 const authRoutes = require('./routes/auth');
 const cafeRoutes = require('./routes/cafe');
@@ -65,9 +68,14 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Security headers: XSS protection, clickjacking, MIME sniffing, etc.
-// contentSecurityPolicy disabled — the print-bill popup writes inline HTML
-app.use(helmet({ contentSecurityPolicy: false }));
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false,           // API serves JSON, not HTML — CSP irrelevant here
+  crossOriginEmbedderPolicy: false,       // allow Razorpay/S3 cross-origin resources
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
 
 // ─── Socket.io Setup ──────────────────────────────────────────
 const io = new Server(server, {
@@ -152,9 +160,23 @@ io.on('connection', (socket) => {
 // ─── Middleware ────────────────────────────────────────────────
 app.use(express.json({ limit: '1mb' }));
 
-// HTTP request logging (skip in test env)
+// Stamp every request with a unique ID — appears in logs and response header
+// so you can correlate a user-reported error with a specific log line
+app.use((req, res, next) => {
+  req.id = req.headers['x-request-id'] || uuidv4();
+  res.setHeader('X-Request-ID', req.id);
+  next();
+});
+
+// Prevent HTTP Parameter Pollution — e.g. ?id=1&id=2 would produce an array
+// which can cause unexpected behavior in controllers expecting a string
+app.use(hpp());
+
+// HTTP request logging (skip auth header value — tokens must not appear in logs)
 if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('[:date[clf]] :method :url :status :response-time ms'));
+  app.use(morgan('[:date[clf]] :method :url :status :response-time ms', {
+    skip: (_req, res) => res.statusCode < 400, // only log errors in production
+  }));
 }
 
 // Attach io to every request so controllers can emit events
@@ -189,7 +211,7 @@ app.use('/api/delivery',       require('./routes/delivery'));
 
 // Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));
-app.get('/health', async (_req, res) => {
+app.get('/health', healthLimiter, async (_req, res) => {
   const start = Date.now();
   const checks = { db: 'ok', redis: 'ok' };
   let httpStatus = 200;
@@ -221,7 +243,6 @@ app.get('/health', async (_req, res) => {
     latency_ms: Date.now() - start,
     checks,
     timestamp: new Date().toISOString(),
-    instance: process.env.RENDER_INSTANCE_ID || process.env.HOSTNAME || 'local',
   });
 });
 
