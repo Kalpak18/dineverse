@@ -49,6 +49,7 @@ function SearchInput({ value, onChange, placeholder }) {
 
 export default function OrdersPage() {
   const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const { setBadge } = useBadges();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -437,6 +438,8 @@ export default function OrdersPage() {
 // ─── Order Card (Grid Item) ───────────────────────────────────────────────
 
 function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
+  const { cafe: _oc } = useAuth();
+  const c = (n) => fmtCurrency(n, _oc?.currency);
   const statusCfg = STATUS_CONFIG[order.status];
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
@@ -476,7 +479,7 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
           {(order.items || []).slice(0, expanded ? undefined : 3).map((item) => (
             <div key={item.id} className="flex justify-between text-xs text-gray-600">
               <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
-              <span className="flex-shrink-0">{fmtCurrency(item.subtotal)}</span>
+              <span className="flex-shrink-0">{c(item.subtotal)}</span>
             </div>
           ))}
           {!expanded && (order.items || []).length > 3 && (
@@ -493,7 +496,7 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
         className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
         onClick={onToggle}
       >
-        <span className="font-bold text-gray-900 text-sm">{fmtCurrency(order.total_amount)}</span>
+        <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
         <span className="text-xs text-gray-400">{expanded ? '▲ less' : '▼ more'}</span>
       </div>
 
@@ -548,6 +551,8 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
 // ─── Bills View (Takeaway Pickup + Table Bills) ────────────────────────────
 
 function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling }) {
+  const { cafe: _bv } = useAuth();
+  const c = (n) => fmtCurrency(n, _bv?.currency);
   const [expandedTable, setExpandedTable] = useState(null);
   const [search, setSearch] = useState('');
   const [collecting, setCollecting] = useState(null); // orderId or tableNumber being paid
@@ -669,13 +674,13 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                         {order.items?.map((item) => (
                           <div key={item.id} className="flex justify-between text-xs text-gray-600">
                             <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
-                            <span className="flex-shrink-0">{fmtCurrency(item.subtotal)}</span>
+                            <span className="flex-shrink-0">{c(item.subtotal)}</span>
                           </div>
                         ))}
                       </div>
                     </div>
                     <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between">
-                      <span className="font-bold text-gray-900 text-sm">{fmtCurrency(order.total_amount)}</span>
+                      <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
                     </div>
                     <div className="px-3 pb-3 pt-0">
                       <button
@@ -744,11 +749,11 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="font-bold text-gray-900">{fmtCurrency(bill.total)}</p>
+                        <p className="font-bold text-gray-900">{c(bill.total)}</p>
                         <p className={`text-xs font-medium ${
                           allServed ? 'text-green-600' : hasActive ? 'text-orange-500' : 'text-gray-400'
                         }`}>
-                          {allServed ? '✓ Ready to bill' : hasActive ? `Served ${fmtCurrency(servedTotal)}` : 'Partial'}
+                          {allServed ? '✓ Ready to bill' : hasActive ? `Served ${c(servedTotal)}` : 'Partial'}
                         </p>
                       </div>
                     </div>
@@ -777,12 +782,12 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                             {bill.aggregatedItems.map((item) => (
                               <div key={item.name} className="flex justify-between text-sm text-gray-700 px-3 py-2">
                                 <span>{item.name} × {item.qty}</span>
-                                <span className="font-medium">{fmtCurrency(item.total)}</span>
+                                <span className="font-medium">{c(item.total)}</span>
                               </div>
                             ))}
                             <div className="flex justify-between font-bold text-gray-900 px-3 py-2.5 bg-gray-50 rounded-b-xl">
                               <span>Total Bill</span>
-                              <span>{fmtCurrency(bill.total)}</span>
+                              <span>{c(bill.total)}</span>
                             </div>
                           </div>
                         </div>
@@ -803,7 +808,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                                     <span className={`badge text-xs ${STATUS_CONFIG[order.status].color}`}>
                                       {STATUS_CONFIG[order.status].label}
                                     </span>
-                                    <span className="font-bold text-gray-900 text-sm">{fmtCurrency(order.total_amount)}</span>
+                                    <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
                                   </div>
                                   {order.items?.length > 0 && (
                                     <div className="mt-1.5 pl-1 space-y-0.5">
@@ -842,6 +847,7 @@ const PAYMENT_MODES = [
 
 function BillingModal({ bill, onConfirm, onClose }) {
   const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   // step: 'collect' → select payment & mark paid  |  'receipt' → print / done
   const [step, setStep]           = useState('collect');
   const [confirming, setConfirming] = useState(false);
@@ -900,12 +906,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <h3 className="font-bold text-gray-900 text-lg">Payment Collected!</h3>
           <p className="text-sm text-gray-500 mt-0.5">
             {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ Table ${bill.table_number}`}
-            {' · '}{fmtCurrency(bill.total)}
+            {' · '}{c(bill.total)}
           </p>
           <p className="text-xs text-gray-400 mt-1">{modeLabel}</p>
           {paidCash != null && (
             <p className="text-xs text-gray-400">
-              Cash: {fmtCurrency(paidCash)} · Change: {fmtCurrency(paidCash - bill.total)}
+              Cash: {c(paidCash)} · Change: {c(paidCash - bill.total)}
             </p>
           )}
         </div>
@@ -941,12 +947,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
         {bill.aggregatedItems.map((item) => (
           <div key={item.name} className="flex justify-between text-gray-600">
             <span>{item.name} × {item.qty}</span>
-            <span>{fmtCurrency(item.total)}</span>
+            <span>{c(item.total)}</span>
           </div>
         ))}
         <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900">
           <span>Bill Total</span>
-          <span>{fmtCurrency(bill.total)}</span>
+          <span>{c(bill.total)}</span>
         </div>
       </div>
 
@@ -996,10 +1002,10 @@ function BillingModal({ bill, onConfirm, onClose }) {
           {isValid ? (
             <>
               <p className="text-xs text-green-600 font-medium">Return to Customer</p>
-              <p className="text-3xl font-bold text-green-700 mt-0.5">{fmtCurrency(change)}</p>
+              <p className="text-3xl font-bold text-green-700 mt-0.5">{c(change)}</p>
             </>
           ) : (
-            <p className="text-sm text-red-600 font-medium">Short by {fmtCurrency(bill.total - cash)}</p>
+            <p className="text-sm text-red-600 font-medium">Short by {c(bill.total - cash)}</p>
           )}
         </div>
       )}
@@ -1175,6 +1181,7 @@ const HISTORY_DATE_PRESETS = [
 
 function HistoryView({ orders }) {
   const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const [search, setSearch] = useState('');
   const [dateRange, setDateRange] = useState('today');
 
@@ -1244,7 +1251,7 @@ function HistoryView({ orders }) {
       <p className="text-xs text-gray-400">
         {dateLabel} · {dateFiltered.length} order{dateFiltered.length !== 1 ? 's' : ''} ·{' '}
         Revenue: <span className="font-semibold text-gray-600">
-          {fmtCurrency(dateFiltered.reduce((s, o) => s + parseFloat(o.total_amount), 0))}
+          {c(dateFiltered.reduce((s, o) => s + parseFloat(o.total_amount), 0))}
         </span>
       </p>
 
@@ -1284,7 +1291,7 @@ function HistoryView({ orders }) {
                   {(order.items || []).slice(0, 3).map((item) => (
                     <div key={item.id} className="flex justify-between text-xs text-gray-500">
                       <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
-                      <span className="flex-shrink-0">{fmtCurrency(item.subtotal)}</span>
+                      <span className="flex-shrink-0">{c(item.subtotal)}</span>
                     </div>
                   ))}
                   {(order.items || []).length > 3 && (
@@ -1293,7 +1300,7 @@ function HistoryView({ orders }) {
                 </div>
               </div>
               <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between">
-                <span className="font-bold text-gray-900 text-sm">{fmtCurrency(order.total_amount)}</span>
+                <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
                 <button
                   onClick={() => printBill({
                     cafe,

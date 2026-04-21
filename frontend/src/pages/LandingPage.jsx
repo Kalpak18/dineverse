@@ -1,8 +1,53 @@
 import { useNavigate, Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import DineLogo from '../components/DineLogo';
+
+const PLANS = {
+  INR: {
+    sym: '₹',
+    trial:  { price: '₹0' },
+    year1:  { perMonth: '₹499', total: '₹5,988', billed: 'billed yearly',     save: null },
+    year2:  { perMonth: '₹449', total: '₹10,788', billed: 'billed for 2 years', save: 'Save ₹1,188 vs. 1-year' },
+    year3:  { perMonth: '₹444', total: '₹15,999', billed: 'billed for 3 years', save: 'Save ₹1,965 vs. 1-year' },
+    footer: 'All plans include GST · Secure payment via Razorpay · Instant activation',
+    hero:   'From ₹499/month after trial',
+    year1features: ['Everything in Free Trial', 'Priority support', 'Data never deleted', 'GST invoice for input credit'],
+  },
+  USD: {
+    sym: '$',
+    trial:  { price: '$0' },
+    year1:  { perMonth: '$6',    total: '$72',  billed: 'billed yearly',     save: null },
+    year2:  { perMonth: '$5.50', total: '$130', billed: 'billed for 2 years', save: 'Save $14 vs. 1-year' },
+    year3:  { perMonth: '$5',    total: '$180', billed: 'billed for 3 years', save: 'Save $36 vs. 1-year' },
+    footer: 'All plans include applicable taxes · Secure payment · Instant activation',
+    hero:   'From $6/month after trial',
+    year1features: ['Everything in Free Trial', 'Priority support', 'Data never deleted', 'Tax invoice provided'],
+  },
+};
+
+async function detectPricingCurrency() {
+  const cached = sessionStorage.getItem('dv_pricing_currency');
+  if (cached) return cached;
+  try {
+    const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    const currency = data.country_code === 'IN' ? 'INR' : 'USD';
+    sessionStorage.setItem('dv_pricing_currency', currency);
+    return currency;
+  } catch {
+    return 'INR';
+  }
+}
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const [pricingCurrency, setPricingCurrency] = useState('INR');
+
+  useEffect(() => {
+    detectPricingCurrency().then(setPricingCurrency);
+  }, []);
+
+  const plan = PLANS[pricingCurrency] ?? PLANS.INR;
 
   return (
     <div className="min-h-screen bg-white font-sans">
@@ -77,7 +122,7 @@ export default function LandingPage() {
                 Scan café QR code to order
               </Link>
             </div>
-            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · From ₹499/month after trial</p>
+            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · {plan.hero}</p>
           </div>
 
           {/* Mockup */}
@@ -290,7 +335,7 @@ export default function LandingPage() {
             {/* Free Trial */}
             <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Free Trial</p>
-              <p className="text-3xl font-extrabold text-gray-900">₹0</p>
+              <p className="text-3xl font-extrabold text-gray-900">{plan.trial.price}</p>
               <p className="text-sm text-gray-400 mt-1 mb-5">30 days · No card</p>
               <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
                 {['Full feature access', 'Unlimited orders', 'QR menu + billing', 'Analytics & reports'].map((f) => (
@@ -308,10 +353,10 @@ export default function LandingPage() {
             {/* 1 Year */}
             <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">1 Year</p>
-              <p className="text-3xl font-extrabold text-gray-900">₹499<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-400 mt-1 mb-5">₹5,988 billed yearly</p>
+              <p className="text-3xl font-extrabold text-gray-900">{plan.year1.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-400 mt-1 mb-5">{plan.year1.total} {plan.year1.billed}</p>
               <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
-                {['Everything in Free Trial', 'Priority support', 'Data never deleted', 'GST invoice for input credit'].map((f) => (
+                {plan.year1features.map((f) => (
                   <li key={f} className="flex items-center gap-2">
                     <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
                     {f}
@@ -327,9 +372,9 @@ export default function LandingPage() {
             <div className="border-2 border-brand-500 rounded-2xl p-6 text-left flex flex-col relative bg-brand-50">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">SAVE 10%</span>
               <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">2 Years</p>
-              <p className="text-3xl font-extrabold text-gray-900">₹449<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-500 mt-1 mb-1">₹10,788 billed for 2 years</p>
-              <p className="text-xs text-green-600 font-semibold mb-4">Save ₹1,188 vs. 1-year</p>
+              <p className="text-3xl font-extrabold text-gray-900">{plan.year2.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-500 mt-1 mb-1">{plan.year2.total} {plan.year2.billed}</p>
+              <p className="text-xs text-green-600 font-semibold mb-4">{plan.year2.save}</p>
               <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-700">
                 {['Everything in 1 Year', 'Multi-outlet management', 'API access (coming soon)', 'Dedicated account manager'].map((f) => (
                   <li key={f} className="flex items-center gap-2">
@@ -347,9 +392,9 @@ export default function LandingPage() {
             <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col relative">
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">BEST VALUE</span>
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">3 Years</p>
-              <p className="text-3xl font-extrabold text-gray-900">₹444<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-400 mt-1 mb-1">₹15,999 billed for 3 years</p>
-              <p className="text-xs text-green-600 font-semibold mb-4">Save ₹1,965 vs. 1-year</p>
+              <p className="text-3xl font-extrabold text-gray-900">{plan.year3.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
+              <p className="text-sm text-gray-400 mt-1 mb-1">{plan.year3.total} {plan.year3.billed}</p>
+              <p className="text-xs text-green-600 font-semibold mb-4">{plan.year3.save}</p>
               <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
                 {['Everything in 2 Years', 'Lowest per-month cost', 'Price locked for 3 years', 'Early access to new features'].map((f) => (
                   <li key={f} className="flex items-center gap-2">
@@ -364,7 +409,7 @@ export default function LandingPage() {
             </div>
 
           </div>
-          <p className="text-center text-xs text-gray-400 mt-6">All plans include GST · Secure payment via Razorpay · Instant activation</p>
+          <p className="text-center text-xs text-gray-400 mt-6">{plan.footer}</p>
         </div>
       </section>
 

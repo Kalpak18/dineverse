@@ -6,13 +6,15 @@ import { useCart } from '../../context/CartContext';
 import { placeOrder, previewOffer } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
+import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 import QuantityControl from '../../components/QuantityControl';
 
 export default function CartPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { items, total, itemCount, updateQty, clearCart } = useCart();
+  const { items, total, itemCount, cafeCurrency, updateQty, clearCart } = useCart();
+  const c = (n) => fmtCurrency(n, cafeCurrency);
   const [loading, setLoading] = useState(false);
   const submittingRef = useRef(false);
   const [notes, setNotes] = useState('');
@@ -128,7 +130,7 @@ export default function CartPage() {
       if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
       if (!deliveryForm.delivery_phone.trim())   { toast.error('Please enter your phone number for delivery'); return; }
       if (deliveryMinOrder > 0 && total < deliveryMinOrder) {
-        toast.error(`Minimum order for delivery is ₹${deliveryMinOrder.toFixed(0)}`);
+        toast.error(`Minimum order for delivery is ${c(deliveryMinOrder)}`);
         return;
       }
     }
@@ -196,7 +198,7 @@ export default function CartPage() {
           <div key={item.id} className="flex items-center gap-3 border border-gray-100 rounded-xl p-3">
             <div className="flex-1">
               <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
-              <p className="text-xs text-gray-400 mt-0.5">₹{parseFloat(item.price).toFixed(2)} each</p>
+              <p className="text-xs text-gray-400 mt-0.5">{c(parseFloat(item.price))} each</p>
             </div>
             <QuantityControl
               qty={item.quantity}
@@ -204,7 +206,7 @@ export default function CartPage() {
               onIncrement={() => updateQty(item.id, item.quantity + 1)}
             />
             <span className="font-bold text-sm w-16 text-right">
-              ₹{(parseFloat(item.price) * item.quantity).toFixed(2)}
+              {c(parseFloat(item.price) * item.quantity)}
             </span>
           </div>
         ))}
@@ -278,7 +280,7 @@ export default function CartPage() {
           <span className="text-green-500 text-lg">🎉</span>
           <div>
             <p className="text-xs font-semibold text-green-800">{offerPreview.offer_name} applied!</p>
-            <p className="text-xs text-green-600">You save ₹{discountAmt.toFixed(2)} on this order</p>
+            <p className="text-xs text-green-600">You save {c(discountAmt)} on this order</p>
           </div>
         </div>
       )}
@@ -289,7 +291,7 @@ export default function CartPage() {
           {items.map((item) => (
             <div key={item.id} className="flex justify-between text-gray-600">
               <span>{item.name} × {item.quantity}</span>
-              <span>₹{(parseFloat(item.price) * item.quantity).toFixed(2)}</span>
+              <span>{c(parseFloat(item.price) * item.quantity)}</span>
             </div>
           ))}
         </div>
@@ -299,70 +301,70 @@ export default function CartPage() {
               <>
                 <div className="flex justify-between text-gray-500">
                   <span>Base amount</span>
-                  <span>₹{taxableAmt.toFixed(2)}</span>
+                  <span>{c(taxableAmt)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                  <span>{c(totalTax / 2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                  <span>{c(totalTax / 2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 font-medium border-t border-gray-100 pt-1">
                   <span>Subtotal (GST {gstRate}% incl.)</span>
-                  <span>₹{total.toFixed(2)}</span>
+                  <span>{c(total)}</span>
                 </div>
               </>
             ) : (
               <>
                 <div className="flex justify-between text-gray-600">
                   <span>Subtotal</span>
-                  <span>₹{total.toFixed(2)}</span>
+                  <span>{c(total)}</span>
                 </div>
                 {discountAmt > 0 && (
                   <div className="flex justify-between text-green-600 font-medium">
                     <span>Discount</span>
-                    <span>−₹{discountAmt.toFixed(2)}</span>
+                    <span>-{c(discountAmt)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-gray-500">
                   <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                  <span>{c(totalTax / 2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>₹{(totalTax / 2).toFixed(2)}</span>
+                  <span>{c(totalTax / 2)}</span>
                 </div>
               </>
             )
           ) : (
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
-              <span>₹{total.toFixed(2)}</span>
+              <span>{c(total)}</span>
             </div>
           )}
           {offerPreview?.applied && taxInclusive && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
-              <span>−₹{discountAmt.toFixed(2)}</span>
+              <span>-{c(discountAmt)}</span>
             </div>
           )}
           {tip > 0 && (
             <div className="flex justify-between text-gray-600">
               <span>Tip</span>
-              <span>₹{tip.toFixed(2)}</span>
+              <span>{c(tip)}</span>
             </div>
           )}
           {isDelivery && (
             <div className="flex justify-between text-gray-600">
               <span>🛵 Delivery fee</span>
-              <span>{deliveryFeeBase > 0 ? `₹${deliveryFeeBase.toFixed(2)}` : 'Free'}</span>
+              <span>{deliveryFeeBase > 0 ? c(deliveryFeeBase) : 'Free'}</span>
             </div>
           )}
           <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
             <span>Total</span>
-            <span>₹{grandTotal.toFixed(2)}</span>
+            <span>{c(grandTotal)}</span>
           </div>
         </div>
       </div>
@@ -382,7 +384,7 @@ export default function CartPage() {
                   : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
               }`}
             >
-              {t === 0 ? 'No tip' : `₹${t}`}
+              {t === 0 ? 'No tip' : c(t)}
             </button>
           ))}
           <input
@@ -409,7 +411,7 @@ export default function CartPage() {
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span>{loading ? 'Placing order...' : 'Place Order'}</span>
-            <span>₹{grandTotal.toFixed(2)}</span>
+            <span>{c(grandTotal)}</span>
           </button>
         </div>
       </div>
@@ -449,7 +451,7 @@ export default function CartPage() {
                 </div>
                 <div className="flex justify-between font-bold text-gray-900">
                   <span>Total</span>
-                  <span>₹{total.toFixed(2)}</span>
+                  <span>{c(total)}</span>
                 </div>
               </div>
 

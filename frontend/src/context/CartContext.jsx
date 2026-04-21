@@ -1,4 +1,4 @@
-import { createContext, useContext, useReducer, useCallback } from 'react';
+import { createContext, useContext, useReducer, useCallback, useState } from 'react';
 
 const CartContext = createContext(null);
 
@@ -38,6 +38,7 @@ function cartReducer(state, action) {
 
 export function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [] });
+  const [cafeCurrency, setCafeCurrency] = useState('INR');
 
   const addItem = useCallback((item) => dispatch({ type: 'ADD_ITEM', item }), []);
   const removeItem = useCallback((id) => dispatch({ type: 'REMOVE_ITEM', id }), []);
@@ -48,7 +49,7 @@ export function CartProvider({ children }) {
   const itemCount = state.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items: state.items, total, itemCount, addItem, removeItem, updateQty, clearCart }}>
+    <CartContext.Provider value={{ items: state.items, total, itemCount, cafeCurrency, setCafeCurrency, addItem, removeItem, updateQty, clearCart }}>
       {children}
     </CartContext.Provider>
   );

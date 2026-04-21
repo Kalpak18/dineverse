@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAnalytics, createExpense, deleteExpense, exportOrdersCSV } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
 import PageHint from '../../components/PageHint';
 import toast from 'react-hot-toast';
 
@@ -32,6 +33,8 @@ function SummaryCard({ label, value, icon, color, sub }) {
 }
 
 function AddExpenseForm({ onAdded }) {
+  const { cafe } = useAuth();
+  const sym = cafe?.currency === 'INR' || !cafe?.currency ? '₹' : cafe.currency;
   const [form, setForm] = useState({ name: '', amount: '', category: '', expense_date: '', notes: '' });
   const [saving, setSaving] = useState(false);
 
@@ -71,7 +74,7 @@ function AddExpenseForm({ onAdded }) {
           />
         </div>
         <div>
-          <label className="label">Amount (₹) *</label>
+          <label className="label">Amount ({sym}) *</label>
           <input
             type="number"
             min="0.01"
@@ -113,6 +116,8 @@ function AddExpenseForm({ onAdded }) {
 }
 
 export default function AnalyticsPage() {
+  const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const [period, setPeriod] = useState('monthly');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -222,20 +227,20 @@ export default function AnalyticsPage() {
             />
             <SummaryCard
               label="Revenue Collected"
-              value={fmtCurrency(data.summary.total_revenue)}
+              value={c(data.summary.total_revenue)}
               icon="💰"
               color="green"
               sub="From paid orders only"
             />
             <SummaryCard
               label="Expenses"
-              value={fmtCurrency(data.summary.total_expenses)}
+              value={c(data.summary.total_expenses)}
               icon="🧾"
               color="red"
             />
             <SummaryCard
               label="Profit"
-              value={fmtCurrency(data.summary.profit)}
+              value={c(data.summary.profit)}
               icon={data.summary.profit >= 0 ? '📈' : '📉'}
               color={data.summary.profit >= 0 ? 'purple' : 'red'}
               sub="Revenue − Expenses"
@@ -274,7 +279,7 @@ export default function AnalyticsPage() {
                       />
                     </div>
                     <span className="text-gray-400 text-xs w-10 text-right">{cat.total_qty} sold</span>
-                    <span className="font-medium text-gray-900 w-20 text-right">{fmtCurrency(cat.revenue)}</span>
+                    <span className="font-medium text-gray-900 w-20 text-right">{c(cat.revenue)}</span>
                   </div>
                 ))}
               </div>
@@ -296,7 +301,7 @@ export default function AnalyticsPage() {
                       </span>
                       <span className="flex-1 font-medium text-gray-800 truncate">{item.item_name}</span>
                       <span className="text-gray-400">{item.total_qty} sold</span>
-                      <span className="font-medium text-gray-900">{fmtCurrency(item.total_revenue)}</span>
+                      <span className="font-medium text-gray-900">{c(item.total_revenue)}</span>
                     </div>
                   ))}
                 </div>
@@ -322,7 +327,7 @@ export default function AnalyticsPage() {
                         />
                       </div>
                       <span className="font-medium text-gray-700 w-16 text-right">
-                        {fmtCurrency(day.revenue)}
+                        {c(day.revenue)}
                       </span>
                     </div>
                   ))}
@@ -340,7 +345,7 @@ export default function AnalyticsPage() {
               {data.expenses.length > 0 && (
                 <span className="ml-2 text-sm font-normal text-gray-400">
                   {data.expenses.length} item{data.expenses.length !== 1 ? 's' : ''}
-                  {' · '}Total {fmtCurrency(data.summary.total_expenses)}
+                  {' · '}Total {c(data.summary.total_expenses)}
                 </span>
               )}
             </h2>
@@ -358,7 +363,7 @@ export default function AnalyticsPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-3 ml-3">
-                      <span className="font-semibold text-gray-900">{fmtCurrency(exp.amount)}</span>
+                      <span className="font-semibold text-gray-900">{c(exp.amount)}</span>
                       <button
                         onClick={() => handleDeleteExpense(exp.id)}
                         className="text-gray-300 hover:text-red-500 transition-colors text-lg leading-none"

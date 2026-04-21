@@ -86,6 +86,7 @@ export default function ProfilePage() {
     tax_inclusive:   cafe?.tax_inclusive !== false,
     business_type:   cafe?.business_type || 'restaurant',
     country:         cafe?.country || 'India',
+    currency:        cafe?.currency || 'INR',
     // Delivery config
     delivery_enabled:    cafe?.delivery_enabled ?? false,
     delivery_radius_km:  cafe?.delivery_radius_km ?? 5,
@@ -123,6 +124,7 @@ export default function ProfilePage() {
       tax_inclusive:   cafe.tax_inclusive !== false,
       business_type:   cafe.business_type || 'restaurant',
       country:         cafe.country || 'India',
+      currency:        cafe.currency || 'INR',
       delivery_enabled:    cafe.delivery_enabled ?? false,
       delivery_radius_km:  cafe.delivery_radius_km ?? 5,
       delivery_fee_base:   cafe.delivery_fee_base ?? 0,
@@ -384,6 +386,22 @@ export default function ProfilePage() {
                 <option value="Other">Other (manual rate)</option>
               </select>
             </div>
+          </div>
+
+          {/* Currency */}
+          <div>
+            <label className="label">Currency</label>
+            <select className="input" value={form.currency} onChange={set('currency')}>
+              <option value="INR">INR — Indian Rupee (₹)</option>
+              <option value="USD">USD — US Dollar ($)</option>
+              <option value="EUR">EUR — Euro (€)</option>
+              <option value="GBP">GBP — British Pound (£)</option>
+              <option value="AUD">AUD — Australian Dollar (A$)</option>
+              <option value="CAD">CAD — Canadian Dollar (C$)</option>
+              <option value="SGD">SGD — Singapore Dollar (S$)</option>
+              <option value="AED">AED — UAE Dirham (د.إ)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Shown on menus, orders, and your dashboard.</p>
           </div>
 
           {/* GSTIN with live format validation */}

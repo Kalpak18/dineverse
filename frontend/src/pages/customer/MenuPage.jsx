@@ -49,7 +49,7 @@ function FoodDot({ isVeg }) {
 export default function MenuPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { items: cartItems, addItem, updateQty, itemCount, total } = useCart();
+  const { items: cartItems, addItem, updateQty, itemCount, total, setCafeCurrency } = useCart();
   const [cafe, setCafe] = useState(null);
   const [cafeOpen, setCafeOpen] = useState(true);
   const [menu, setMenu] = useState([]);
@@ -92,6 +92,7 @@ export default function MenuPage() {
         const cafeData = cafeRes.data.cafe;
         setCafe(cafeData);
         setCafeOpen(cafeData.is_open !== false);
+        setCafeCurrency(cafeData.currency || 'INR');
         // Store tax info in session so CartPage can show breakdown
         const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
         sessionStorage.setItem(`session_${slug}`, JSON.stringify({

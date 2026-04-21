@@ -55,6 +55,7 @@ const CHECKLIST = [
 
 export default function DashboardPage() {
   const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const navigate  = useNavigate();
 
   const [stats,    setStats]    = useState(null);
@@ -380,7 +381,7 @@ export default function DashboardPage() {
         {/* Today stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Today's Orders" value={stats?.today?.total_orders || 0} icon="📋" color="blue" />
-          <StatCard label="Collected Revenue" value={fmtCurrency(stats?.today?.total_revenue || 0)} icon="💰" color="green" />
+          <StatCard label="Collected Revenue" value={c(stats?.today?.total_revenue || 0)} icon="💰" color="green" />
           <StatCard
             label="Pending"
             value={stats?.statusBreakdown?.find((s) => s.status === 'pending')?.count || 0}
@@ -419,7 +420,7 @@ export default function DashboardPage() {
                       <span className="text-gray-400 ml-2">{order.customer_name} · {order.table_number}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{fmtCurrency(order.total_amount)}</span>
+                      <span className="font-medium">{c(order.total_amount)}</span>
                       <span className={`badge ${STATUS_CONFIG[order.status]?.color}`}>{order.status}</span>
                     </div>
                   </div>
@@ -446,7 +447,7 @@ export default function DashboardPage() {
                     </span>
                     <span className="flex-1 font-medium text-gray-800 truncate">{item.item_name}</span>
                     <span className="text-gray-400">{item.total_qty} sold</span>
-                    <span className="font-medium text-gray-900">{fmtCurrency(item.total_revenue)}</span>
+                    <span className="font-medium text-gray-900">{c(item.total_revenue)}</span>
                   </div>
                 ))}
               </div>

@@ -9,7 +9,16 @@ export const fmtToken = (n, orderType) => {
   return `#${num}`;
 };
 export const fmtPrice     = (n)   => parseFloat(n).toFixed(2);
-export const fmtCurrency  = (n)   => `₹${fmtPrice(n)}`;
+
+const CURRENCY_SYMBOLS = {
+  INR: '₹', USD: '$', EUR: '€', GBP: '£', AUD: 'A$',
+  CAD: 'C$', SGD: 'S$', AED: 'د.إ', JPY: '¥', CNY: '¥',
+};
+export const currencySymbol = (currency = 'INR') =>
+  CURRENCY_SYMBOLS[currency] ?? (currency + ' ');
+
+export const fmtCurrency  = (n, currency = 'INR') =>
+  `${currencySymbol(currency)}${fmtPrice(n)}`;
 export const fmtTime      = (str) =>
   new Date(str).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 

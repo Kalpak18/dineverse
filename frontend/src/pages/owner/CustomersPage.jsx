@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getCustomers, getCustomerOrders } from '../../services/api';
 import { fmtCurrency, fmtToken } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 function StatBadge({ label, value, color = 'gray' }) {
@@ -19,6 +20,8 @@ function StatBadge({ label, value, color = 'gray' }) {
 }
 
 function CustomerRow({ customer, onSelect, selected }) {
+  const { cafe: _cr } = useAuth();
+  const c = (n) => fmtCurrency(n, _cr?.currency);
   return (
     <tr
       onClick={() => onSelect(customer)}
@@ -29,7 +32,7 @@ function CustomerRow({ customer, onSelect, selected }) {
         <div className="text-xs text-gray-400">{customer.customer_phone}</div>
       </td>
       <td className="px-4 py-3 text-center text-sm font-semibold text-gray-700">{customer.total_orders}</td>
-      <td className="px-4 py-3 text-center text-sm text-green-700 font-semibold">{fmtCurrency(customer.total_spend)}</td>
+      <td className="px-4 py-3 text-center text-sm text-green-700 font-semibold">{c(customer.total_spend)}</td>
       <td className="px-4 py-3 text-center">
         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
           customer.preferred_type === 'dine_in'
@@ -53,6 +56,8 @@ function CustomerRow({ customer, onSelect, selected }) {
 }
 
 function CustomerDrawer({ customer, onClose }) {
+  const { cafe: _cd } = useAuth();
+  const c = (n) => fmtCurrency(n, _cd?.currency);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -90,7 +95,7 @@ function CustomerDrawer({ customer, onClose }) {
         {/* Stats */}
         <div className="px-5 py-3 border-b border-gray-50 flex flex-wrap gap-2">
           <StatBadge label="Orders" value={customer.total_orders} color="blue" />
-          <StatBadge label="Spent" value={fmtCurrency(customer.total_spend)} color="green" />
+          <StatBadge label="Spent" value={c(customer.total_spend)} color="green" />
           <StatBadge label="Paid orders" value={customer.paid_orders} color="purple" />
           <StatBadge
             label="Preferred"
@@ -130,7 +135,7 @@ function CustomerDrawer({ customer, onClose }) {
                   })}
                   {order.table_number && ` · Table ${order.table_number}`}
                 </p>
-                <p className="text-sm font-semibold text-gray-900">{fmtCurrency(order.total_amount)}</p>
+                <p className="text-sm font-semibold text-gray-900">{c(order.total_amount)}</p>
               </div>
               {order.items && (
                 <p className="text-xs text-gray-400 mt-1 truncate">
@@ -147,6 +152,8 @@ function CustomerDrawer({ customer, onClose }) {
 }
 
 export default function CustomersPage() {
+  const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const [customers, setCustomers]   = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
@@ -201,7 +208,7 @@ export default function CustomersPage() {
           <p className="text-xs text-gray-500 mt-1">Total Customers</p>
         </div>
         <div className="card text-center">
-          <p className="text-2xl font-bold text-green-700">{fmtCurrency(totalSpend)}</p>
+          <p className="text-2xl font-bold text-green-700">{c(totalSpend)}</p>
           <p className="text-xs text-gray-500 mt-1">Total Revenue</p>
         </div>
         <div className="card text-center">

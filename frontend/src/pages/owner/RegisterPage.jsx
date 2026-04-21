@@ -37,6 +37,7 @@ export default function RegisterPage() {
     name: '', slug: '', email: '', password: '', description: '', phone: '',
     address: '', address_line2: '', city: '', state: '', pincode: '',
     business_type: 'restaurant',
+    currency: 'INR',
   });
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
@@ -210,14 +211,30 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                <div>
-                  <label className="label">Business Type *</label>
-                  <select className="input" value={form.business_type} onChange={set('business_type')} required>
-                    {BUSINESS_TYPES.map((b) => (
-                      <option key={b.value} value={b.value}>{b.label}</option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">Used to calculate the correct GST rate on orders.</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="label">Business Type *</label>
+                    <select className="input" value={form.business_type} onChange={set('business_type')} required>
+                      {BUSINESS_TYPES.map((b) => (
+                        <option key={b.value} value={b.value}>{b.label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">Used to calculate the correct GST rate on orders.</p>
+                  </div>
+                  <div>
+                    <label className="label">Currency *</label>
+                    <select className="input" value={form.currency} onChange={set('currency')} required>
+                      <option value="INR">INR — Indian Rupee (₹)</option>
+                      <option value="USD">USD — US Dollar ($)</option>
+                      <option value="EUR">EUR — Euro (€)</option>
+                      <option value="GBP">GBP — British Pound (£)</option>
+                      <option value="AUD">AUD — Australian Dollar (A$)</option>
+                      <option value="CAD">CAD — Canadian Dollar (C$)</option>
+                      <option value="SGD">SGD — Singapore Dollar (S$)</option>
+                      <option value="AED">AED — UAE Dirham (د.إ)</option>
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">All menu prices will display in this currency.</p>
+                  </div>
                 </div>
 
                 <div>

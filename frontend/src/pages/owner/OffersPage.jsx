@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { getOffers, createOffer, updateOffer, deleteOffer } from '../../services/api';
-import { fmtCurrency } from '../../utils/formatters';
+import { fmtCurrency, currencySymbol } from '../../utils/formatters';
+import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -13,6 +14,8 @@ const EMPTY_FORM = {
 };
 
 function OfferForm({ initial, onSave, onCancel }) {
+  const { cafe: _of } = useAuth();
+  const sym = currencySymbol(_of?.currency);
   const [form, setForm] = useState(initial || EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -60,7 +63,7 @@ function OfferForm({ initial, onSave, onCancel }) {
           <label className="label">Type *</label>
           <select className="input" value={form.offer_type} onChange={set('offer_type')}>
             <option value="percentage">% Percentage Discount</option>
-            <option value="fixed">₹ Fixed Amount Off</option>
+            <option value="fixed">{sym} Fixed Amount Off</option>
             <option value="combo">Combo Deal</option>
           </select>
         </div>
@@ -70,7 +73,7 @@ function OfferForm({ initial, onSave, onCancel }) {
         {form.offer_type !== 'combo' ? (
           <div>
             <label className="label">
-              {form.offer_type === 'percentage' ? 'Discount %' : 'Discount Amount (₹)'} *
+              {form.offer_type === 'percentage' ? 'Discount %' : `Discount Amount (${sym})`} *
             </label>
             <input className="input" type="number" min="1" max={form.offer_type === 'percentage' ? 100 : undefined}
               placeholder={form.offer_type === 'percentage' ? 'e.g. 20' : 'e.g. 50'}
@@ -78,13 +81,13 @@ function OfferForm({ initial, onSave, onCancel }) {
           </div>
         ) : (
           <div>
-            <label className="label">Combo Price (₹) *</label>
+            <label className="label">Combo Price ({sym}) *</label>
             <input className="input" type="number" min="1" placeholder="e.g. 250"
               value={form.combo_price} onChange={set('combo_price')} />
           </div>
         )}
         <div>
-          <label className="label">Min. Order Amount (₹)</label>
+          <label className="label">Min. Order Amount ({sym})</label>
           <input className="input" type="number" min="0" placeholder="0 = no minimum"
             value={form.min_order_amount} onChange={set('min_order_amount')} />
         </div>
@@ -145,11 +148,13 @@ function OfferForm({ initial, onSave, onCancel }) {
 }
 
 function OfferBadge({ offer }) {
+  const { cafe: _ob } = useAuth();
+  const sym = currencySymbol(_ob?.currency);
   const label = offer.offer_type === 'percentage'
     ? `${offer.discount_value}% OFF`
     : offer.offer_type === 'fixed'
-      ? `₹${offer.discount_value} OFF`
-      : `Combo ₹${offer.combo_price}`;
+      ? `${sym}${offer.discount_value} OFF`
+      : `Combo ${sym}${offer.combo_price}`;
 
   const timeLabel = offer.active_from && offer.active_until
     ? ` · ${offer.active_from.slice(0,5)}–${offer.active_until.slice(0,5)}`
@@ -157,7 +162,7 @@ function OfferBadge({ offer }) {
   const dayLabel = offer.active_days?.length
     ? ` · ${offer.active_days.map((d) => DAYS[d]).join(', ')}`
     : '';
-  const minLabel = offer.min_order_amount > 0 ? ` · Min ₹${offer.min_order_amount}` : '';
+  const minLabel = offer.min_order_amount > 0 ? ` · Min ${sym}${offer.min_order_amount}` : '';
 
   return (
     <div className={`card p-4 flex items-start justify-between gap-4 ${!offer.is_active ? 'opacity-50' : ''}`}>
@@ -192,6 +197,8 @@ function OfferBadge({ offer }) {
 }
 
 export default function OffersPage() {
+  const { cafe } = useAuth();
+  const sym = currencySymbol(cafe?.currency);
   const [offers, setOffers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -281,8 +288,8 @@ export default function OffersPage() {
       <div className="card bg-blue-50 border-blue-200 p-4">
         <p className="text-xs font-semibold text-blue-800 mb-1">How offers work</p>
         <ul className="text-xs text-blue-700 space-y-1">
-          <li>• <strong>Percentage:</strong> e.g. 20% off all orders above ₹200</li>
-          <li>• <strong>Fixed:</strong> e.g. ₹50 off every order</li>
+          <li>• <strong>Percentage:</strong> e.g. 20% off all orders above {sym}200</li>
+          <li>• <strong>Fixed:</strong> e.g. {sym}50 off every order</li>
           <li>• <strong>Combo:</strong> Bundle price when specific items are ordered together</li>
           <li>• The best applicable offer is auto-applied at checkout — customers always get the best deal</li>
           <li>• Time & day restrictions let you run happy hours and weekend specials</li>

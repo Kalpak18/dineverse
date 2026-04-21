@@ -52,7 +52,8 @@ exports.register = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { name, slug, email, password, otp, description,
-          address, address_line2, city, state, pincode, phone } = req.body;
+          address, address_line2, city, state, pincode, phone,
+          currency = 'INR' } = req.body;
 
   // Verify OTP against email before touching the database
   const otpCheck = await verifyOtp(email, otp, 'register');
@@ -76,25 +77,25 @@ exports.register = asyncHandler(async (req, res) => {
     ? await db.query(
         `INSERT INTO cafes (name, slug, email, password_hash, description,
                             address, address_line2, city, state, pincode, phone,
-                            plan_type, plan_start_date, plan_expiry_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'free_trial',NOW(),NOW() + INTERVAL '1 month')
+                            currency, plan_type, plan_start_date, plan_expiry_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'free_trial',NOW(),NOW() + INTERVAL '1 month')
          RETURNING id, name, slug, email, description,
                    address, address_line2, city, state, pincode, phone,
-                   plan_type, plan_start_date, plan_expiry_date, created_at`,
+                   currency, plan_type, plan_start_date, plan_expiry_date, created_at`,
         [name, slug, email, password_hash, description || null,
          address || null, address_line2 || null, city || null, state || null, pincode || null,
-         phone || null]
+         phone || null, currency || 'INR']
       )
     : await db.query(
         `INSERT INTO cafes (name, slug, email, password_hash, description,
                             address, city, phone,
-                            plan_type, plan_start_date, plan_expiry_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'free_trial',NOW(),NOW() + INTERVAL '1 month')
+                            currency, plan_type, plan_start_date, plan_expiry_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'free_trial',NOW(),NOW() + INTERVAL '1 month')
          RETURNING id, name, slug, email, description,
                    address, city, phone,
-                   plan_type, plan_start_date, plan_expiry_date, created_at`,
+                   currency, plan_type, plan_start_date, plan_expiry_date, created_at`,
         [name, slug, email, password_hash, description || null,
-         address || null, city || null, phone || null]
+         address || null, city || null, phone || null, currency || 'INR']
       );
 
   const cafe = result.rows[0];
@@ -204,6 +205,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
               pan_number, tax_inclusive, gst_verified, business_type, country,
+              COALESCE(currency, 'INR') AS currency,
               opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
               plan_type, plan_start_date, plan_expiry_date, created_at,
               parent_cafe_id,
@@ -222,6 +224,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               address, city, phone, logo_url, cover_image_url,
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+              COALESCE(currency, 'INR') AS currency,
               plan_type, plan_start_date, plan_expiry_date, created_at
        FROM cafes WHERE id = $1`,
       [req.cafeId]
@@ -276,6 +279,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
     opening_hours, timezone,
     delivery_enabled, delivery_radius_km, delivery_fee_base,
     delivery_fee_per_km, delivery_min_order, delivery_est_mins,
+    currency,
   } = req.body;
 
   // Validate GSTIN format if provided — set gst_verified accordingly
@@ -323,13 +327,15 @@ exports.updateProfile = asyncHandler(async (req, res) => {
            delivery_fee_base  = COALESCE($30, delivery_fee_base),
            delivery_fee_per_km = COALESCE($31, delivery_fee_per_km),
            delivery_min_order = COALESCE($32, delivery_min_order),
-           delivery_est_mins  = COALESCE($33, delivery_est_mins)
+           delivery_est_mins  = COALESCE($33, delivery_est_mins),
+           currency           = COALESCE($34, currency)
        WHERE id = $27
        RETURNING id, name, slug, email, description,
                  address, address_line2, city, state, pincode,
                  phone, logo_url, cover_image_url, name_style, latitude, longitude,
                  gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
                  pan_number, tax_inclusive, gst_verified, business_type, country,
+                 COALESCE(currency, 'INR') AS currency,
                  opening_hours, timezone, parent_cafe_id,
                  COALESCE(delivery_enabled, false)    AS delivery_enabled,
                  COALESCE(delivery_radius_km, 5)      AS delivery_radius_km,
@@ -356,7 +362,8 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        delivery_fee_base != null ? parseFloat(delivery_fee_base) : null,
        delivery_fee_per_km != null ? parseFloat(delivery_fee_per_km) : null,
        delivery_min_order != null ? parseFloat(delivery_min_order) : null,
-       delivery_est_mins != null ? parseInt(delivery_est_mins) : null]
+       delivery_est_mins != null ? parseInt(delivery_est_mins) : null,
+       currency || null]
     );
   } catch {
     // Migration 016/027 not applied — fall back to base columns only
