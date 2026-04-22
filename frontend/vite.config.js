@@ -39,6 +39,8 @@ export default defineConfig(({ mode }) => {
     ],
     build: {
       rollupOptions: {
+        // Capacitor native plugin — not installed in web/CI builds, only resolved at runtime on device
+        external: ['@capacitor-community/barcode-scanner'],
         output: {
           manualChunks(id) {
             if (id.includes('node_modules')) {
