@@ -401,6 +401,7 @@ export default function MenuPage() {
 
           {categories.map((cat) => {
             const isActive = cat.id === selectedCatId && !isSearching;
+            const emoji = getCategoryEmoji(cat.name, emojiMap);
             return (
               <button
                 key={cat.id}
@@ -416,10 +417,8 @@ export default function MenuPage() {
                   {cat.thumbnail ? (
                     <img src={cat.thumbnail} alt={cat.name} className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide text-center px-1 leading-tight">
-                        {cat.name.slice(0, 3)}
-                      </span>
+                    <div className={`w-full h-full flex items-center justify-center text-2xl ${isActive ? 'bg-brand-100' : 'bg-white shadow-sm'}`}>
+                      {emoji}
                     </div>
                   )}
                 </div>
