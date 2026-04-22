@@ -157,6 +157,8 @@ export const updateOrderStatus = (id, status, cash_received = null, cancellation
     ...(cash_received != null && { cash_received }),
     ...(cancellation_reason && { cancellation_reason }),
   });
+export const setKitchenMode   = (id, mode)             => api.patch(`/orders/${id}/kitchen-mode`, { mode });
+export const updateItemStatus = (id, itemId, status)   => api.patch(`/orders/${id}/items/${itemId}/status`, { status });
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────

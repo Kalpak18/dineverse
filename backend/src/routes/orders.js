@@ -10,6 +10,7 @@ const {
   getOrderStatus, customerCancelOrder,
   createOrderPayment, verifyOrderPayment,
   getTableBill,
+  setKitchenMode, updateItemStatus,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -42,6 +43,8 @@ router.get('/stats', authenticate, checkSubscription, requireOwner, getDashboard
 router.get('/', authenticate, checkSubscription, getOrders);
 router.get('/:id', authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status', authenticate, checkSubscription, updateOrderStatus);
+router.patch('/:id/kitchen-mode', authenticate, checkSubscription, setKitchenMode);
+router.patch('/:id/items/:itemId/status', authenticate, checkSubscription, updateItemStatus);
 
 // Owner: all conversations inbox
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);

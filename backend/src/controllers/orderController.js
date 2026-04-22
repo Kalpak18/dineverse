@@ -366,7 +366,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
       `SELECT o.id, o.order_number,
               COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
               o.customer_name, o.customer_phone, o.table_number,
-              o.order_type, o.status,
+              o.order_type, o.status, o.kitchen_mode,
               o.total_amount, o.discount_amount, o.final_amount,
               o.payment_verified, o.cancellation_reason,
               o.notes, o.created_at, o.updated_at
@@ -381,7 +381,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
   const orderIds = ordersResult.rows.map((o) => o.id);
   const itemsResult = orderIds.length > 0
     ? await db.query(
-        'SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, subtotal FROM order_items WHERE order_id = ANY($1)',
+        'SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, subtotal, item_status FROM order_items WHERE order_id = ANY($1)',
         [orderIds]
       )
     : { rows: [] };
@@ -659,12 +659,13 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.notes, o.created_at, o.updated_at,
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
               o.delivery_phone, o.delivery_instructions, o.delivery_fee, o.delivery_status,
-              o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason
+              o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason,
+              o.kitchen_mode
        FROM orders o WHERE o.id = $1${cafeFilter}`,
       params
     ),
     db.query(
-      'SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal FROM order_items WHERE order_id = $1',
+      'SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal, item_status FROM order_items WHERE order_id = $1',
       [orderId]
     ),
   ]);
@@ -824,4 +825,96 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
 
   logger.info('Food payment verified: order %s cafe %s amount paid', id, slug);
   ok(res, { order: updatedOrder }, 'Payment successful!');
+});
+
+// ─── Owner/Staff: set kitchen mode (combined | individual) ────
+exports.setKitchenMode = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { mode } = req.body;
+  if (!['combined', 'individual'].includes(mode)) return fail(res, 'Invalid kitchen mode');
+
+  const orderCheck = await db.query(
+    'SELECT id, status FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, req.cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (['paid', 'cancelled'].includes(orderCheck.rows[0].status))
+    return fail(res, 'Cannot change mode on a completed order');
+
+  await db.query(
+    'UPDATE orders SET kitchen_mode = $1, updated_at = NOW() WHERE id = $2',
+    [mode, id]
+  );
+
+  // When switching to individual, reset all item statuses to pending
+  if (mode === 'individual') {
+    await db.query(
+      "UPDATE order_items SET item_status = 'pending' WHERE order_id = $1",
+      [id]
+    );
+  }
+
+  const fullOrder = await getOrderWithItems(id, req.cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${req.cafeId}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// ─── Owner/Staff: update a single item's status (individual mode) ─
+exports.updateItemStatus = asyncHandler(async (req, res) => {
+  const { id, itemId } = req.params;
+  const { status } = req.body;
+
+  const validStatuses = ['pending', 'preparing', 'ready', 'served'];
+  if (!validStatuses.includes(status)) return fail(res, 'Invalid item status');
+
+  const orderCheck = await db.query(
+    'SELECT id, kitchen_mode, status FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, req.cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+  const order = orderCheck.rows[0];
+  if (order.kitchen_mode !== 'individual') return fail(res, 'Order is not in individual mode');
+  if (['paid', 'cancelled'].includes(order.status)) return fail(res, 'Order is already completed');
+
+  const itemResult = await db.query(
+    'UPDATE order_items SET item_status = $1 WHERE id = $2 AND order_id = $3 RETURNING id',
+    [status, itemId, id]
+  );
+  if (itemResult.rows.length === 0) return fail(res, 'Item not found', 404);
+
+  // Auto-advance order status based on all item statuses
+  const allItems = await db.query(
+    'SELECT item_status FROM order_items WHERE order_id = $1',
+    [id]
+  );
+  const statuses = allItems.rows.map((r) => r.item_status);
+  const allServed       = statuses.every((s) => s === 'served');
+  const allReadyOrServed = statuses.every((s) => s === 'ready' || s === 'served');
+  const anyActive       = statuses.some((s) => s !== 'pending');
+
+  let newOrderStatus = order.status;
+  if (allServed) newOrderStatus = 'served';
+  else if (allReadyOrServed) newOrderStatus = 'ready';
+  else if (anyActive && ['pending', 'confirmed'].includes(order.status)) newOrderStatus = 'preparing';
+
+  if (newOrderStatus !== order.status) {
+    await db.query(
+      'UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2',
+      [newOrderStatus, id]
+    );
+    db.query(
+      `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+       VALUES ($1, $2, $3, 'system', $4, 'Auto (KOT)')`,
+      [id, order.status, newOrderStatus, req.cafeId]
+    ).catch(() => {});
+  }
+
+  const fullOrder = await getOrderWithItems(id, req.cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${req.cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
 });

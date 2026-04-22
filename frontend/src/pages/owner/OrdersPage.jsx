@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getOrders, updateOrderStatus, getOwnerMessages, postOwnerMessage } from '../../services/api';
+import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
+import { printKot } from '../../utils/printKot';
 
 const QUICK_REASONS = [
   'Item(s) out of stock',
@@ -96,7 +97,7 @@ export default function OrdersPage() {
     },
     (updated) => {
       setOrders((prev) =>
-        prev.map((o) => o.id === updated.id ? { ...o, status: updated.status, updated_at: updated.updated_at } : o)
+        prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o)
       );
     }
   );
@@ -128,6 +129,24 @@ export default function OrdersPage() {
           : o)
       );
       toast.success(`Order marked as ${newStatus}`);
+    } catch (err) {
+      toast.error(getApiError(err));
+    }
+  };
+
+  const handleKitchenModeToggle = async (orderId, mode) => {
+    try {
+      const { data } = await setKitchenMode(orderId, mode);
+      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
+    } catch (err) {
+      toast.error(getApiError(err));
+    }
+  };
+
+  const handleItemStatusUpdate = async (orderId, itemId, status) => {
+    try {
+      const { data } = await updateItemStatus(orderId, itemId, status);
+      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
       toast.error(getApiError(err));
     }
@@ -355,6 +374,8 @@ export default function OrdersPage() {
                   key={order.id}
                   order={order}
                   onStatusUpdate={handleStatusUpdate}
+                  onKitchenModeToggle={handleKitchenModeToggle}
+                  onItemStatusUpdate={handleItemStatusUpdate}
                   onCancelClick={(o) => setCancelTarget(o)}
                   onChatClick={async (o) => {
                     const newChatId = chatOrderId === o.id ? null : o.id;
@@ -437,14 +458,14 @@ export default function OrdersPage() {
 
 // ─── Order Card (Grid Item) ───────────────────────────────────────────────
 
-function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
-  const { cafe: _oc } = useAuth();
-  const c = (n) => fmtCurrency(n, _oc?.currency);
+function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
+  const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const statusCfg = STATUS_CONFIG[order.status];
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
+  const isIndividual = order.kitchen_mode === 'individual';
 
-  // Status-based left border colors
   const borderColor = {
     pending:   'border-l-yellow-400',
     confirmed: 'border-l-blue-400',
@@ -453,43 +474,85 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
     served:    'border-l-green-400',
   }[order.status] || 'border-l-gray-300';
 
+  // In individual mode hide the main "next status" button unless order is still pending (needs confirm)
+  const showNextBtn = nextStatus && (!isIndividual || order.status === 'pending');
+
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 ${borderColor} flex flex-col`}>
       {/* Card header */}
       <div className="px-4 pt-4 pb-3">
-        {/* Row 1: order number + status badge */}
         <div className="flex items-center justify-between mb-2">
           <span className="font-bold text-gray-900 text-sm">{fmtToken(order.daily_order_number, order.order_type)}</span>
-          <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
+          <div className="flex items-center gap-1.5">
+            {isIndividual && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 uppercase tracking-wide">
+                KOT
+              </span>
+            )}
+            <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
+          </div>
         </div>
-
-        {/* Row 2: customer name */}
         <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
-
-        {/* Row 3: table + time */}
         <p className="text-xs text-gray-400 mt-0.5">
           {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
           {' · '}{fmtTime(order.created_at)}
         </p>
       </div>
 
-      {/* Items preview (always visible) */}
+      {/* Items — plain list (combined) or per-item KOT rows (individual) */}
       <div className="px-4 pb-2">
-        <div className="space-y-0.5">
-          {(order.items || []).slice(0, expanded ? undefined : 3).map((item) => (
-            <div key={item.id} className="flex justify-between text-xs text-gray-600">
-              <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
-              <span className="flex-shrink-0">{c(item.subtotal)}</span>
-            </div>
-          ))}
-          {!expanded && (order.items || []).length > 3 && (
-            <p className="text-xs text-gray-400 italic">+{order.items.length - 3} more…</p>
-          )}
-        </div>
+        {isIndividual ? (
+          <div className="space-y-1">
+            {(order.items || []).map((item) => (
+              <ItemKotRow
+                key={item.id}
+                item={item}
+                cafe={cafe}
+                orderToken={fmtToken(order.daily_order_number, order.order_type)}
+                tableNumber={order.table_number}
+                orderType={order.order_type}
+                onStatusUpdate={(status) => onItemStatusUpdate(order.id, item.id, status)}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-0.5">
+            {(order.items || []).slice(0, expanded ? undefined : 3).map((item) => (
+              <div key={item.id} className="flex justify-between text-xs text-gray-600">
+                <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
+                <span className="flex-shrink-0">{c(item.subtotal)}</span>
+              </div>
+            ))}
+            {!expanded && (order.items || []).length > 3 && (
+              <p className="text-xs text-gray-400 italic">+{order.items.length - 3} more…</p>
+            )}
+          </div>
+        )}
         {expanded && order.notes && (
           <p className="text-xs text-amber-600 mt-1.5 italic">📝 {order.notes}</p>
         )}
       </div>
+
+      {/* Kitchen mode toggle (only for active orders, not paid/cancelled) */}
+      {!['paid', 'cancelled', 'served'].includes(order.status) && (
+        <div className="px-4 pb-2 flex items-center justify-between gap-2">
+          <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide shrink-0">Kitchen</span>
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] font-medium">
+            <button
+              onClick={() => onKitchenModeToggle(order.id, 'combined')}
+              className={`px-2.5 py-1 transition-colors ${!isIndividual ? 'bg-gray-700 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              Combined
+            </button>
+            <button
+              onClick={() => onKitchenModeToggle(order.id, 'individual')}
+              className={`px-2.5 py-1 transition-colors ${isIndividual ? 'bg-purple-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+            >
+              Individual
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Total + toggle */}
       <div
@@ -502,7 +565,7 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
 
       {/* Action buttons */}
       <div className="px-3 pb-3 pt-2 flex gap-2 mt-auto">
-        {nextStatus && (
+        {showNextBtn && (
           <button
             onClick={() => onStatusUpdate(order.id, nextStatus)}
             className="flex-1 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition-colors"
@@ -543,6 +606,78 @@ function OrderCard({ order, onStatusUpdate, onCancelClick, onChatClick, onOpenBi
       {/* Inline chat panel */}
       {chatOpen && (
         <OwnerChatPanel order={order} messages={chatMessages} loading={chatMessagesLoading} />
+      )}
+    </div>
+  );
+}
+
+// ─── Per-Item KOT Row (Individual Kitchen Mode) ───────────────────────────
+
+function ItemKotRow({ item, cafe, orderToken, tableNumber, orderType, onStatusUpdate }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleUpdate = async (status) => {
+    setLoading(true);
+    try { await onStatusUpdate(status); }
+    finally { setLoading(false); }
+  };
+
+  const statusStyle = {
+    pending:   'bg-gray-100 text-gray-500',
+    preparing: 'bg-orange-100 text-orange-700',
+    ready:     'bg-teal-100 text-teal-700',
+    served:    'bg-green-100 text-green-700',
+  }[item.item_status] || 'bg-gray-100 text-gray-400';
+
+  const statusLabel = { pending: 'Pending', preparing: 'Cooking', ready: 'Ready', served: 'Served' };
+  const isServed = item.item_status === 'served';
+
+  return (
+    <div className={`flex items-center gap-1.5 py-1 px-2 rounded-lg ${isServed ? 'opacity-40' : 'bg-gray-50'}`}>
+      <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded-full ${statusStyle}`}>
+        {statusLabel[item.item_status] || item.item_status}
+      </span>
+      <span className={`flex-1 text-xs min-w-0 truncate ${isServed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+        {item.item_name} × {item.quantity}
+      </span>
+      {item.item_status === 'pending' && (
+        <button
+          disabled={loading}
+          onClick={() => handleUpdate('preparing')}
+          className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-orange-50 text-orange-600 hover:bg-orange-100 font-semibold transition-colors disabled:opacity-50"
+        >
+          Start
+        </button>
+      )}
+      {item.item_status === 'preparing' && (
+        <button
+          disabled={loading}
+          onClick={() => handleUpdate('ready')}
+          className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-teal-50 text-teal-600 hover:bg-teal-100 font-semibold transition-colors disabled:opacity-50"
+        >
+          Ready
+        </button>
+      )}
+      {(item.item_status === 'preparing' || item.item_status === 'ready') && (
+        <button
+          onClick={() => printKot({ cafe, item, orderToken, tableNumber, orderType })}
+          className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors"
+          title="Print KOT for this item"
+        >
+          🖨
+        </button>
+      )}
+      {item.item_status === 'ready' && (
+        <button
+          disabled={loading}
+          onClick={() => handleUpdate('served')}
+          className="shrink-0 text-[10px] px-2 py-0.5 rounded-md bg-green-50 text-green-600 hover:bg-green-100 font-semibold transition-colors disabled:opacity-50"
+        >
+          Served
+        </button>
+      )}
+      {isServed && (
+        <span className="shrink-0 text-green-500 text-xs">✓</span>
       )}
     </div>
   );
