@@ -26,6 +26,11 @@ module.exports = function validateEnv() {
     logger.warn('[STARTUP] Razorpay keys not set — online payments will fail');
   }
 
+  // Razorpay webhook secret — needed to verify webhook payloads from Razorpay servers
+  if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+    logger.warn('[STARTUP] RAZORPAY_WEBHOOK_SECRET not set — webhooks will be ignored (subscription may not activate on payment failure/retry)');
+  }
+
   // Email: uses Brevo HTTP API (BREVO_API_KEY), not SMTP
   if (!process.env.BREVO_API_KEY) {
     logger.warn('[STARTUP] BREVO_API_KEY not set — email OTP verification will fail');

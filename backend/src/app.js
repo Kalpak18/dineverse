@@ -158,6 +158,9 @@ io.on('connection', (socket) => {
 });
 
 // ─── Middleware ────────────────────────────────────────────────
+// Razorpay webhook needs the raw body buffer for HMAC verification.
+// Must be registered BEFORE the global express.json() parser.
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '1mb' }));
 
 // Stamp every request with a unique ID — appears in logs and response header

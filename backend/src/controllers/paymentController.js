@@ -187,6 +187,120 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   }, 'Payment verified — subscription activated!');
 });
 
+// ─── POST /api/payments/webhook ──────────────────────────────
+// Called by Razorpay servers — no auth middleware, raw body required.
+// Verifies X-Razorpay-Signature and activates subscription on payment.captured.
+exports.webhookHandler = async (req, res) => {
+  const signature = req.headers['x-razorpay-signature'];
+  const secret    = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+  if (!secret) {
+    logger.warn('RAZORPAY_WEBHOOK_SECRET not set — webhook ignored');
+    return res.status(200).json({ ok: true }); // 200 so Razorpay doesn't retry
+  }
+
+  // req.body is a Buffer here (express.raw registered before express.json in app.js)
+  const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
+
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+
+  if (!signature || expected !== signature) {
+    logger.warn('Razorpay webhook: invalid signature');
+    return res.status(400).json({ success: false, message: 'Invalid signature' });
+  }
+
+  let event;
+  try {
+    event = JSON.parse(rawBody.toString('utf8'));
+  } catch {
+    return res.status(400).json({ success: false, message: 'Invalid JSON payload' });
+  }
+
+  // Only act on successful payment capture
+  if (event.event !== 'payment.captured') {
+    return res.status(200).json({ ok: true, ignored: event.event });
+  }
+
+  const payment = event.payload?.payment?.entity;
+  if (!payment) return res.status(200).json({ ok: true });
+
+  const razorpay_order_id  = payment.order_id;
+  const razorpay_payment_id = payment.id;
+
+  if (!razorpay_order_id) {
+    logger.warn('Webhook payment.captured missing order_id');
+    return res.status(200).json({ ok: true });
+  }
+
+  // Look up the pending payment record
+  const paymentRes = await db.query(
+    'SELECT * FROM payments WHERE razorpay_order_id = $1',
+    [razorpay_order_id]
+  );
+
+  if (paymentRes.rows.length === 0) {
+    logger.warn('Webhook: no payment record for order %s', razorpay_order_id);
+    return res.status(200).json({ ok: true }); // 200 so Razorpay doesn't keep retrying
+  }
+
+  const record = paymentRes.rows[0];
+
+  if (record.status === 'completed') {
+    // Already processed (e.g. via verifyPayment after checkout) — idempotent
+    return res.status(200).json({ ok: true, already: true });
+  }
+
+  const plan   = PLANS[record.plan_type];
+  const months = plan ? plan.months : 12;
+
+  // Extend from current expiry if still active, else from today
+  const cafeRes = await db.query(
+    'SELECT plan_expiry_date FROM cafes WHERE id = $1',
+    [record.cafe_id]
+  );
+  const currentExpiry = cafeRes.rows[0]?.plan_expiry_date;
+  const base = (currentExpiry && new Date(currentExpiry) > new Date())
+    ? new Date(currentExpiry)
+    : new Date();
+  base.setMonth(base.getMonth() + months);
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE payments SET
+         razorpay_payment_id = $1,
+         status              = 'completed'
+       WHERE razorpay_order_id = $2`,
+      [razorpay_payment_id, razorpay_order_id]
+    );
+    await client.query(
+      `UPDATE cafes SET
+         plan_type        = $1,
+         plan_start_date  = NOW(),
+         plan_expiry_date = $2
+       WHERE id = $3`,
+      [record.plan_type, base.toISOString(), record.cafe_id]
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    logger.error('Webhook DB error for order %s: %s', razorpay_order_id, err.message);
+    // Return 500 so Razorpay retries
+    return res.status(500).json({ success: false, message: 'DB error' });
+  } finally {
+    client.release();
+  }
+
+  logger.info('Webhook activated subscription: cafe %s → %s, expires %s',
+    record.cafe_id, record.plan_type, base.toISOString());
+
+  res.status(200).json({ ok: true });
+};
+
 // ─── GET /api/payments/history ────────────────────────────────
 exports.getHistory = asyncHandler(async (req, res) => {
   const result = await db.query(
