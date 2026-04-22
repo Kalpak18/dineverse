@@ -6,7 +6,7 @@ const {
   sendOtp,
   validateRegister, register,
   validateLogin, login,
-  checkSlug, getMe, updateProfile,
+  checkSlug, getMe, updateProfile, deleteCafe,
   forgotPassword,
   validateResetPassword, resetPassword,
   createOutlet, getOutlets, switchOutlet,
@@ -20,6 +20,7 @@ router.post('/forgot-password', otpLimiter, forgotPassword);
 router.post('/reset-password', authLimiter, validateResetPassword, resetPassword);
 router.get('/me', authenticate, getMe);
 router.patch('/me', authenticate, requireOwner, updateProfile); // staff cannot change café settings
+router.delete('/me', authenticate, requireOwner, deleteCafe);   // deactivate or hard-delete café
 
 // Outlet management
 router.get('/outlets',             authenticate, requireOwner, getOutlets);

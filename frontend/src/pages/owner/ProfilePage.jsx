@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { updateProfile, getOutlets, createOutlet, switchOutlet } from '../../services/api';
+import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe } from '../../services/api';
 import ImageUpload from '../../components/ImageUpload';
 import MapPicker from '../../components/MapPicker';
 import toast from 'react-hot-toast';
@@ -875,6 +875,112 @@ export default function ProfilePage() {
           )}
         </div>
       )}
+
+      {/* ── Danger Zone ── */}
+      <DangerZone cafe={cafe} />
     </div>
+  );
+}
+
+// ── Danger Zone component ─────────────────────────────────────
+function DangerZone({ cafe }) {
+  const { logout } = useAuth();
+  const [open, setOpen]           = useState(false);
+  const [action, setAction]       = useState('deactivate'); // 'deactivate' | 'delete'
+  const [confirmName, setConfirmName] = useState('');
+  const [busy, setBusy]           = useState(false);
+
+  const handleConfirm = async () => {
+    if (!confirmName.trim()) return;
+    setBusy(true);
+    try {
+      await deleteCafe({ action, confirm_name: confirmName.trim() });
+      toast.success(
+        action === 'deactivate'
+          ? 'Café deactivated. Contact support to reactivate.'
+          : 'Café permanently deleted.',
+        { duration: 6000 }
+      );
+      logout();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Action failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="card border border-red-200 bg-red-50">
+        <h2 className="font-bold text-red-700 mb-1">Danger Zone</h2>
+        <p className="text-sm text-red-600 mb-4">
+          These actions are irreversible. Please be certain before proceeding.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => { setAction('deactivate'); setConfirmName(''); setOpen(true); }}
+            className="px-4 py-2 rounded-xl border-2 border-red-300 text-red-700 text-sm font-semibold hover:bg-red-100 transition-colors"
+          >
+            Deactivate Café
+          </button>
+          <button
+            onClick={() => { setAction('delete'); setConfirmName(''); setOpen(true); }}
+            className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors"
+          >
+            Delete Café Permanently
+          </button>
+        </div>
+        <div className="mt-3 space-y-1 text-xs text-red-500">
+          <p><strong>Deactivate</strong> — hides your café from customers. Recoverable by contacting support.</p>
+          <p><strong>Delete</strong> — permanently erases all data: menu, orders, staff, analytics. Cannot be undone.</p>
+        </div>
+      </div>
+
+      {/* Confirmation Modal */}
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <p className="text-2xl mb-2 text-center">{action === 'delete' ? '⚠️' : '🔒'}</p>
+            <h3 className="font-bold text-gray-900 text-lg text-center mb-1">
+              {action === 'delete' ? 'Delete Café Permanently' : 'Deactivate Café'}
+            </h3>
+            <p className="text-sm text-gray-500 text-center mb-4">
+              {action === 'delete'
+                ? 'All data will be permanently erased. This cannot be undone.'
+                : 'Your café will be hidden from customers. Contact support to reactivate.'}
+            </p>
+            <p className="text-xs text-gray-600 mb-1 font-medium">
+              Type your café name to confirm: <span className="font-bold text-gray-900">"{cafe?.name}"</span>
+            </p>
+            <input
+              type="text"
+              className="input w-full mb-4"
+              placeholder={cafe?.name}
+              value={confirmName}
+              onChange={(e) => setConfirmName(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setOpen(false)}
+                disabled={busy}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirm}
+                disabled={busy || confirmName.trim().toLowerCase() !== cafe?.name?.trim().toLowerCase()}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-40 ${
+                  action === 'delete' ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-500 hover:bg-orange-600'
+                }`}
+              >
+                {busy ? 'Processing…' : action === 'delete' ? 'Yes, Delete' : 'Yes, Deactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

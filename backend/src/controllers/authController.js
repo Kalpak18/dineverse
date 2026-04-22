@@ -550,3 +550,34 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   logger.info('Password reset for: %s', email);
   ok(res, {}, 'Password updated successfully — you can now log in');
 });
+
+// ─── DELETE /api/auth/me ──────────────────────────────────────
+// action=deactivate  → sets is_active=false (reversible by admin)
+// action=delete      → hard deletes the café and all its data
+exports.deleteCafe = asyncHandler(async (req, res) => {
+  const { action, confirm_name } = req.body;
+
+  if (!['deactivate', 'delete'].includes(action)) {
+    return fail(res, 'action must be "deactivate" or "delete"');
+  }
+
+  const cafeRes = await db.query('SELECT id, name FROM cafes WHERE id = $1', [req.cafeId]);
+  if (cafeRes.rows.length === 0) return fail(res, 'Café not found', 404);
+  const cafe = cafeRes.rows[0];
+
+  // Require typed confirmation matching café name
+  if (!confirm_name || confirm_name.trim().toLowerCase() !== cafe.name.trim().toLowerCase()) {
+    return fail(res, 'Confirmation name does not match your café name', 400);
+  }
+
+  if (action === 'deactivate') {
+    await db.query('UPDATE cafes SET is_active = false WHERE id = $1', [req.cafeId]);
+    logger.info('Café deactivated: %s (%s)', cafe.name, req.cafeId);
+    return ok(res, {}, 'Café deactivated. Contact support to reactivate.');
+  }
+
+  // Hard delete — relies on CASCADE constraints on FK references
+  await db.query('DELETE FROM cafes WHERE id = $1', [req.cafeId]);
+  logger.info('Café hard-deleted: %s (%s)', cafe.name, req.cafeId);
+  ok(res, {}, 'Café and all associated data permanently deleted.');
+});
