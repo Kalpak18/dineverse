@@ -20,13 +20,34 @@ const BUSINESS_TYPES = [
   { value: 'unregistered',  label: 'Not GST Registered' },
 ];
 
-const INDIAN_STATES = [
-  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
-  'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
-  'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan',
-  'Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal',
-  'Andaman & Nicobar Islands','Chandigarh','Dadra & Nagar Haveli and Daman & Diu',
-  'Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
+const COUNTRIES = [
+  'Afghanistan','Albania','Algeria','Andorra','Angola','Antigua and Barbuda','Argentina',
+  'Armenia','Australia','Austria','Azerbaijan','Bahamas','Bahrain','Bangladesh','Barbados',
+  'Belarus','Belgium','Belize','Benin','Bhutan','Bolivia','Bosnia and Herzegovina',
+  'Botswana','Brazil','Brunei','Bulgaria','Burkina Faso','Burundi','Cabo Verde','Cambodia',
+  'Cameroon','Canada','Central African Republic','Chad','Chile','China','Colombia','Comoros',
+  'Congo (DRC)','Congo (Republic)','Costa Rica','Croatia','Cuba','Cyprus','Czech Republic',
+  'Denmark','Djibouti','Dominica','Dominican Republic','Ecuador','Egypt','El Salvador',
+  'Equatorial Guinea','Eritrea','Estonia','Eswatini','Ethiopia','Fiji','Finland','France',
+  'Gabon','Gambia','Georgia','Germany','Ghana','Greece','Grenada','Guatemala','Guinea',
+  'Guinea-Bissau','Guyana','Haiti','Honduras','Hungary','Iceland','India','Indonesia',
+  'Iran','Iraq','Ireland','Israel','Italy','Jamaica','Japan','Jordan','Kazakhstan','Kenya',
+  'Kiribati','Kuwait','Kyrgyzstan','Laos','Latvia','Lebanon','Lesotho','Liberia','Libya',
+  'Liechtenstein','Lithuania','Luxembourg','Madagascar','Malawi','Malaysia','Maldives',
+  'Mali','Malta','Marshall Islands','Mauritania','Mauritius','Mexico','Micronesia','Moldova',
+  'Monaco','Mongolia','Montenegro','Morocco','Mozambique','Myanmar','Namibia','Nauru',
+  'Nepal','Netherlands','New Zealand','Nicaragua','Niger','Nigeria','North Korea',
+  'North Macedonia','Norway','Oman','Pakistan','Palau','Palestine','Panama',
+  'Papua New Guinea','Paraguay','Peru','Philippines','Poland','Portugal','Qatar',
+  'Romania','Russia','Rwanda','Saint Kitts and Nevis','Saint Lucia',
+  'Saint Vincent and the Grenadines','Samoa','San Marino','Saudi Arabia','Senegal',
+  'Serbia','Seychelles','Sierra Leone','Singapore','Slovakia','Slovenia','Solomon Islands',
+  'Somalia','South Africa','South Korea','South Sudan','Spain','Sri Lanka','Sudan',
+  'Suriname','Sweden','Switzerland','Syria','Taiwan','Tajikistan','Tanzania','Thailand',
+  'Timor-Leste','Togo','Tonga','Trinidad and Tobago','Tunisia','Turkey','Turkmenistan',
+  'Tuvalu','Uganda','Ukraine','United Arab Emirates','United Kingdom','United States',
+  'Uruguay','Uzbekistan','Vanuatu','Vatican City','Venezuela','Vietnam','Yemen',
+  'Zambia','Zimbabwe',
 ];
 
 export default function RegisterPage() {
@@ -35,7 +56,7 @@ export default function RegisterPage() {
 
   const [form, setForm] = useState({
     name: '', slug: '', email: '', password: '', description: '', phone: '',
-    address: '', address_line2: '', city: '', state: '', pincode: '',
+    address: '', address_line2: '', city: '', state: '', pincode: '', country: '',
     business_type: 'restaurant',
     currency: 'INR',
   });
@@ -136,8 +157,7 @@ export default function RegisterPage() {
     if (!form.phone.trim())    { toast.error('Phone number is required'); return; }
     if (!form.address.trim())  { toast.error('Address line 1 is required'); return; }
     if (!form.city.trim())     { toast.error('City is required'); return; }
-    if (!form.state)           { toast.error('State is required'); return; }
-    if (!form.pincode.trim())  { toast.error('Pincode is required'); return; }
+    if (!form.country)         { toast.error('Country is required'); return; }
     if (slugStatus === 'taken')    { toast.error('Slug is already taken — please change it'); return; }
     if (slugStatus === 'checking') { toast.error('Please wait while slug is being checked'); return; }
     if (!agreedToTerms) { toast.error('Please accept the Terms & Conditions to continue'); return; }
@@ -219,7 +239,7 @@ export default function RegisterPage() {
                         <option key={b.value} value={b.value}>{b.label}</option>
                       ))}
                     </select>
-                    <p className="text-xs text-gray-400 mt-1">Used to calculate the correct GST rate on orders.</p>
+                    <p className="text-xs text-gray-400 mt-1">Used to apply the correct tax rate on orders.</p>
                   </div>
                   <div>
                     <label className="label">Currency *</label>
@@ -296,7 +316,7 @@ export default function RegisterPage() {
 
                 <div>
                   <label className="label">Phone Number *</label>
-                  <input type="tel" className="input" placeholder="+91 98765 43210"
+                  <input type="tel" className="input" placeholder="+1 555 000 0000"
                     value={form.phone} onChange={set('phone')} required />
                 </div>
               </div>
@@ -308,35 +328,41 @@ export default function RegisterPage() {
               <div className="space-y-3">
 
                 <div>
-                  <label className="label">Address Line 1 * <span className="text-gray-400 font-normal">(Shop/Building, Street)</span></label>
-                  <input className="input" placeholder="e.g. Shop 4, Sunrise Complex, MG Road"
+                  <label className="label">Country *</label>
+                  <select className="input" value={form.country} onChange={set('country')} required>
+                    <option value="">Select country...</option>
+                    {COUNTRIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="label">Address Line 1 * <span className="text-gray-400 font-normal">(Building / Street)</span></label>
+                  <input className="input" placeholder="e.g. 123 Main Street, Suite 4"
                     value={form.address} onChange={set('address')} />
                 </div>
 
                 <div>
                   <label className="label">Address Line 2 <span className="text-gray-400 font-normal">(optional — Floor, Landmark, Area)</span></label>
-                  <input className="input" placeholder="e.g. Near Kotak Bank, Andheri West"
+                  <input className="input" placeholder="e.g. Near Central Park, Downtown"
                     value={form.address_line2} onChange={set('address_line2')} />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">City *</label>
-                    <input className="input" placeholder="Mumbai" value={form.city} onChange={set('city')} />
+                    <input className="input" placeholder="e.g. New York" value={form.city} onChange={set('city')} />
                   </div>
                   <div>
-                    <label className="label">Pincode *</label>
-                    <input className="input" placeholder="400001" maxLength={10}
+                    <label className="label">Postal Code <span className="text-gray-400 font-normal">(optional)</span></label>
+                    <input className="input" placeholder="e.g. 10001" maxLength={10}
                       value={form.pincode} onChange={set('pincode')} />
                   </div>
                 </div>
 
                 <div>
-                  <label className="label">State *</label>
-                  <select className="input" value={form.state} onChange={set('state')}>
-                    <option value="">Select state...</option>
-                    {INDIAN_STATES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <label className="label">State / Region / Province</label>
+                  <input className="input" placeholder="e.g. California"
+                    value={form.state} onChange={set('state')} />
                 </div>
               </div>
             </div>

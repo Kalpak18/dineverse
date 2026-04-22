@@ -47,10 +47,12 @@ function WebScanner({ onScan, onClose }) {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef    = useRef(null);
-  const [error, setError]   = useState(null);
-  const [torch, setTorch]   = useState(false);
-  const [ready, setReady]   = useState(false);
-  const [scanning, setScanning] = useState(false);
+  const [error, setError]         = useState(null);
+  const [permDenied, setPermDenied] = useState(false);
+  const [torch, setTorch]         = useState(false);
+  const [ready, setReady]         = useState(false);
+  const [scanning, setScanning]   = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   const stopStream = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -121,14 +123,16 @@ function WebScanner({ onScan, onClose }) {
         setScanning(true);
         detect(detector);
       } catch (err) {
-        setError(err.name === 'NotAllowedError'
-          ? 'Camera permission denied. Please allow camera access and try again.'
-          : 'Could not access camera: ' + err.message);
+        if (err.name === 'NotAllowedError') {
+          setPermDenied(true);
+        } else {
+          setError('Could not access camera: ' + err.message);
+        }
       }
     })();
 
     return () => { cancelled = true; stopStream(); };
-  }, [detect, stopStream]);
+  }, [detect, stopStream, retryCount]);
 
   const toggleTorch = useCallback(async () => {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -173,11 +177,52 @@ function WebScanner({ onScan, onClose }) {
           </div>
         )}
 
-        {/* Error */}
+        {/* Camera permission denied */}
+        {permDenied && (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full">
+              <p className="text-3xl mb-3">📵</p>
+              <p className="text-base font-semibold text-gray-900 mb-2">Camera access blocked</p>
+              <p className="text-sm text-gray-600 mb-4">
+                To use the scanner, allow camera access in your browser:
+              </p>
+              <ol className="text-left text-sm text-gray-700 space-y-2 mb-5">
+                <li className="flex gap-2">
+                  <span className="font-bold text-brand-500 shrink-0">1.</span>
+                  <span>Tap the <strong>lock / info icon</strong> in the address bar at the top of your browser.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-brand-500 shrink-0">2.</span>
+                  <span>Find <strong>Camera</strong> and change it to <strong>Allow</strong>.</span>
+                </li>
+                <li className="flex gap-2">
+                  <span className="font-bold text-brand-500 shrink-0">3.</span>
+                  <span>Come back here and tap <strong>Try Again</strong>.</span>
+                </li>
+              </ol>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleClose}
+                  className="flex-1 px-4 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700"
+                >
+                  Go Back
+                </button>
+                <button
+                  onClick={() => { setPermDenied(false); setRetryCount((c) => c + 1); }}
+                  className="flex-1 px-4 py-2 bg-brand-500 text-white rounded-xl text-sm font-semibold"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Generic error */}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center p-8">
             <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
-              <p className="text-2xl mb-3">📵</p>
+              <p className="text-2xl mb-3">⚠️</p>
               <p className="text-sm text-gray-700 font-medium">{error}</p>
               <button onClick={handleClose} className="mt-4 px-5 py-2 bg-brand-500 text-white rounded-xl text-sm font-semibold">
                 Go Back
