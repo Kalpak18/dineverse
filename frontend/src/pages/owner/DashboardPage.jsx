@@ -68,6 +68,9 @@ export default function DashboardPage() {
   const [checklistDismissed, setChecklistDismissed] = useState(
     () => !!localStorage.getItem(`dv_checklist_done_${cafe?.id}`)
   );
+  const [checklistOpen, setChecklistOpen] = useState(
+    () => localStorage.getItem(`dv_checklist_open_${cafe?.id}`) !== 'false'
+  );
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(
     () => localStorage.getItem('dineverse_announcement_dismissed') || ''
   );
@@ -92,7 +95,10 @@ export default function DashboardPage() {
 
       setStats(statsRes.data);
 
-      const tables   = (areasRes.data.areas || []).flatMap((a) => a.tables || []);
+      const tables   = [
+        ...(areasRes.data.areas || []).flatMap((a) => a.tables || []),
+        ...(areasRes.data.unassigned || []),
+      ];
       const cafeOpen = statsRes.data?.cafe_is_open ?? cafe?.is_open ?? true;
       setIsOpen(cafeOpen);
 
@@ -218,96 +224,122 @@ export default function DashboardPage() {
         {/* ── SETUP CHECKLIST ── */}
         {showChecklist && (
           <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            {/* Header */}
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            {/* Header — always visible, clicking toggles expand/collapse */}
+            <button
+              type="button"
+              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
+              onClick={() => {
+                const next = !checklistOpen;
+                setChecklistOpen(next);
+                localStorage.setItem(`dv_checklist_open_${cafe?.id}`, String(next));
+              }}
+            >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center text-lg">🚀</div>
-                <div>
+                <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center text-lg flex-shrink-0">🚀</div>
+                <div className="text-left">
                   <p className="font-semibold text-gray-900 text-sm">
                     {allDone ? 'Setup complete!' : 'Get your café ready'}
                   </p>
                   <p className="text-xs text-gray-400">
-                    {allDone ? 'Your café is fully configured' : `${doneCount} of ${totalCount} steps done`}
+                    {allDone
+                      ? 'Your café is fully configured'
+                      : `${doneCount} of ${totalCount} steps done`}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {!allDone && (
-                  <button
-                    onClick={() => {
-                      const firstPending = CHECKLIST.findIndex((c) => !c.done(setupStatus));
-                      openWizardAt(firstPending >= 0 ? firstPending : 0);
-                    }}
-                    className="text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    Setup Guide →
-                  </button>
-                )}
-                {allDone && (
-                  <button
-                    onClick={dismissChecklist}
-                    className="text-xs text-gray-400 hover:text-gray-600 font-medium"
-                  >
-                    Dismiss
-                  </button>
-                )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Mini progress dots */}
+                <div className="hidden sm:flex items-center gap-1">
+                  {CHECKLIST.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`w-2 h-2 rounded-full transition-colors ${
+                        item.done(setupStatus) ? 'bg-green-500' : 'bg-gray-200'
+                      }`}
+                    />
+                  ))}
+                </div>
+                <span className="text-gray-400 text-sm">{checklistOpen ? '▲' : '▼'}</span>
               </div>
-            </div>
+            </button>
 
-            {/* Progress bar */}
-            <div className="h-1.5 bg-gray-100">
-              <div
-                className="h-1.5 bg-brand-500 transition-all duration-500"
-                style={{ width: `${(doneCount / totalCount) * 100}%` }}
-              />
-            </div>
-
-            {/* Checklist items */}
-            <div className="divide-y divide-gray-50">
-              {CHECKLIST.map((item) => {
-                const done = item.done(setupStatus);
-                return (
+            {/* Collapsable body */}
+            {checklistOpen && (
+              <>
+                {/* Progress bar */}
+                <div className="h-1.5 bg-gray-100">
                   <div
-                    key={item.id}
-                    className={`flex items-center gap-3 px-5 py-3 transition-colors ${
-                      done ? 'opacity-60' : 'hover:bg-gray-50'
-                    }`}
-                  >
-                    {/* Check circle */}
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      done ? 'bg-green-500 border-green-500' : 'border-gray-300'
-                    }`}>
-                      {done && <span className="text-white text-[11px] font-bold">✓</span>}
-                    </div>
+                    className="h-1.5 bg-brand-500 transition-all duration-500"
+                    style={{ width: `${(doneCount / totalCount) * 100}%` }}
+                  />
+                </div>
 
-                    {/* Label */}
-                    <span className={`text-sm flex-1 ${done ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
-                      {item.icon} {item.label}
-                    </span>
+                {/* Checklist items */}
+                <div className="divide-y divide-gray-50">
+                  {CHECKLIST.map((item) => {
+                    const done = item.done(setupStatus);
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center gap-3 px-5 py-3 transition-colors ${
+                          done ? 'opacity-60' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                          done ? 'bg-green-500 border-green-500' : 'border-gray-300'
+                        }`}>
+                          {done && <span className="text-white text-[11px] font-bold">✓</span>}
+                        </div>
+                        <span className={`text-sm flex-1 ${done ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
+                          {item.icon} {item.label}
+                        </span>
+                        {!done && (
+                          item.route ? (
+                            <button
+                              onClick={() => openWizardAt(item.wizardStep)}
+                              className="text-xs text-brand-600 font-semibold hover:underline flex-shrink-0"
+                            >
+                              How? →
+                            </button>
+                          ) : (
+                            <button
+                              onClick={handleToggleOpen}
+                              disabled={togglingOpen}
+                              className="text-xs text-green-600 font-semibold hover:underline flex-shrink-0"
+                            >
+                              {togglingOpen ? '...' : 'Open now →'}
+                            </button>
+                          )
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-                    {/* Action */}
-                    {!done && (
-                      item.route ? (
-                        <button
-                          onClick={() => openWizardAt(item.wizardStep)}
-                          className="text-xs text-brand-600 font-semibold hover:underline flex-shrink-0"
-                        >
-                          How? →
-                        </button>
-                      ) : (
-                        <button
-                          onClick={handleToggleOpen}
-                          disabled={togglingOpen}
-                          className="text-xs text-green-600 font-semibold hover:underline flex-shrink-0"
-                        >
-                          {togglingOpen ? '...' : 'Open now →'}
-                        </button>
-                      )
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                {/* Footer actions */}
+                <div className="px-5 py-3 border-t border-gray-50 flex items-center justify-between">
+                  {!allDone ? (
+                    <button
+                      onClick={() => {
+                        const firstPending = CHECKLIST.findIndex((c) => !c.done(setupStatus));
+                        openWizardAt(firstPending >= 0 ? firstPending : 0);
+                      }}
+                      className="text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Setup Guide →
+                    </button>
+                  ) : (
+                    <button
+                      onClick={dismissChecklist}
+                      className="text-xs text-gray-400 hover:text-gray-600 font-medium"
+                    >
+                      Dismiss checklist
+                    </button>
+                  )}
+                  <span className="text-xs text-gray-400">{doneCount}/{totalCount} complete</span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
