@@ -104,8 +104,16 @@ export default function MenuPage() {
         }));
         const menuData = menuRes.data.menu;
         setMenu(menuData);
-        if (menuData.length > 0) setSelectedCatId(menuData[0].id);
-        setOffers(offersRes.data.offers || []);
+        const offersData = offersRes.data.offers || [];
+        setOffers(offersData);
+        // Select first non-empty category; fall back to first if all empty
+        const hasCombos = offersData.some((o) => o.offer_type === 'combo');
+        if (hasCombos) {
+          setSelectedCatId('__deals__');
+        } else if (menuData.length > 0) {
+          const firstNonEmpty = menuData.find((cat) => cat.items.some((i) => i.is_available));
+          setSelectedCatId(firstNonEmpty?.id ?? menuData[0].id);
+        }
       })
       .catch(() => navigate(`/cafe/${slug}`))
       .finally(() => setLoading(false));
@@ -131,12 +139,20 @@ export default function MenuPage() {
     [cartItems]
   );
 
-  // Attach thumbnail (first available item image) to each category
+  // Flat item list for resolving combo item IDs → names + prices
+  const allMenuItems = useMemo(() => menu.flatMap((cat) => cat.items), [menu]);
+
+  const comboOffers   = useMemo(() => offers.filter((o) => o.offer_type === 'combo'), [offers]);
+  const bannerOffers  = useMemo(() => offers.filter((o) => o.offer_type !== 'combo'), [offers]);
+
+  // Only non-empty categories (skip categories with zero available items)
   const categories = useMemo(() =>
-    menu.map((cat) => ({
-      ...cat,
-      thumbnail: cat.items.find((i) => i.image_url && i.is_available)?.image_url ?? null,
-    })),
+    menu
+      .filter((cat) => cat.items.some((i) => i.is_available))
+      .map((cat) => ({
+        ...cat,
+        thumbnail: cat.items.find((i) => i.image_url && i.is_available)?.image_url ?? null,
+      })),
     [menu]
   );
 
@@ -292,20 +308,19 @@ export default function MenuPage() {
         return null;
       })()}
 
-      {/* ── Offers Banner ── */}
-      {offers.length > 0 && (
+      {/* ── Offers Banner (% and fixed only — combos are in sidebar) ── */}
+      {bannerOffers.length > 0 && (
         <div className="flex-shrink-0 bg-orange-50 border-b border-orange-100 px-3 py-2 overflow-x-auto">
           <div className="flex gap-2 w-max">
-            {offers.map((o) => {
+            {bannerOffers.map((o) => {
               const label = o.offer_type === 'percentage'
                 ? `${o.discount_value}% OFF`
-                : o.offer_type === 'fixed'
-                  ? `₹${o.discount_value} OFF`
-                  : `Combo ₹${o.combo_price}`;
+                : `₹${o.discount_value} OFF`;
               return (
                 <div key={o.id} className="flex items-center gap-1.5 bg-white border border-orange-200 rounded-full px-3 py-1 shadow-sm whitespace-nowrap">
                   <span className="text-xs">🏷️</span>
                   <span className="text-xs font-bold text-orange-700">{label}</span>
+                  {o.min_order_amount > 0 && <span className="text-xs text-gray-500">on orders ₹{o.min_order_amount}+</span>}
                   {o.description && <span className="text-xs text-gray-500">· {o.description}</span>}
                 </div>
               );
@@ -361,6 +376,31 @@ export default function MenuPage() {
 
         {/* Category Sidebar */}
         <aside className="w-[76px] bg-gray-50 border-r border-gray-100 overflow-y-auto flex-shrink-0">
+          {/* Deals entry — shown first if any combo offers exist */}
+          {comboOffers.length > 0 && (() => {
+            const isActive = selectedCatId === '__deals__' && !isSearching;
+            return (
+              <button
+                onClick={() => handleCategorySelect('__deals__')}
+                className={`relative w-full flex flex-col items-center gap-1 py-3 px-1.5 border-b border-gray-100 transition-all ${
+                  isActive ? 'bg-white' : 'hover:bg-gray-100/70'
+                }`}
+              >
+                {isActive && <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />}
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${
+                  isActive ? 'bg-brand-100' : 'bg-white shadow-sm'
+                }`}>
+                  🎁
+                </div>
+                <span className={`text-[10px] text-center leading-tight w-full px-0.5 transition-colors ${
+                  isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
+                }`}>
+                  Deals
+                </span>
+              </button>
+            );
+          })()}
+
           {categories.map((cat) => {
             const isActive = cat.id === selectedCatId && !isSearching;
             const emoji = getCategoryEmoji(cat.name, emojiMap);
@@ -373,12 +413,9 @@ export default function MenuPage() {
                   isActive ? 'bg-white' : 'hover:bg-gray-100/70'
                 }`}
               >
-                {/* Active left-bar indicator */}
                 {isActive && (
                   <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />
                 )}
-
-                {/* Thumbnail or emoji placeholder */}
                 {cat.thumbnail ? (
                   <img
                     src={cat.thumbnail}
@@ -394,7 +431,6 @@ export default function MenuPage() {
                     {emoji}
                   </div>
                 )}
-
                 <span className={`text-[10px] text-center leading-tight line-clamp-2 w-full px-0.5 transition-colors ${
                   isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
                 }`}>
@@ -407,59 +443,135 @@ export default function MenuPage() {
 
         {/* Items Content */}
         <main ref={contentRef} className="flex-1 overflow-y-auto">
-          {/* Section label */}
-          <div className="px-3 py-2 border-b border-gray-50">
-            {isSearching ? (
-              <p className="text-xs text-gray-500">
-                <span className="font-semibold text-gray-700">{displayItems.length}</span>
-                {' '}result{displayItems.length !== 1 ? 's' : ''} for "
-                <span className="text-brand-600">{search}</span>"
-              </p>
-            ) : (
-              <p className="text-xs font-bold text-gray-800">
-                {selectedCat?.name}
-                <span className="text-gray-400 font-normal ml-1.5">
-                  {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
-                </span>
-              </p>
-            )}
-          </div>
 
-          {/* Items list */}
-          {displayItems.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-gray-400 px-6">
-              <p className="text-4xl mb-3">{isSearching ? '🔍' : '🍽️'}</p>
-              <p className="text-sm text-center font-medium text-gray-500">
-                {isSearching
-                  ? `No dishes found for "${search}"`
-                  : `No items available${foodFilter !== 'all' ? ` for selected filter` : ''}`}
-              </p>
-              {isSearching && (
-                <button
-                  onClick={() => setSearch('')}
-                  className="mt-3 text-xs text-brand-600 font-semibold hover:underline"
-                >
-                  Clear search
-                </button>
-              )}
-            </div>
+          {/* ── Deals panel ── */}
+          {!isSearching && selectedCatId === '__deals__' ? (
+            <>
+              <div className="px-3 py-2 border-b border-gray-50">
+                <p className="text-xs font-bold text-gray-800">
+                  🎁 Deals & Combos
+                  <span className="text-gray-400 font-normal ml-1.5">{comboOffers.length} combo{comboOffers.length !== 1 ? 's' : ''}</span>
+                </p>
+              </div>
+              <div className="divide-y divide-gray-50 px-3 py-2 space-y-3">
+                {comboOffers.map((offer) => {
+                  const rawItems = offer.combo_items
+                    ? (typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items)
+                    : [];
+                  const resolvedItems = rawItems
+                    .map((ci) => {
+                      const menuItem = allMenuItems.find((m) => String(m.id) === String(ci.menu_item_id || ci.id));
+                      return menuItem ? { ...menuItem, comboQty: ci.quantity || 1 } : null;
+                    })
+                    .filter(Boolean);
+                  const normalPrice = resolvedItems.reduce((sum, i) => sum + parseFloat(i.price) * i.comboQty, 0);
+                  const savings = normalPrice > 0 ? normalPrice - parseFloat(offer.combo_price) : 0;
+
+                  return (
+                    <div key={offer.id} className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div>
+                          <p className="font-bold text-gray-900 text-sm">{offer.name}</p>
+                          {offer.description && <p className="text-xs text-gray-500 mt-0.5">{offer.description}</p>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className="font-black text-brand-600 text-lg leading-none">₹{parseFloat(offer.combo_price).toFixed(0)}</p>
+                          {savings > 0 && (
+                            <p className="text-[10px] text-green-600 font-semibold mt-0.5">
+                              Save ₹{savings.toFixed(0)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Included items */}
+                      {resolvedItems.length > 0 && (
+                        <div className="space-y-1 mb-3">
+                          {resolvedItems.map((item) => (
+                            <div key={item.id} className="flex items-center gap-2 text-xs text-gray-700">
+                              <FoodDot isVeg={item.is_veg} />
+                              <span className="flex-1">{item.name}</span>
+                              {item.comboQty > 1 && <span className="text-gray-400">×{item.comboQty}</span>}
+                              {savings > 0 && (
+                                <span className="text-gray-400 line-through">₹{(parseFloat(item.price) * item.comboQty).toFixed(0)}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          resolvedItems.forEach((item) => {
+                            for (let i = 0; i < item.comboQty; i++) addItem(item);
+                          });
+                        }}
+                        disabled={resolvedItems.length === 0}
+                        className="w-full py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-bold transition-colors disabled:opacity-40"
+                      >
+                        Add Combo to Cart
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="h-28" />
+            </>
           ) : (
-            <div className="divide-y divide-gray-50">
-              {displayItems.map((item) => (
-                <MenuItemCard
-                  key={item.id}
-                  item={item}
-                  qty={getItemQty(item.id)}
-                  categoryLabel={isSearching ? item._catName : null}
-                  onAdd={() => addItem(item)}
-                  onUpdateQty={(qty) => updateQty(item.id, qty)}
-                />
-              ))}
-            </div>
-          )}
+            <>
+              {/* Section label */}
+              <div className="px-3 py-2 border-b border-gray-50">
+                {isSearching ? (
+                  <p className="text-xs text-gray-500">
+                    <span className="font-semibold text-gray-700">{displayItems.length}</span>
+                    {' '}result{displayItems.length !== 1 ? 's' : ''} for "
+                    <span className="text-brand-600">{search}</span>"
+                  </p>
+                ) : (
+                  <p className="text-xs font-bold text-gray-800">
+                    {selectedCat?.name}
+                    <span className="text-gray-400 font-normal ml-1.5">
+                      {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
+                    </span>
+                  </p>
+                )}
+              </div>
 
-          {/* Bottom padding for FAB */}
-          <div className="h-28" />
+              {/* Items list */}
+              {displayItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400 px-6">
+                  <p className="text-4xl mb-3">{isSearching ? '🔍' : '🍽️'}</p>
+                  <p className="text-sm text-center font-medium text-gray-500">
+                    {isSearching
+                      ? `No dishes found for "${search}"`
+                      : `No items available${foodFilter !== 'all' ? ` for selected filter` : ''}`}
+                  </p>
+                  {isSearching && (
+                    <button
+                      onClick={() => setSearch('')}
+                      className="mt-3 text-xs text-brand-600 font-semibold hover:underline"
+                    >
+                      Clear search
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {displayItems.map((item) => (
+                    <MenuItemCard
+                      key={item.id}
+                      item={item}
+                      qty={getItemQty(item.id)}
+                      categoryLabel={isSearching ? item._catName : null}
+                      onAdd={() => addItem(item)}
+                      onUpdateQty={(qty) => updateQty(item.id, qty)}
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="h-28" />
+            </>
+          )}
         </main>
       </div>
 
