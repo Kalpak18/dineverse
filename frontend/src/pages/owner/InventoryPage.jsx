@@ -8,17 +8,23 @@ const LOW = 5;
 export default function InventoryPage() {
   const [items, setItems]       = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter]     = useState('all'); // all | low | out | untracked
   const [search, setSearch]     = useState('');
   const [restock, setRestock]   = useState(null); // { id, name, qty }
   const [saving, setSaving]     = useState(false);
 
   const load = useCallback(async () => {
+    setLoadError(false);
     try {
       const { data } = await getInventory();
-      setItems(data.items);
-    } catch { toast.error('Failed to load inventory'); }
-    finally { setLoading(false); }
+      setItems(data.items || []);
+    } catch (err) {
+      // subscription_expired is handled globally by the interceptor — don't double-toast
+      if (err?.response?.data?.error !== 'subscription_expired') {
+        setLoadError(true);
+      }
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -74,6 +80,15 @@ export default function InventoryPage() {
   if (loading) return (
     <div className="space-y-3 animate-pulse">
       {[...Array(6)].map((_, i) => <div key={i} className="h-14 rounded-xl bg-gray-100" />)}
+    </div>
+  );
+
+  if (loadError) return (
+    <div className="flex flex-col items-center justify-center py-24 text-center px-6">
+      <p className="text-4xl mb-3">⚠️</p>
+      <p className="font-semibold text-gray-700 mb-1">Could not load inventory</p>
+      <p className="text-sm text-gray-400 mb-5">Check your connection and try again.</p>
+      <button onClick={load} className="btn-primary px-6">Retry</button>
     </div>
   );
 
@@ -142,9 +157,15 @@ export default function InventoryPage() {
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
+      {items.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
-          <div className="text-4xl mb-2">📦</div>
+          <div className="text-4xl mb-3">📦</div>
+          <p className="font-medium text-gray-500">No menu items yet</p>
+          <p className="text-sm mt-1">Add items in the Menu page — they'll appear here for stock tracking.</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400">
+          <div className="text-4xl mb-2">🔍</div>
           <p>No items match this filter.</p>
         </div>
       ) : (
