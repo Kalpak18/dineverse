@@ -34,10 +34,37 @@ ReactDOM.createRoot(document.getElementById('root')).render(
             <CartProvider>
               <App />
               <Toaster
-                position="top-right"
+                position="top-center"
+                gutter={8}
+                containerStyle={{ top: 16 }}
                 toastOptions={{
-                  duration: 3000,
-                  style: { borderRadius: '8px', fontSize: '14px' },
+                  duration: 4000,
+                  style: {
+                    borderRadius: '10px',
+                    fontSize: '13.5px',
+                    fontWeight: '500',
+                    maxWidth: '360px',
+                    padding: '11px 14px',
+                    boxShadow: '0 2px 12px rgba(0,0,0,0.08)',
+                    lineHeight: '1.45',
+                  },
+                  success: {
+                    style: {
+                      background: '#f0fdf4',
+                      color: '#166534',
+                      border: '1px solid #bbf7d0',
+                    },
+                    iconTheme: { primary: '#16a34a', secondary: '#dcfce7' },
+                  },
+                  error: {
+                    duration: 5000,
+                    style: {
+                      background: '#fff7ed',
+                      color: '#9a3412',
+                      border: '1px solid #fed7aa',
+                    },
+                    iconTheme: { primary: '#ea580c', secondary: '#fff7ed' },
+                  },
                 }}
               />
             </CartProvider>
