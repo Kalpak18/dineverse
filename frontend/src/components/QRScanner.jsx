@@ -1,15 +1,26 @@
+/**
+ * QRScanner — unified QR scanner.
+ * On Capacitor (iOS/Android): uses @capacitor-community/barcode-scanner (full-screen native).
+ * On web: uses getUserMedia + BarcodeDetector API (Chrome/Edge/Safari TP) with jsQR canvas fallback.
+ *
+ * Props:
+ *   onScan(text: string)  — called when a QR code is read
+ *   onClose()             — called when user taps Cancel
+ */
 import { useEffect, useRef, useState, useCallback } from 'react';
 
+// Detect Capacitor native runtime
 const isNative = () =>
   typeof window !== 'undefined' &&
   typeof window.Capacitor !== 'undefined' &&
   window.Capacitor.isNativePlatform?.();
 
+// ── Native (Capacitor) scanner ────────────────────────────────
 async function startNativeScanner(onScan, onError) {
   try {
     const { BarcodeScanner } = await import(/* @vite-ignore */ '@capacitor-community/barcode-scanner');
     await BarcodeScanner.checkPermission({ force: true });
-    document.body.classList.add('scanner-active');
+    document.body.classList.add('scanner-active'); // make body transparent
     await BarcodeScanner.hideBackground();
     const result = await BarcodeScanner.startScan();
     document.body.classList.remove('scanner-active');
@@ -30,16 +41,16 @@ async function stopNativeScanner() {
   } catch { /* ignore */ }
 }
 
+// ── Web scanner ───────────────────────────────────────────────
 function WebScanner({ onScan, onClose }) {
   const videoRef  = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const rafRef    = useRef(null);
-  const [error, setError]     = useState(null);
-  const [torch, setTorch]     = useState(false);
-  const [ready, setReady]     = useState(false);
+  const [error, setError]   = useState(null);
+  const [torch, setTorch]   = useState(false);
+  const [ready, setReady]   = useState(false);
   const [scanning, setScanning] = useState(false);
-  const [retryCount, setRetryCount] = useState(0);
 
   const stopStream = useCallback(() => {
     cancelAnimationFrame(rafRef.current);
@@ -69,6 +80,7 @@ function WebScanner({ onScan, onClose }) {
       if (detector) {
         barcodes = await detector.detect(canvas);
       } else {
+        // jsQR fallback
         const { default: jsQR } = await import(/* @vite-ignore */ 'jsqr');
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         const code = jsQR(imageData.data, imageData.width, imageData.height);
@@ -88,9 +100,6 @@ function WebScanner({ onScan, onClose }) {
   useEffect(() => {
     let detector = null;
     let cancelled = false;
-    setError(null);
-    setReady(false);
-    setScanning(false);
 
     (async () => {
       try {
@@ -103,19 +112,23 @@ function WebScanner({ onScan, onClose }) {
           videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
+
         if ('BarcodeDetector' in window) {
           detector = new window.BarcodeDetector({ formats: ['qr_code'] });
         }
+
         setReady(true);
         setScanning(true);
         detect(detector);
       } catch (err) {
-        if (!cancelled) setError(err.message || 'Could not open camera');
+        setError(err.name === 'NotAllowedError'
+          ? 'Camera permission denied. Please allow camera access and try again.'
+          : 'Could not access camera: ' + err.message);
       }
     })();
 
     return () => { cancelled = true; stopStream(); };
-  }, [detect, stopStream, retryCount]);
+  }, [detect, stopStream]);
 
   const toggleTorch = useCallback(async () => {
     const track = streamRef.current?.getVideoTracks()[0];
@@ -129,6 +142,7 @@ function WebScanner({ onScan, onClose }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
+      {/* Video feed */}
       <div className="relative flex-1 overflow-hidden">
         <video
           ref={videoRef}
@@ -142,6 +156,7 @@ function WebScanner({ onScan, onClose }) {
         {ready && (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="relative w-64 h-64">
+              {/* Corner brackets */}
               {[
                 'top-0 left-0 border-t-4 border-l-4 rounded-tl-lg',
                 'top-0 right-0 border-t-4 border-r-4 rounded-tr-lg',
@@ -150,6 +165,7 @@ function WebScanner({ onScan, onClose }) {
               ].map((cls, i) => (
                 <div key={i} className={`absolute w-10 h-10 border-brand-400 ${cls}`} />
               ))}
+              {/* Scan line */}
               {scanning && (
                 <div className="absolute inset-x-0 top-0 h-0.5 bg-brand-400 animate-scan-line" />
               )}
@@ -157,29 +173,15 @@ function WebScanner({ onScan, onClose }) {
           </div>
         )}
 
-        {/* Camera error */}
+        {/* Error */}
         {error && (
           <div className="absolute inset-0 flex items-center justify-center p-8">
-            <div className="bg-white rounded-2xl p-6 text-center max-w-sm w-full">
-              <p className="text-3xl mb-3">📵</p>
-              <p className="text-sm font-semibold text-gray-900 mb-1">Camera unavailable</p>
-              <p className="text-xs text-gray-500 mb-5">
-                Allow camera access in your browser settings, then tap Retry.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleClose}
-                  className="flex-1 px-4 py-2 rounded-xl border border-gray-300 text-sm font-medium text-gray-700"
-                >
-                  Go Back
-                </button>
-                <button
-                  onClick={() => setRetryCount((c) => c + 1)}
-                  className="flex-1 px-4 py-2 bg-brand-500 text-white rounded-xl text-sm font-semibold"
-                >
-                  Retry
-                </button>
-              </div>
+            <div className="bg-white rounded-2xl p-6 text-center max-w-sm">
+              <p className="text-2xl mb-3">📵</p>
+              <p className="text-sm text-gray-700 font-medium">{error}</p>
+              <button onClick={handleClose} className="mt-4 px-5 py-2 bg-brand-500 text-white rounded-xl text-sm font-semibold">
+                Go Back
+              </button>
             </div>
           </div>
         )}
@@ -206,6 +208,7 @@ function WebScanner({ onScan, onClose }) {
   );
 }
 
+// ── Native wrapper ────────────────────────────────────────────
 function NativeScanner({ onScan, onClose }) {
   const [error, setError] = useState(null);
 
@@ -231,6 +234,7 @@ function NativeScanner({ onScan, onClose }) {
     );
   }
 
+  // The native scanner renders its own full-screen UI; show a minimal overlay
   return (
     <div className="fixed inset-0 z-50 bg-transparent flex flex-col pointer-events-none">
       <div className="mt-auto mb-12 flex justify-center pointer-events-auto">
@@ -245,6 +249,7 @@ function NativeScanner({ onScan, onClose }) {
   );
 }
 
+// ── Public export ─────────────────────────────────────────────
 export default function QRScanner({ onScan, onClose }) {
   return isNative()
     ? <NativeScanner onScan={onScan} onClose={onClose} />
