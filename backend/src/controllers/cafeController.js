@@ -14,7 +14,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
     `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
             name_style, latitude, longitude, city, is_open,
             gst_rate, gst_number, fssai_number,
-            COALESCE(tax_inclusive, true) AS tax_inclusive,
+            COALESCE(tax_inclusive, false) AS tax_inclusive,
             COALESCE(business_type, 'restaurant') AS business_type,
             COALESCE(country, 'India') AS country,
             COALESCE(currency, 'INR') AS currency,

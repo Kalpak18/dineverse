@@ -108,7 +108,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     const cafeResult = await client.query(
       `SELECT id, email, is_open,
               COALESCE(gst_rate, 0)::int     AS gst_rate,
-              COALESCE(tax_inclusive, true)  AS tax_inclusive,
+              COALESCE(tax_inclusive, false) AS tax_inclusive,
               opening_hours,
               COALESCE(timezone, 'Asia/Kolkata') AS timezone,
               latitude, longitude,
