@@ -10,6 +10,20 @@ import { AdminAuthProvider } from './context/AdminAuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
+// Register service worker. Workbox is configured with skipWaiting:true so the
+// new SW activates immediately on install. We reload when the controller changes
+// so all open tabs switch to the new version automatically.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    try {
+      await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        window.location.reload();
+      });
+    } catch { /* SW not supported or blocked */ }
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HelmetProvider>

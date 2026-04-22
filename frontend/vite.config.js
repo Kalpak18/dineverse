@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -8,11 +9,37 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       react(),
+      VitePWA({
+        registerType: 'prompt',
+        injectRegister: false,
+        strategies: 'generateSW',
+        workbox: {
+          // Network-first for navigation (always get latest HTML)
+          navigateFallback: '/index.html',
+          navigateFallbackDenylist: [/^\/api\//],
+          // Cache hashed assets forever (they change name on update)
+          runtimeCaching: [
+            {
+              urlPattern: /\/assets\/.+\.(js|css|woff2?)$/,
+              handler: 'CacheFirst',
+              options: { cacheName: 'assets', expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 } },
+            },
+            {
+              urlPattern: /\/icons\/.+\.(png|ico|svg)$/,
+              handler: 'CacheFirst',
+              options: { cacheName: 'icons', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
+            },
+          ],
+          cleanupOutdatedCaches: true,
+          skipWaiting: true, // activate new SW immediately; main.jsx reloads on controllerchange
+          clientsClaim: true,
+        },
+        manifest: false, // we already have public/site.webmanifest
+      }),
     ],
     build: {
       rollupOptions: {
         output: {
-          // Split large vendor libraries into separate cacheable chunks
           manualChunks(id) {
             if (id.includes('node_modules')) {
               if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'vendor-react';
@@ -31,14 +58,14 @@ export default defineConfig(({ mode }) => {
           target: backendUrl,
           changeOrigin: true,
           configure: (proxy) => {
-            proxy.on('error', () => {}); // suppress ECONNRESET/ECONNREFUSED during backend restarts
+            proxy.on('error', () => {});
           },
         },
         '/socket.io': {
           target: backendUrl,
           ws: true,
           configure: (proxy) => {
-            proxy.on('error', () => {}); // suppress WebSocket proxy errors during backend restarts
+            proxy.on('error', () => {});
           },
         },
       },
