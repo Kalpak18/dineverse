@@ -9,6 +9,8 @@ import ExplorePage from './pages/customer/ExplorePage';
 import MapPage from './pages/customer/MapPage';
 import TermsPage from './pages/TermsPage';
 import PrivacyPage from './pages/PrivacyPage';
+import RefundPage from './pages/RefundPage';
+import ContactPage from './pages/ContactPage';
 
 // Customer pages
 import CafeEntry from './pages/customer/CafeEntry';
@@ -116,6 +118,8 @@ export default function App() {
       <Route path="/scan"    element={<ScanPage />} />
       <Route path="/terms"   element={<TermsPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/refund"  element={<RefundPage />} />
+      <Route path="/contact" element={<ContactPage />} />
 
       {/* Customer routes */}
       <Route path="/cafe/:slug" element={<CafeEntry />} />
