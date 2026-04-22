@@ -56,6 +56,7 @@ import AdminSettingsPage from './pages/admin/AdminSettingsPage';
 import OwnerLayout from './components/OwnerLayout';
 import AdminLayout from './components/AdminLayout';
 import LoadingSpinner from './components/LoadingSpinner';
+import InstallBanner from './components/InstallBanner';
 
 // Staff default landing based on role
 const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard' };
@@ -102,6 +103,8 @@ function StaffAwareIndex() {
 
 export default function App() {
   return (
+    <>
+    <InstallBanner />
     <Routes>
       {/* Electron navigate bridge (no-op on web/mobile) */}
       <Route path="*" element={<ElectronBridge />} />
@@ -183,5 +186,6 @@ export default function App() {
       {/* Redirects */}
       <Route path="*" element={<div className="flex items-center justify-center min-h-screen"><p className="text-gray-500 text-lg">Page not found</p></div>} />
     </Routes>
+    </>
   );
 }
