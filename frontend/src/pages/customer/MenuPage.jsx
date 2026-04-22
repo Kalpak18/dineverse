@@ -371,66 +371,68 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* ── Category Tab Bar (horizontal scroll) ── */}
-      {!isSearching && (
-        <div className="flex-shrink-0 bg-white border-b border-gray-100 overflow-x-auto">
-          <div className="flex gap-0 w-max">
-            {/* Deals tab */}
-            {comboOffers.length > 0 && (() => {
-              const isActive = selectedCatId === '__deals__';
-              return (
-                <button
-                  onClick={() => handleCategorySelect('__deals__')}
-                  className={`flex flex-col items-center gap-1 px-4 pt-2.5 pb-2 relative transition-colors ${
-                    isActive ? 'text-brand-600' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-orange-100 flex items-center justify-center">
-                    <span className="text-2xl">🎁</span>
-                  </div>
-                  <span className={`text-[11px] font-semibold whitespace-nowrap ${isActive ? 'text-brand-600' : 'text-gray-600'}`}>
-                    Deals
-                  </span>
-                  {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2.5px] bg-brand-500 rounded-t-full" />}
-                </button>
-              );
-            })()}
+      {/* ── Body: Sidebar + Content ── */}
+      <div className="flex flex-1 overflow-hidden">
 
-            {/* Regular categories */}
-            {categories.map((cat) => {
-              const isActive = cat.id === selectedCatId;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => handleCategorySelect(cat.id)}
-                  className={`flex flex-col items-center gap-1 px-4 pt-2.5 pb-2 relative transition-colors ${
-                    isActive ? 'text-brand-600' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-100">
-                    {cat.thumbnail ? (
-                      <img src={cat.thumbnail} alt={cat.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wide text-center px-1 leading-tight">
-                          {cat.name.slice(0, 3)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <span className={`text-[11px] font-semibold whitespace-nowrap max-w-[72px] truncate ${isActive ? 'text-brand-600' : 'text-gray-600'}`}>
-                    {cat.name}
-                  </span>
-                  {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2.5px] bg-brand-500 rounded-t-full" />}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
+        {/* Category Sidebar */}
+        <aside className="w-[76px] bg-gray-50 border-r border-gray-100 overflow-y-auto flex-shrink-0">
+          {/* Deals entry */}
+          {comboOffers.length > 0 && (() => {
+            const isActive = selectedCatId === '__deals__' && !isSearching;
+            return (
+              <button
+                onClick={() => handleCategorySelect('__deals__')}
+                className={`relative w-full flex flex-col items-center gap-1 py-3 px-1.5 border-b border-gray-100 transition-all ${
+                  isActive ? 'bg-white' : 'hover:bg-gray-100/70'
+                }`}
+              >
+                {isActive && <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />}
+                <div className={`w-12 h-12 rounded-xl overflow-hidden bg-orange-100 flex items-center justify-center transition-all ${
+                  isActive ? 'ring-2 ring-brand-400 ring-offset-1' : ''
+                }`}>
+                  <span className="text-2xl">🎁</span>
+                </div>
+                <span className={`text-[10px] text-center leading-tight w-full px-0.5 transition-colors ${
+                  isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
+                }`}>Deals</span>
+              </button>
+            );
+          })()}
 
-      {/* ── Content area ── */}
-      <main ref={contentRef} className="flex-1 overflow-y-auto bg-gray-50">
+          {categories.map((cat) => {
+            const isActive = cat.id === selectedCatId && !isSearching;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => handleCategorySelect(cat.id)}
+                className={`relative w-full flex flex-col items-center gap-1 py-3 px-1.5 border-b border-gray-100 transition-all ${
+                  isActive ? 'bg-white' : 'hover:bg-gray-100/70'
+                }`}
+              >
+                {isActive && <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />}
+                <div className={`w-12 h-12 rounded-xl overflow-hidden transition-all ${
+                  isActive ? 'ring-2 ring-brand-400 ring-offset-1' : ''
+                }`}>
+                  {cat.thumbnail ? (
+                    <img src={cat.thumbnail} alt={cat.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide text-center px-1 leading-tight">
+                        {cat.name.slice(0, 3)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <span className={`text-[10px] text-center leading-tight line-clamp-2 w-full px-0.5 transition-colors ${
+                  isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
+                }`}>{cat.name}</span>
+              </button>
+            );
+          })}
+        </aside>
+
+        {/* Items Content */}
+        <main ref={contentRef} className="flex-1 overflow-y-auto bg-gray-50">
 
         {/* ── Deals panel ── */}
         {!isSearching && selectedCatId === '__deals__' ? (
@@ -554,6 +556,7 @@ export default function MenuPage() {
           </>
         )}
       </main>
+      </div>
 
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
