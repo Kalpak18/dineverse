@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist } from '../../services/api';
@@ -36,6 +36,7 @@ function nowParts() {
 export default function CafeEntry() {
   const { slug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [cafe, setCafe]           = useState(null);
   const [areas, setAreas]         = useState([]);
   const [hasTables, setHasTables] = useState(false);
@@ -45,14 +46,18 @@ export default function CafeEntry() {
   const [myBookings, setMyBookings] = useState([]);
   const socketRef = useRef(null);
 
+  const tableFromUrl = searchParams.get('table') || '';
   const [form, setForm] = useState(() => {
     try {
       const saved = sessionStorage.getItem(`session_${slug}`);
-      return saved
+      const base = saved
         ? JSON.parse(saved)
         : { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: '', order_type: 'dine-in' };
+      // QR table param always wins over stale session value
+      if (tableFromUrl) base.table_number = tableFromUrl;
+      return base;
     } catch {
-      return { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: '', order_type: 'dine-in' };
+      return { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: tableFromUrl, order_type: 'dine-in' };
     }
   });
   const [errors, setErrors] = useState({});
