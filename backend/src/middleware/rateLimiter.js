@@ -1,4 +1,4 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 // Use Redis store when REDIS_URL is set (multi-instance production).
 // Falls back to in-memory store for local dev / single-instance Phase 1.
@@ -21,22 +21,34 @@ function makeStore() {
 
 const store = makeStore();
 
+function normalizeEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function otpKeyGenerator(req) {
+  const email = normalizeEmail(req.body?.email);
+  return email ? `otp:${email}` : `otp-ip:${ipKeyGenerator(req.ip)}`;
+}
+
 // Strict limiter for login/register (brute-force protection)
 exports.authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
   store,
-  message: { success: false, message: 'Too many attempts — please try again in 15 minutes' },
+  message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Very strict limiter for OTP sending (prevent email spam)
+// OTP sending: limit by target email so shared networks/proxies do not block
+// unrelated users, while still preventing repeated sends to the same inbox.
 exports.otpLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 1,
+  windowMs: 10 * 60 * 1000,
+  max: 3,
   store,
-  message: { success: false, message: 'Too many OTP requests — wait a minute before trying again' },
+  keyGenerator: otpKeyGenerator,
+  skipFailedRequests: true,
+  message: { success: false, message: 'Too many OTP requests. Please wait a few minutes before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -46,7 +58,7 @@ exports.apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
   store,
-  message: { success: false, message: 'Rate limit exceeded — slow down' },
+  message: { success: false, message: 'Rate limit exceeded. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -56,13 +68,13 @@ exports.orderLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
   store,
-  message: { success: false, message: 'Too many orders placed — please wait a moment' },
+  message: { success: false, message: 'Too many orders placed. Please wait a moment.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-// Health check limiter — Render pings ~every 30s, so 30/min is plenty
-// Prevents external actors from hammering /health to probe infrastructure state
+// Health check limiter: Render pings about every 30s, so 30/min is plenty.
+// Prevents external actors from hammering /health to probe infrastructure state.
 exports.healthLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
