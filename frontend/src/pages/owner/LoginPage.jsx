@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getApiError } from '../../utils/apiError';
@@ -22,6 +22,19 @@ export default function LoginPage() {
   const [form, setForm] = useState({ identifier: '', password: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [registerDraft, setRegisterDraft] = useState(null); // { verifiedEmail, step }
+
+  // Check for an incomplete registration draft in sessionStorage
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('dv_register_draft');
+      if (!saved) return;
+      const d = JSON.parse(saved);
+      if (d.verifiedEmail && d.step === 2) {
+        setRegisterDraft({ verifiedEmail: d.verifiedEmail });
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   const validate = () => {
     const e = {};
@@ -37,12 +50,29 @@ export default function LoginPage() {
     if (!validate()) return;
     setLoading(true);
     try {
-      const cafe = await login(form.identifier.trim(), form.password);
-      // role/staffRole are set in context after login() resolves
-      // navigate to role-appropriate landing via the /owner index route
+      await login(form.identifier.trim(), form.password);
       navigate('/owner');
     } catch (err) {
-      toast.error(getApiError(err));
+      // If the entered email matches a pending registration draft, prompt to continue
+      const enteredEmail = form.identifier.trim().toLowerCase();
+      if (registerDraft && enteredEmail === registerDraft.verifiedEmail) {
+        toast(
+          (t) => (
+            <span className="text-sm">
+              No account found — you have an unfinished registration.{' '}
+              <button
+                className="font-bold text-brand-600 underline"
+                onClick={() => { toast.dismiss(t.id); navigate('/owner/register'); }}
+              >
+                Continue registration →
+              </button>
+            </span>
+          ),
+          { duration: 10000, icon: '📝' }
+        );
+      } else {
+        toast.error(getApiError(err));
+      }
     } finally {
       setLoading(false);
     }
@@ -57,6 +87,23 @@ export default function LoginPage() {
           </div>
           <p className="text-gray-500 text-sm mt-1">Owner & Staff dashboard</p>
         </div>
+
+        {/* Incomplete registration banner */}
+        {registerDraft && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 mb-4 flex items-start gap-3">
+            <span className="text-xl shrink-0">📝</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-amber-800">You have an unfinished registration</p>
+              <p className="text-xs text-amber-700 mt-0.5 truncate">Email verified: {registerDraft.verifiedEmail}</p>
+              <Link
+                to="/owner/register"
+                className="inline-block mt-2 text-xs font-bold text-amber-900 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-lg transition-colors"
+              >
+                Continue registration → Step 2
+              </Link>
+            </div>
+          </div>
+        )}
 
         <div className="card shadow-lg">
           <h2 className="text-lg font-semibold text-gray-800 mb-5">Sign in to your account</h2>
