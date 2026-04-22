@@ -80,9 +80,10 @@ export default function RegisterPage() {
   const [slugStatus, setSlugStatus] = useState('idle');
   const [loading, setLoading] = useState(false);
 
-  const slugCheckTimer = useRef(null);
-  const cooldownTimer  = useRef(null);
-  const autoSlugRef    = useRef('');
+  const slugCheckTimer  = useRef(null);
+  const cooldownTimer   = useRef(null);
+  const autoSlugRef     = useRef('');
+  const registeredRef   = useRef(false); // set true after success so the draft effect doesn't re-write
 
   // ── Restore draft from sessionStorage on mount ───────────────
   useEffect(() => {
@@ -103,6 +104,7 @@ export default function RegisterPage() {
 
   // ── Persist draft to sessionStorage on every change ──────────
   useEffect(() => {
+    if (registeredRef.current) return; // don't overwrite after successful registration
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ email, password, otpSent, verifiedEmail, form, step }));
   }, [email, password, otpSent, verifiedEmail, form, step]);
 
@@ -213,6 +215,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register({ ...form, email: verifiedEmail, password, otp });
+      registeredRef.current = true;
       clearDraft();
       toast.success('Café registered successfully!');
       navigate('/owner/dashboard');
@@ -223,8 +226,12 @@ export default function RegisterPage() {
       } else {
         const msg = err.response?.data?.error || 'Registration failed';
         toast.error(msg);
-        // If OTP was rejected (expired / wrong), go back to step 1
-        if (msg.toLowerCase().includes('otp') || msg.toLowerCase().includes('code') || msg.toLowerCase().includes('verif')) {
+        // Only reset to step 1 for known OTP rejection messages from the backend
+        const otpRejected = [
+          'no otp sent', 'otp expired', 'incorrect verification code',
+          'too many incorrect attempts',
+        ].some((phrase) => msg.toLowerCase().includes(phrase));
+        if (otpRejected) {
           setStep(1);
           setOtpSent(false);
           setVerifiedEmail('');

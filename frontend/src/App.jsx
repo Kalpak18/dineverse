@@ -71,6 +71,9 @@ function CitySlugRedirect() {
 function ProtectedRoute({ children }) {
   const { cafe, loading } = useAuth();
   if (loading) return <LoadingSpinner />;
+  // Token exists but cafe state hasn't committed yet (e.g. right after register/login).
+  // Show a spinner instead of redirecting so the batched state update can settle.
+  if (!cafe && localStorage.getItem('dineverse_token')) return <LoadingSpinner />;
   if (!cafe) return <Navigate to="/owner/login" replace />;
   return children;
 }
