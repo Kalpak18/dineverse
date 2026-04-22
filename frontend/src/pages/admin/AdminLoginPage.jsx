@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function AdminLoginPage() {
   const { login } = useAdminAuth();
@@ -55,8 +56,7 @@ export default function AdminLoginPage() {
                   Forgot password?
                 </Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 className="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500"
                 placeholder="••••••••"
                 value={form.password}

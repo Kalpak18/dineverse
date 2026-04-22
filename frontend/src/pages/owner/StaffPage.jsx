@@ -4,6 +4,7 @@ import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PageHint from '../../components/PageHint';
+import PasswordInput from '../../components/PasswordInput';
 
 const ROLES = [
   { value: 'cashier',  label: 'Cashier',  desc: 'Takes orders and processes payments' },
@@ -217,7 +218,7 @@ export default function StaffPage() {
                 </div>
                 <div>
                   <label className="label">Password</label>
-                  <input className="input" type="password" required minLength={8} value={form.password}
+                  <PasswordInput className="input" required minLength={8} value={form.password}
                     onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
                 </div>
                 <div>

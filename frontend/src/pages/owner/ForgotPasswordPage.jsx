@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { forgotPassword, resetPassword } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
@@ -216,8 +217,7 @@ export default function ForgotPasswordPage() {
               <form onSubmit={handleReset} className="space-y-4">
                 <div>
                   <label className="label">New Password</label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     className="input"
                     placeholder="At least 8 characters"
                     value={password}
@@ -231,8 +231,7 @@ export default function ForgotPasswordPage() {
                 </div>
                 <div>
                   <label className="label">Confirm New Password</label>
-                  <input
-                    type="password"
+                  <PasswordInput
                     className="input"
                     placeholder="Re-enter password"
                     value={confirmPassword}

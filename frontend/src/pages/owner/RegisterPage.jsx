@@ -4,6 +4,7 @@ import DineLogo from '../../components/DineLogo';
 import { useAuth } from '../../context/AuthContext';
 import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
 import toast from 'react-hot-toast';
+import PasswordInput from '../../components/PasswordInput';
 
 function toSlug(str) {
   return str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -310,7 +311,7 @@ export default function RegisterPage() {
 
                 <div>
                   <label className="label">Password *</label>
-                  <input type="password" className="input" placeholder="At least 8 characters"
+                  <PasswordInput className="input" placeholder="At least 8 characters"
                     value={form.password} onChange={set('password')} required />
                 </div>
 

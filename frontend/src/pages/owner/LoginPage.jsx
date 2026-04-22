@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import DineLogo from '../../components/DineLogo';
+import PasswordInput from '../../components/PasswordInput';
 
 // Accepts email or phone (10-digit or +91 prefixed)
 function isValidIdentifier(val) {
@@ -84,8 +85,7 @@ export default function LoginPage() {
                   Forgot password?
                 </Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 className={`input ${errors.password ? 'border-red-400 focus:ring-red-300' : ''}`}
                 placeholder="••••••••"
