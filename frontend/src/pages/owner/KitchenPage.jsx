@@ -148,14 +148,20 @@ function printKitchenToken(order, cafeName) {
 
   ${order.notes ? `<div class="notes">📝 ${order.notes}</div>` : ''}
 
-  <div class="footer">— Kitchen Copy —</div>
-
   <script>
     window.onload = function() {
+      window.focus();
+    };
+    function doPrint() {
       window.print();
       window.onafterprint = function() { window.close(); };
-    };
+    }
   <\/script>
+  <div style="text-align:center;margin-top:10px;">
+    <button onclick="doPrint()" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
+      🖨 PRINT
+    </button>
+  </div>
 </body>
 </html>`;
 
@@ -263,10 +269,6 @@ export default function KitchenPage() {
     if (!next) return;
     try {
       await updateOrderStatus(order.id, next);
-      // Print kitchen token when order becomes ready
-      if (next === 'ready') {
-        printKitchenToken(order, cafe?.name);
-      }
       if (!KITCHEN_STATUSES.includes(next)) {
         setOrders((prev) => prev.filter((o) => o.id !== order.id));
       } else {
@@ -413,6 +415,14 @@ export default function KitchenPage() {
                             {actionLabel} →
                           </button>
                         )}
+
+                        {/* Manual print slip — waiter confirms table, customer verifies items */}
+                        <button
+                          onClick={() => printKitchenToken(order, cafe?.name)}
+                          className="w-full mt-1.5 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 transition-colors"
+                        >
+                          🖨 Print Slip
+                        </button>
                       </div>
                     );
                   })
