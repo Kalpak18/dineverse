@@ -90,11 +90,12 @@ export default function RegisterPage() {
       const saved = sessionStorage.getItem(DRAFT_KEY);
       if (!saved) return;
       const d = JSON.parse(saved);
-      if (d.email)    setEmail(d.email);
-      if (d.otpSent)  setOtpSent(d.otpSent);
+      if (d.email)         setEmail(d.email);
+      if (d.password)      setPassword(d.password);
+      if (d.otpSent)       setOtpSent(d.otpSent);
       if (d.verifiedEmail) setVerifiedEmail(d.verifiedEmail);
-      if (d.form)     setForm((f) => ({ ...f, ...d.form }));
-      if (d.form?.slug) autoSlugRef.current = d.form.slug;
+      if (d.form)          setForm((f) => ({ ...f, ...d.form }));
+      if (d.form?.slug)    autoSlugRef.current = d.form.slug;
       // Only jump to step 2 if email was fully verified in last session
       if (d.verifiedEmail && d.step === 2) setStep(2);
     } catch { /* ignore corrupt data */ }
@@ -102,8 +103,8 @@ export default function RegisterPage() {
 
   // ── Persist draft to sessionStorage on every change ──────────
   useEffect(() => {
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ email, otpSent, verifiedEmail, form, step }));
-  }, [email, otpSent, verifiedEmail, form, step]);
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ email, password, otpSent, verifiedEmail, form, step }));
+  }, [email, password, otpSent, verifiedEmail, form, step]);
 
   // ── Slug availability check ───────────────────────────────────
   useEffect(() => {

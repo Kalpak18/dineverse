@@ -290,8 +290,9 @@ function OwnerLayoutInner() {
 
       {/* ── Main area ── */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top bar (mobile) */}
-        <header className="md:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between flex-shrink-0">
+        {/* Top bar (mobile) — fixed so it never scrolls away on iOS Safari */}
+        <header className="md:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+
           <button
             onClick={() => setMobileOpen(true)}
             className="p-2 rounded-lg hover:bg-gray-100"
@@ -323,6 +324,9 @@ function OwnerLayoutInner() {
             )}
           </div>
         </header>
+
+        {/* Spacer so content doesn't hide under the fixed mobile header (≈57px tall) */}
+        <div className="md:hidden h-[57px] flex-shrink-0" />
 
         {/* Expiry warning (owner only) */}
         {!isStaff && !expired && remaining !== null && remaining <= 7 && (
