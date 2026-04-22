@@ -371,135 +371,119 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* ── Body: Sidebar + Content ── */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* Category Sidebar */}
-        <aside className="w-[76px] bg-gray-50 border-r border-gray-100 overflow-y-auto flex-shrink-0">
-          {/* Deals entry — shown first if any combo offers exist */}
-          {comboOffers.length > 0 && (() => {
-            const isActive = selectedCatId === '__deals__' && !isSearching;
-            return (
-              <button
-                onClick={() => handleCategorySelect('__deals__')}
-                className={`relative w-full flex flex-col items-center gap-1 py-3 px-1.5 border-b border-gray-100 transition-all ${
-                  isActive ? 'bg-white' : 'hover:bg-gray-100/70'
-                }`}
-              >
-                {isActive && <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />}
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${
-                  isActive ? 'bg-brand-100' : 'bg-white shadow-sm'
-                }`}>
-                  🎁
-                </div>
-                <span className={`text-[10px] text-center leading-tight w-full px-0.5 transition-colors ${
-                  isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
-                }`}>
-                  Deals
-                </span>
-              </button>
-            );
-          })()}
-
-          {categories.map((cat) => {
-            const isActive = cat.id === selectedCatId && !isSearching;
-            const emoji = getCategoryEmoji(cat.name, emojiMap);
-
-            return (
-              <button
-                key={cat.id}
-                onClick={() => handleCategorySelect(cat.id)}
-                className={`relative w-full flex flex-col items-center gap-1 py-3 px-1.5 border-b border-gray-100 transition-all ${
-                  isActive ? 'bg-white' : 'hover:bg-gray-100/70'
-                }`}
-              >
-                {isActive && (
-                  <span className="absolute left-0 top-3 bottom-3 w-[3px] bg-brand-500 rounded-r-full" />
-                )}
-                {cat.thumbnail ? (
-                  <img
-                    src={cat.thumbnail}
-                    alt={cat.name}
-                    className={`w-12 h-12 rounded-xl object-cover transition-all ${
-                      isActive ? 'ring-2 ring-brand-400 ring-offset-1' : 'opacity-80'
-                    }`}
-                  />
-                ) : (
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all ${
-                    isActive ? 'bg-brand-100' : 'bg-white shadow-sm'
-                  }`}>
-                    {emoji}
+      {/* ── Category Tab Bar (horizontal scroll) ── */}
+      {!isSearching && (
+        <div className="flex-shrink-0 bg-white border-b border-gray-100 overflow-x-auto">
+          <div className="flex gap-0 w-max">
+            {/* Deals tab */}
+            {comboOffers.length > 0 && (() => {
+              const isActive = selectedCatId === '__deals__';
+              return (
+                <button
+                  onClick={() => handleCategorySelect('__deals__')}
+                  className={`flex flex-col items-center gap-1 px-4 pt-2.5 pb-2 relative transition-colors ${
+                    isActive ? 'text-brand-600' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-orange-100 flex items-center justify-center">
+                    <span className="text-2xl">🎁</span>
                   </div>
-                )}
-                <span className={`text-[10px] text-center leading-tight line-clamp-2 w-full px-0.5 transition-colors ${
-                  isActive ? 'text-brand-700 font-bold' : 'text-gray-500 font-medium'
-                }`}>
-                  {cat.name}
-                </span>
-              </button>
-            );
-          })}
-        </aside>
+                  <span className={`text-[11px] font-semibold whitespace-nowrap ${isActive ? 'text-brand-600' : 'text-gray-600'}`}>
+                    Deals
+                  </span>
+                  {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2.5px] bg-brand-500 rounded-t-full" />}
+                </button>
+              );
+            })()}
 
-        {/* Items Content */}
-        <main ref={contentRef} className="flex-1 overflow-y-auto">
-
-          {/* ── Deals panel ── */}
-          {!isSearching && selectedCatId === '__deals__' ? (
-            <>
-              <div className="px-3 py-2 border-b border-gray-50">
-                <p className="text-xs font-bold text-gray-800">
-                  🎁 Deals & Combos
-                  <span className="text-gray-400 font-normal ml-1.5">{comboOffers.length} combo{comboOffers.length !== 1 ? 's' : ''}</span>
-                </p>
-              </div>
-              <div className="divide-y divide-gray-50 px-3 py-2 space-y-3">
-                {comboOffers.map((offer) => {
-                  const rawItems = offer.combo_items
-                    ? (typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items)
-                    : [];
-                  const resolvedItems = rawItems
-                    .map((ci) => {
-                      const menuItem = allMenuItems.find((m) => String(m.id) === String(ci.menu_item_id || ci.id));
-                      return menuItem ? { ...menuItem, comboQty: ci.quantity || 1 } : null;
-                    })
-                    .filter(Boolean);
-                  const normalPrice = resolvedItems.reduce((sum, i) => sum + parseFloat(i.price) * i.comboQty, 0);
-                  const savings = normalPrice > 0 ? normalPrice - parseFloat(offer.combo_price) : 0;
-
-                  return (
-                    <div key={offer.id} className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-200 rounded-2xl p-4">
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <div>
-                          <p className="font-bold text-gray-900 text-sm">{offer.name}</p>
-                          {offer.description && <p className="text-xs text-gray-500 mt-0.5">{offer.description}</p>}
-                        </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="font-black text-brand-600 text-lg leading-none">₹{parseFloat(offer.combo_price).toFixed(0)}</p>
-                          {savings > 0 && (
-                            <p className="text-[10px] text-green-600 font-semibold mt-0.5">
-                              Save ₹{savings.toFixed(0)}
-                            </p>
-                          )}
-                        </div>
+            {/* Regular categories */}
+            {categories.map((cat) => {
+              const isActive = cat.id === selectedCatId;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => handleCategorySelect(cat.id)}
+                  className={`flex flex-col items-center gap-1 px-4 pt-2.5 pb-2 relative transition-colors ${
+                    isActive ? 'text-brand-600' : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  <div className="w-14 h-14 rounded-2xl overflow-hidden bg-gray-100">
+                    {cat.thumbnail ? (
+                      <img src={cat.thumbnail} alt={cat.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wide text-center px-1 leading-tight">
+                          {cat.name.slice(0, 3)}
+                        </span>
                       </div>
+                    )}
+                  </div>
+                  <span className={`text-[11px] font-semibold whitespace-nowrap max-w-[72px] truncate ${isActive ? 'text-brand-600' : 'text-gray-600'}`}>
+                    {cat.name}
+                  </span>
+                  {isActive && <span className="absolute bottom-0 left-3 right-3 h-[2.5px] bg-brand-500 rounded-t-full" />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-                      {/* Included items */}
-                      {resolvedItems.length > 0 && (
-                        <div className="space-y-1 mb-3">
-                          {resolvedItems.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2 text-xs text-gray-700">
-                              <FoodDot isVeg={item.is_veg} />
-                              <span className="flex-1">{item.name}</span>
-                              {item.comboQty > 1 && <span className="text-gray-400">×{item.comboQty}</span>}
-                              {savings > 0 && (
-                                <span className="text-gray-400 line-through">₹{(parseFloat(item.price) * item.comboQty).toFixed(0)}</span>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+      {/* ── Content area ── */}
+      <main ref={contentRef} className="flex-1 overflow-y-auto bg-gray-50">
 
+        {/* ── Deals panel ── */}
+        {!isSearching && selectedCatId === '__deals__' ? (
+          <>
+            <div className="px-4 py-3">
+              <p className="text-sm font-bold text-gray-800">
+                Deals & Combos
+                <span className="text-gray-400 font-normal ml-1.5 text-xs">{comboOffers.length} combo{comboOffers.length !== 1 ? 's' : ''}</span>
+              </p>
+            </div>
+            <div className="px-4 space-y-3 pb-4">
+              {comboOffers.map((offer) => {
+                const rawItems = offer.combo_items
+                  ? (typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items)
+                  : [];
+                const resolvedItems = rawItems
+                  .map((ci) => {
+                    const menuItem = allMenuItems.find((m) => String(m.id) === String(ci.menu_item_id || ci.id));
+                    return menuItem ? { ...menuItem, comboQty: ci.quantity || 1 } : null;
+                  })
+                  .filter(Boolean);
+                const normalPrice = resolvedItems.reduce((sum, i) => sum + parseFloat(i.price) * i.comboQty, 0);
+                const savings = normalPrice > 0 ? normalPrice - parseFloat(offer.combo_price) : 0;
+
+                return (
+                  <div key={offer.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+                    <div className="bg-gradient-to-r from-brand-500 to-orange-500 px-4 py-3 flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-white text-sm">{offer.name}</p>
+                        {offer.description && <p className="text-xs text-white/80 mt-0.5">{offer.description}</p>}
+                      </div>
+                      <div className="text-right">
+                        <p className="font-black text-white text-xl leading-none">₹{parseFloat(offer.combo_price).toFixed(0)}</p>
+                        {savings > 0 && (
+                          <p className="text-[11px] text-white/80 mt-0.5">Save ₹{savings.toFixed(0)}</p>
+                        )}
+                      </div>
+                    </div>
+                    {resolvedItems.length > 0 && (
+                      <div className="px-4 py-3 space-y-2">
+                        {resolvedItems.map((item) => (
+                          <div key={item.id} className="flex items-center gap-2.5 text-sm text-gray-700">
+                            <FoodDot isVeg={item.is_veg} />
+                            <span className="flex-1 font-medium">{item.name}</span>
+                            {item.comboQty > 1 && <span className="text-gray-400 text-xs">×{item.comboQty}</span>}
+                            {savings > 0 && (
+                              <span className="text-gray-400 text-xs line-through">₹{(parseFloat(item.price) * item.comboQty).toFixed(0)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="px-4 pb-4">
                       <button
                         onClick={() => {
                           resolvedItems.forEach((item) => {
@@ -507,73 +491,69 @@ export default function MenuPage() {
                           });
                         }}
                         disabled={resolvedItems.length === 0}
-                        className="w-full py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-sm font-bold transition-colors disabled:opacity-40"
+                        className="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-sm font-bold transition-colors disabled:opacity-40"
                       >
                         Add Combo to Cart
                       </button>
                     </div>
-                  );
-                })}
-              </div>
-              <div className="h-28" />
-            </>
-          ) : (
-            <>
-              {/* Section label */}
-              <div className="px-3 py-2 border-b border-gray-50">
-                {isSearching ? (
-                  <p className="text-xs text-gray-500">
-                    <span className="font-semibold text-gray-700">{displayItems.length}</span>
-                    {' '}result{displayItems.length !== 1 ? 's' : ''} for "
-                    <span className="text-brand-600">{search}</span>"
-                  </p>
-                ) : (
-                  <p className="text-xs font-bold text-gray-800">
-                    {selectedCat?.name}
-                    <span className="text-gray-400 font-normal ml-1.5">
-                      {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
-                    </span>
-                  </p>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="h-28" />
+          </>
+        ) : (
+          <>
+            {/* Section heading */}
+            <div className="px-4 py-3">
+              {isSearching ? (
+                <p className="text-xs text-gray-500">
+                  <span className="font-semibold text-gray-800">{displayItems.length}</span>
+                  {' '}result{displayItems.length !== 1 ? 's' : ''} for "
+                  <span className="text-brand-600">{search}</span>"
+                </p>
+              ) : (
+                <p className="text-sm font-bold text-gray-800">
+                  {selectedCat?.name}
+                  <span className="text-gray-400 font-normal ml-1.5 text-xs">
+                    {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
+                  </span>
+                </p>
+              )}
+            </div>
+
+            {/* Items grid */}
+            {displayItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6">
+                <p className="text-sm text-center font-medium text-gray-400">
+                  {isSearching
+                    ? `No dishes found for "${search}"`
+                    : `No items available${foodFilter !== 'all' ? ' for selected filter' : ''}`}
+                </p>
+                {isSearching && (
+                  <button onClick={() => setSearch('')} className="mt-3 text-xs text-brand-600 font-semibold hover:underline">
+                    Clear search
+                  </button>
                 )}
               </div>
-
-              {/* Items list */}
-              {displayItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-gray-400 px-6">
-                  <p className="text-4xl mb-3">{isSearching ? '🔍' : '🍽️'}</p>
-                  <p className="text-sm text-center font-medium text-gray-500">
-                    {isSearching
-                      ? `No dishes found for "${search}"`
-                      : `No items available${foodFilter !== 'all' ? ` for selected filter` : ''}`}
-                  </p>
-                  {isSearching && (
-                    <button
-                      onClick={() => setSearch('')}
-                      className="mt-3 text-xs text-brand-600 font-semibold hover:underline"
-                    >
-                      Clear search
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {displayItems.map((item) => (
-                    <MenuItemCard
-                      key={item.id}
-                      item={item}
-                      qty={getItemQty(item.id)}
-                      categoryLabel={isSearching ? item._catName : null}
-                      onAdd={() => addItem(item)}
-                      onUpdateQty={(qty) => updateQty(item.id, qty)}
-                    />
-                  ))}
-                </div>
-              )}
-              <div className="h-28" />
-            </>
-          )}
-        </main>
-      </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 px-3 pb-3">
+                {displayItems.map((item) => (
+                  <MenuItemCard
+                    key={item.id}
+                    item={item}
+                    qty={getItemQty(item.id)}
+                    categoryLabel={isSearching ? item._catName : null}
+                    onAdd={() => addItem(item)}
+                    onUpdateQty={(qty) => updateQty(item.id, qty)}
+                  />
+                ))}
+              </div>
+            )}
+            <div className="h-28" />
+          </>
+        )}
+      </main>
 
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
@@ -607,48 +587,61 @@ export default function MenuPage() {
 
 function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty }) {
   return (
-    <div className={`flex gap-3 px-3 py-3.5 transition-colors ${qty > 0 ? 'bg-brand-50/50' : ''}`}>
-      {/* Text content */}
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* Category label in search mode */}
+    <div className={`bg-white rounded-2xl overflow-hidden flex flex-col shadow-sm border transition-all ${
+      qty > 0 ? 'border-brand-300 shadow-brand-100' : 'border-gray-100'
+    }`}>
+      {/* Image */}
+      <div className="relative aspect-square bg-gray-100 overflow-hidden">
+        {item.image_url ? (
+          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gray-100">
+            <span className="text-4xl opacity-30">🍽️</span>
+          </div>
+        )}
+        {/* Veg / non-veg indicator */}
+        <span className="absolute top-2 left-2 bg-white rounded-sm p-0.5 shadow-sm">
+          <FoodDot isVeg={item.is_veg} />
+        </span>
+        {/* Category badge in search mode */}
         {categoryLabel && (
-          <span className="text-[10px] text-brand-600 font-bold uppercase tracking-wide mb-1">
+          <span className="absolute top-2 right-2 bg-brand-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
             {categoryLabel}
           </span>
         )}
+        {/* Qty badge */}
+        {qty > 0 && (
+          <span className="absolute bottom-2 right-2 bg-brand-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow">
+            {qty}
+          </span>
+        )}
+      </div>
 
-        {/* Veg/Non-veg dot + name */}
-        <div className="flex items-start gap-1.5">
-          <FoodDot isVeg={item.is_veg} />
-          <h4 className="font-semibold text-gray-900 text-sm leading-snug">{item.name}</h4>
-        </div>
-
+      {/* Info */}
+      <div className="p-2.5 flex flex-col flex-1">
+        <h4 className="font-semibold text-gray-900 text-xs leading-snug line-clamp-2">{item.name}</h4>
         {item.description && (
-          <p className="text-xs text-gray-400 mt-1 line-clamp-2 leading-relaxed pl-5">
-            {item.description}
-          </p>
+          <p className="text-[10px] text-gray-400 mt-0.5 line-clamp-1 leading-relaxed">{item.description}</p>
         )}
 
-        {/* Dietary / allergen tags */}
+        {/* Tags row */}
         {item.tags && item.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-1.5 pl-5">
-            {item.tags.map((tag) => (
-              <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium">
-                {tag === 'vegan' ? '🌱' : tag === 'gluten-free' ? '🌾' : tag === 'dairy-free' ? '🥛' :
-                 tag === 'egg-free' ? '🥚' : tag === 'nuts' ? '🥜' : tag === 'spicy' ? '🌶️' :
-                 tag === 'sugar-free' ? '🍬' : ''}
-                {' '}{tag}
+          <div className="flex flex-wrap gap-1 mt-1">
+            {item.tags.slice(0, 2).map((tag) => (
+              <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium capitalize">
+                {tag}
               </span>
             ))}
           </div>
         )}
 
-        <div className="flex items-center justify-between mt-2.5 pl-5">
-          <span className="font-bold text-gray-900">₹{parseFloat(item.price).toFixed(2)}</span>
+        {/* Price + Add */}
+        <div className="flex items-center justify-between mt-auto pt-2">
+          <span className="font-bold text-gray-900 text-sm">₹{parseFloat(item.price).toFixed(0)}</span>
           {qty === 0 ? (
             <button
               onClick={onAdd}
-              className="text-xs font-bold px-4 py-1.5 rounded-lg border-2 border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 transition-colors"
+              className="text-xs font-bold px-3 py-1 rounded-lg border-2 border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 transition-colors"
             >
               ADD
             </button>
@@ -661,17 +654,6 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty }) {
           )}
         </div>
       </div>
-
-      {/* Item image */}
-      {item.image_url && (
-        <div className="flex-shrink-0 self-start">
-          <img
-            src={item.image_url}
-            alt={item.name}
-            className="w-24 h-24 rounded-xl object-cover"
-          />
-        </div>
-      )}
     </div>
   );
 }
