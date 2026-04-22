@@ -1,6 +1,19 @@
-import { createContext, useContext, useReducer, useCallback, useState } from 'react';
+import { createContext, useContext, useReducer, useCallback, useState, useEffect } from 'react';
 
 const CartContext = createContext(null);
+
+const STORAGE_KEY = 'dv_cart';
+
+function loadFromStorage() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return { items: [] };
+    const parsed = JSON.parse(raw);
+    return { items: Array.isArray(parsed.items) ? parsed.items : [] };
+  } catch {
+    return { items: [] };
+  }
+}
 
 function cartReducer(state, action) {
   switch (action.type) {
@@ -37,15 +50,30 @@ function cartReducer(state, action) {
 }
 
 export function CartProvider({ children }) {
-  const [state, dispatch] = useReducer(cartReducer, { items: [] });
-  const [cafeCurrency, setCafeCurrency] = useState('INR');
+  const [state, dispatch] = useReducer(cartReducer, undefined, loadFromStorage);
+  const [cafeCurrency, setCafeCurrency] = useState(() => {
+    try { return sessionStorage.getItem('dv_cart_currency') || 'INR'; } catch { return 'INR'; }
+  });
 
-  const addItem = useCallback((item) => dispatch({ type: 'ADD_ITEM', item }), []);
-  const removeItem = useCallback((id) => dispatch({ type: 'REMOVE_ITEM', id }), []);
-  const updateQty = useCallback((id, qty) => dispatch({ type: 'UPDATE_QTY', id, qty }), []);
-  const clearCart = useCallback(() => dispatch({ type: 'CLEAR' }), []);
+  // Persist cart items to sessionStorage on every change
+  useEffect(() => {
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ items: state.items })); } catch { /* storage full */ }
+  }, [state.items]);
 
-  const total = state.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  // Persist currency
+  useEffect(() => {
+    try { sessionStorage.setItem('dv_cart_currency', cafeCurrency); } catch { /* storage full */ }
+  }, [cafeCurrency]);
+
+  const addItem    = useCallback((item) => dispatch({ type: 'ADD_ITEM', item }), []);
+  const removeItem = useCallback((id)   => dispatch({ type: 'REMOVE_ITEM', id }), []);
+  const updateQty  = useCallback((id, qty) => dispatch({ type: 'UPDATE_QTY', id, qty }), []);
+  const clearCart  = useCallback(() => {
+    dispatch({ type: 'CLEAR' });
+    try { sessionStorage.removeItem(STORAGE_KEY); sessionStorage.removeItem('dv_cart_currency'); } catch { /* ignore */ }
+  }, []);
+
+  const total     = state.items.reduce((sum, i) => sum + i.price * i.quantity, 0);
   const itemCount = state.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
