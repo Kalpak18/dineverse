@@ -1,46 +1,53 @@
-/**
- * ScanPage — customer scans a café QR code to enter the ordering flow.
- * The QR code contains a URL like:
- *   https://dine-verse.com/cafe/<slug>?table=3
- * We extract the slug and navigate to /cafe/:slug with the table param.
- */
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import QRScanner from '../../components/QRScanner';
 import toast from 'react-hot-toast';
 
+const DINEVERSE_HOSTS = ['dine-verse.com', 'www.dine-verse.com', 'dineverse.vercel.app'];
+
 function extractCafeRoute(rawText) {
   try {
-    // Try parsing as a full URL
     const url = new URL(rawText.startsWith('http') ? rawText : `https://${rawText}`);
     const match = url.pathname.match(/\/cafe\/([^/?#]+)/);
     if (match) {
-      const slug   = match[1];
-      const table  = url.searchParams.get('table') || '';
+      const slug  = match[1];
+      const table = url.searchParams.get('table') || '';
       return `/cafe/${slug}${table ? `?table=${encodeURIComponent(table)}` : ''}`;
     }
   } catch { /* not a URL */ }
-
-  // Plain slug?
-  if (/^[a-z0-9-]+$/i.test(rawText.trim())) {
-    return `/cafe/${rawText.trim()}`;
-  }
   return null;
+}
+
+function isDineVerse(rawText) {
+  try {
+    const url = new URL(rawText.startsWith('http') ? rawText : `https://${rawText}`);
+    return DINEVERSE_HOSTS.includes(url.hostname) || url.hostname === window.location.hostname;
+  } catch { return false; }
+}
+
+function isUrl(text) {
+  try { new URL(text.startsWith('http') ? text : `https://${text}`); return true; } catch { return false; }
 }
 
 export default function ScanPage() {
   const navigate  = useNavigate();
   const [active, setActive] = useState(false);
+  const [scanned, setScanned] = useState(null); // { text, isLink } for non-DineVerse results
 
   const handleScan = useCallback((text) => {
     setActive(false);
-    const route = extractCafeRoute(text);
-    if (route) {
+    const cafeRoute = extractCafeRoute(text);
+    if (cafeRoute && isDineVerse(text)) {
       toast.success('Café found!', { duration: 1500 });
-      navigate(route);
-    } else {
-      toast.error('QR code not recognised — is this a DineVerse café?');
+      navigate(cafeRoute);
+      return;
     }
+    if (isUrl(text)) {
+      window.location.href = text.startsWith('http') ? text : `https://${text}`;
+      return;
+    }
+    // Plain text — show it with copy option
+    setScanned(text);
   }, [navigate]);
 
   const handleClose = useCallback(() => setActive(false), []);
@@ -49,11 +56,35 @@ export default function ScanPage() {
     return <QRScanner onScan={handleScan} onClose={handleClose} />;
   }
 
+  if (scanned) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col items-center justify-center px-6 py-12">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
+          <p className="text-3xl mb-3">✅</p>
+          <p className="text-base font-semibold text-gray-900 mb-2">QR Code Scanned</p>
+          <p className="text-sm text-gray-500 mb-5 break-all">{scanned}</p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => { navigator.clipboard?.writeText(scanned); toast.success('Copied!'); }}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-300 text-sm font-medium text-gray-700"
+            >
+              Copy Text
+            </button>
+            <button
+              onClick={() => { setScanned(null); setActive(true); }}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-brand-500 text-white text-sm font-semibold"
+            >
+              Scan Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex flex-col items-center justify-center px-6 py-12">
-      {/* Card */}
       <div className="bg-white rounded-3xl shadow-xl p-8 max-w-sm w-full text-center">
-        {/* Icon */}
         <div className="w-20 h-20 rounded-2xl bg-brand-50 flex items-center justify-center mx-auto mb-5 text-brand-500">
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -69,9 +100,9 @@ export default function ScanPage() {
             <rect x="16" y="16" width="2" height="2" rx="0.5" fill="currentColor" stroke="none" />
           </svg>
         </div>
-        <h1 className="text-2xl font-extrabold text-gray-900 mb-2">Scan to Order</h1>
+        <h1 className="text-2xl font-extrabold text-gray-900 mb-2">QR Scanner</h1>
         <p className="text-gray-500 text-sm mb-8 leading-relaxed">
-          Point your camera at the QR code on your table or café entrance to start ordering instantly.
+          Scan any QR code — opens links instantly, or orders from a DineVerse café table.
         </p>
 
         <button
@@ -86,11 +117,6 @@ export default function ScanPage() {
           <ManualEntry onSubmit={handleScan} />
         </div>
       </div>
-
-      {/* Tip */}
-      <p className="mt-6 text-xs text-gray-400 text-center max-w-xs">
-        Make sure your browser has permission to use the camera. QR codes are available at café tables and entrances.
-      </p>
     </div>
   );
 }
