@@ -21,18 +21,34 @@ const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId 
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
-// ─── Send OTP (registration — email via Brevo SMTP) ──────────
+// ─── Send OTP (registration — email via Brevo HTTP API) ──────
 exports.sendOtp = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
 
+  // Block sending OTP to an already-active account (avoid confusion)
+  const active = await db.query(
+    'SELECT id FROM cafes WHERE email = $1 AND is_active = true',
+    [email.trim().toLowerCase()]
+  );
+  if (active.rows.length > 0) {
+    return fail(res, 'An account with this email already exists. Try logging in instead.', 409);
+  }
+
+  const otp = await createOtp(email, 'register');
+
+  // Dev fallback: if BREVO_API_KEY is not configured, log OTP to server console
+  if (!process.env.BREVO_API_KEY) {
+    logger.warn('⚠  BREVO_API_KEY not set — OTP for %s: %s (dev only)', email, otp);
+    return ok(res, { dev: true }, 'DEV: OTP printed to server console (BREVO_API_KEY not set)');
+  }
+
   try {
-    const otp = await createOtp(email, 'register');
     await sendOtpEmail(email, otp);
     ok(res, {}, 'Verification code sent to your email');
   } catch (error) {
-    logger.error('OTP email error: %s', error.message);
-    return fail(res, 'Failed to send verification email. Please try again later.');
+    logger.error('OTP email error for %s: %s', email, error.message);
+    return fail(res, 'Failed to send verification email — please check your email address and try again.');
   }
 });
 
@@ -60,11 +76,13 @@ exports.register = asyncHandler(async (req, res) => {
   const otpCheck = await verifyOtp(email, otp, 'register');
   if (!otpCheck.valid) return fail(res, otpCheck.reason);
 
+  // Only block active accounts — deactivated cafes free up email/slug for re-registration
   const existing = await db.query(
-    'SELECT id FROM cafes WHERE slug = $1 OR email = $2',
+    'SELECT id, is_active FROM cafes WHERE slug = $1 OR email = $2',
     [slug, email]
   );
-  if (existing.rows.length > 0) return fail(res, 'Slug or email already in use', 409);
+  const activeConflict = existing.rows.filter((r) => r.is_active !== false);
+  if (activeConflict.length > 0) return fail(res, 'Slug or email already in use', 409);
 
   const password_hash = await bcrypt.hash(password, 12);
   // Check if migration 016 (address_line2, state, pincode) has been applied
