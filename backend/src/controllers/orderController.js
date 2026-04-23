@@ -118,7 +118,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
               COALESCE(delivery_fee_per_km, 0)    AS delivery_fee_per_km,
               COALESCE(delivery_min_order, 0)     AS delivery_min_order,
               COALESCE(delivery_est_mins, 30)     AS delivery_est_mins
-       FROM cafes WHERE slug = $1 AND is_active = true`,
+       FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true`,
       [slug]
     );
     if (cafeResult.rows.length === 0) {

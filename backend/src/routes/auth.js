@@ -4,6 +4,8 @@ const requireOwner = require('../middleware/requireOwner');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimiter');
 const {
   sendOtp, preVerifyEmail,
+  validateCreateAccount, createAccount,
+  validateCompleteSetup, completeSetup,
   validateRegister, register,
   validateLogin, login,
   checkSlug, getMe, updateProfile, deleteCafe,
@@ -14,6 +16,8 @@ const {
 
 router.post('/send-otp', otpLimiter, sendOtp);
 router.post('/pre-verify-email', authLimiter, preVerifyEmail);
+router.post('/create-account', authLimiter, validateCreateAccount, createAccount);
+router.post('/complete-setup', authenticate, requireOwner, authLimiter, validateCompleteSetup, completeSetup);
 router.get('/check-slug', checkSlug);
 router.post('/register', authLimiter, validateRegister, register);
 router.post('/login', authLimiter, validateLogin, login);

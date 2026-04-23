@@ -15,10 +15,18 @@ import './index.css';
 // so all open tabs switch to the new version automatically.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
+    const hadController = Boolean(navigator.serviceWorker.controller);
+    let hasReloadedForUpdate = false;
+
     try {
       await navigator.serviceWorker.register('/sw.js', { scope: '/' });
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        window.location.reload();
+        // Skip the first takeover on fresh install. Reload only when an existing
+        // service worker is being replaced, otherwise the first route click can
+        // be interrupted and the user gets bounced back to the landing page.
+        if (!hadController || hasReloadedForUpdate) return;
+        hasReloadedForUpdate = true;
+        window.location.replace(window.location.href);
       });
     } catch { /* SW not supported or blocked */ }
   });

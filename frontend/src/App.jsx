@@ -75,6 +75,7 @@ function ProtectedRoute({ children }) {
   // Show a spinner instead of redirecting so the batched state update can settle.
   if (!cafe && localStorage.getItem('dineverse_token')) return <LoadingSpinner />;
   if (!cafe) return <Navigate to="/owner/login" replace />;
+  if (cafe.setup_completed === false) return <Navigate to="/owner/register" replace />;
   return children;
 }
 
@@ -106,6 +107,16 @@ function StaffAwareIndex() {
   return <Navigate to="dashboard" replace />;
 }
 
+function OwnerAuthPage({ mode }) {
+  const { cafe, loading } = useAuth();
+  if (loading) return <LoadingSpinner />;
+  if (cafe?.setup_completed === false) {
+    return mode === 'register' ? <RegisterPage /> : <Navigate to="/owner/register" replace />;
+  }
+  if (cafe) return <Navigate to="/owner/dashboard" replace />;
+  return mode === 'register' ? <RegisterPage /> : <LoginPage />;
+}
+
 export default function App() {
   return (
     <>
@@ -135,8 +146,8 @@ export default function App() {
       <Route path="/restaurants/:city/:slug" element={<CitySlugRedirect />} />
 
       {/* Owner auth */}
-      <Route path="/owner/login" element={<LoginPage />} />
-      <Route path="/owner/register" element={<RegisterPage />} />
+      <Route path="/owner/login" element={<OwnerAuthPage mode="login" />} />
+      <Route path="/owner/register" element={<OwnerAuthPage mode="register" />} />
       <Route path="/owner/forgot-password" element={<ForgotPasswordPage />} />
 
       {/* Owner dashboard (protected — also used by staff) */}

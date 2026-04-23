@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginCafe, registerCafe, getMe } from '../services/api';
+import { loginCafe, registerCafe, createOwnerAccount, completeCafeSetup, getMe } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -65,6 +65,29 @@ export function AuthProvider({ children }) {
     return data.cafe;
   };
 
+  const createAccount = async ({ email, password, emailVerifiedToken }) => {
+    const { data } = await createOwnerAccount({ email, password, emailVerifiedToken });
+    localStorage.setItem('dineverse_token', data.token);
+    localStorage.setItem('dineverse_role', data.role || 'OWNER');
+    setCafe(data.cafe);
+    setRole(data.role || 'OWNER');
+    setStaffRole(null);
+    setStaffInfo(null);
+    setLoading(false);
+    return data.cafe;
+  };
+
+  const completeSetup = async (formData) => {
+    const { data } = await completeCafeSetup(formData);
+    localStorage.setItem('dineverse_token', data.token);
+    localStorage.setItem('dineverse_role', data.role || 'OWNER');
+    setCafe(data.cafe);
+    setRole(data.role || 'OWNER');
+    setStaffRole(null);
+    setStaffInfo(null);
+    return data.cafe;
+  };
+
   const register = async (formData) => {
     const { data } = await registerCafe(formData);
     localStorage.setItem('dineverse_token', data.token);
@@ -101,7 +124,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ cafe, role, staffRole, staffInfo, loading, login, register, logout, updateCafe, refreshCafe }}>
+    <AuthContext.Provider value={{ cafe, role, staffRole, staffInfo, loading, login, createAccount, completeSetup, register, logout, updateCafe, refreshCafe }}>
       {children}
     </AuthContext.Provider>
   );

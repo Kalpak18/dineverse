@@ -115,8 +115,9 @@ const DRAFT_KEY = 'dv_register_draft';
 function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { cafe, createAccount, completeSetup } = useAuth();
   const navigate = useNavigate();
+  const accountCreated = cafe?.setup_completed === false;
 
   // Step 1: email + password + OTP  |  Step 2: business + location
   const [step, setStep] = useState(1);
@@ -135,6 +136,8 @@ export default function RegisterPage() {
     address: '', address_line2: '', city: '', state: '', pincode: '', country: '',
     business_type: 'restaurant',
     currency: 'INR',
+    gst_number: '',
+    gst_rate: 5,
   });
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [slugStatus, setSlugStatus] = useState('idle');
@@ -163,6 +166,29 @@ export default function RegisterPage() {
       if (d.emailVerifiedToken && d.verifiedEmail && d.step === 2) setStep(2);
     } catch { /* ignore corrupt data */ }
   }, []);
+
+  useEffect(() => {
+    if (!cafe || cafe.setup_completed !== false) return;
+    setStep(2);
+    setVerifiedEmail(cafe.email || '');
+    setForm((prev) => ({
+      ...prev,
+      name: cafe.name === 'My Cafe' ? '' : (cafe.name || prev.name),
+      slug: cafe.slug?.startsWith('setup-') ? '' : (cafe.slug || prev.slug),
+      description: cafe.description || prev.description,
+      phone: cafe.phone || prev.phone,
+      address: cafe.address || prev.address,
+      address_line2: cafe.address_line2 || prev.address_line2,
+      city: cafe.city || prev.city,
+      state: cafe.state || prev.state,
+      pincode: cafe.pincode || prev.pincode,
+      country: cafe.country || prev.country,
+      business_type: cafe.business_type || prev.business_type,
+      currency: cafe.currency || prev.currency,
+      gst_number: cafe.gst_number || prev.gst_number,
+      gst_rate: cafe.gst_rate ?? prev.gst_rate,
+    }));
+  }, [cafe]);
 
   // ── Persist draft to localStorage on every change ────────────
   useEffect(() => {
@@ -321,19 +347,18 @@ export default function RegisterPage() {
     if (otp.length < 6)      { toast.error('Enter the 6-digit verification code'); return; }
     if (password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
 
-    // If we already have a valid token from a previous session, skip re-verification
-    if (emailVerifiedToken) {
-      setStep(2);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-
     setStep1Loading(true);
     try {
-      const res = await preVerifyEmail(verifiedEmail, otp);
-      const token = res.data.emailVerifiedToken;
+      const token = emailVerifiedToken || (await preVerifyEmail(verifiedEmail, otp)).data.emailVerifiedToken;
       setEmailVerifiedToken(token);
+      await createAccount({ email: verifiedEmail, password, emailVerifiedToken: token });
+      setPassword('');
+      setOtp('');
+      setOtpSent(false);
+      setEmailVerifiedToken('');
+      clearDraft();
       setStep(2);
+      toast.success('Account created. Now finish your cafe setup.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       const msg = getApiError(err);
@@ -363,27 +388,17 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await register({ ...form, email: verifiedEmail, password, emailVerifiedToken });
+      await completeSetup(form);
       registeredRef.current = true;
       clearDraft();
-      toast.success('Café registered successfully!');
+      toast.success('Cafe setup completed successfully!');
       navigate('/owner/dashboard');
     } catch (err) {
       const errors = err.response?.data?.errors;
       if (errors) {
         errors.forEach((e) => toast.error(e.msg));
       } else {
-        const msg = getApiError(err);
-        const code = err.response?.data?.errorCode;
-        toast.error(msg);
-        // If the verified token expired (>24h), send user back to Step 1 to re-verify
-        if (code === 'TOKEN_EXPIRED' || code === 'TOKEN_MISMATCH') {
-          setEmailVerifiedToken('');
-          setOtpSent(false);
-          setVerifiedEmail('');
-          setOtp('');
-          setStep(1);
-        }
+        toast.error(getApiError(err));
       }
     } finally {
       setLoading(false);
@@ -422,7 +437,7 @@ export default function RegisterPage() {
                 {step > s ? '✓' : s}
               </div>
               <span className={`text-xs font-medium ${step === s ? 'text-gray-800' : 'text-gray-400'}`}>
-                {s === 1 ? 'Verify Email' : 'Business Details'}
+                {s === 1 ? 'Create Account' : 'Cafe Details'}
               </span>
               {s < 2 && <div className={`w-8 h-px ${step > s ? 'bg-green-400' : 'bg-gray-200'}`} />}
             </div>
@@ -436,7 +451,7 @@ export default function RegisterPage() {
             <form id="reg-form-1" onSubmit={handleStep1Continue} className="space-y-5">
               <div>
                 <p className="text-sm font-semibold text-gray-700 mb-4">
-                  First, let's verify your email address.
+                  First, verify your email and create your owner account.
                 </p>
 
                 {/* Email field — locked after OTP sent */}
@@ -520,7 +535,7 @@ export default function RegisterPage() {
 
                 {!otpSent && (
                   <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                    Send a verification code to your email before continuing.
+                    Send a verification code to your email before creating your account.
                   </p>
                 )}
               </div>
@@ -531,12 +546,12 @@ export default function RegisterPage() {
                   disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
                   className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {step1Loading ? 'Verifying…' : 'Continue to Business Details →'}
+                  {step1Loading ? 'Creating account…' : 'Verify & Create Account →'}
                 </button>
               </div>
 
               <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
-                <span>🔒</span> Your data is private and never shared
+                <span>🔒</span> Your email is verified before the account is created
               </p>
 
               <p className="text-center text-sm text-gray-500">
@@ -621,6 +636,27 @@ export default function RegisterPage() {
                     <label className="label">Description</label>
                     <textarea className="input resize-none" rows={2} placeholder="A cozy place for great coffee..."
                       value={form.description} onChange={setField('description')} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">GST Number</label>
+                      <input
+                        className="input uppercase"
+                        placeholder="22AAAAA0000A1Z5"
+                        value={form.gst_number}
+                        onChange={setField('gst_number')}
+                      />
+                    </div>
+                    <div>
+                      <label className="label">Tax Rate</label>
+                      <select className="input" value={form.gst_rate} onChange={setField('gst_rate')}>
+                        <option value={0}>0%</option>
+                        <option value={5}>5%</option>
+                        <option value={12}>12%</option>
+                        <option value={18}>18%</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -712,7 +748,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setStep(1)}
-                  className="btn-secondary flex-shrink-0"
+                  className={accountCreated ? 'hidden' : 'btn-secondary flex-shrink-0'}
                 >
                   ← Back
                 </button>
@@ -721,7 +757,7 @@ export default function RegisterPage() {
                   disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
                   className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Verifying & creating account…' : 'Create Café Account'}
+                  {loading ? 'Saving cafe setup…' : 'Finish Cafe Setup'}
                 </button>
               </div>
 
@@ -745,7 +781,7 @@ export default function RegisterPage() {
           disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
           className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {step1Loading ? 'Verifying…' : 'Continue to Business Details →'}
+          {step1Loading ? 'Creating account…' : 'Verify & Create Account →'}
         </button>
       </div>
     )}
@@ -758,7 +794,7 @@ export default function RegisterPage() {
           <button
             type="button"
             onClick={() => setStep(1)}
-            className="btn-secondary flex-shrink-0"
+            className={accountCreated ? 'hidden' : 'btn-secondary flex-shrink-0'}
           >
             ← Back
           </button>
@@ -768,7 +804,7 @@ export default function RegisterPage() {
             disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
             className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? 'Verifying & creating account…' : 'Create Café Account'}
+            {loading ? 'Saving cafe setup…' : 'Finish Cafe Setup'}
           </button>
         </div>
       </div>

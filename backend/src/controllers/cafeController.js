@@ -20,7 +20,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
             COALESCE(currency, 'INR') AS currency,
             opening_hours,
             COALESCE(timezone, 'Asia/Kolkata') AS timezone
-     FROM cafes WHERE slug = $1 AND is_active = true`,
+     FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true`,
     [slug]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
@@ -31,7 +31,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
 // Public: explore cafés by city
 exports.exploreCafes = asyncHandler(async (req, res) => {
   const { city } = req.query;
-  let whereClause = `WHERE c.is_active = true AND c.plan_expiry_date > NOW()`;
+  let whereClause = `WHERE c.is_active = true AND c.setup_completed = true AND c.plan_expiry_date > NOW()`;
   const params = [];
   if (city && city.trim()) {
     params.push(`%${city.trim()}%`);
@@ -68,7 +68,7 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
                + sin(radians($1)) * sin(radians(c.latitude))
              )) AS distance_km
       FROM cafes c
-      WHERE c.is_active = true AND c.plan_expiry_date > NOW()
+      WHERE c.is_active = true AND c.setup_completed = true AND c.plan_expiry_date > NOW()
         AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL
     )
     SELECT * FROM dist WHERE distance_km <= $3 ORDER BY distance_km ASC LIMIT 100
@@ -81,7 +81,7 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
 exports.getAvailableTables = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const cafeResult = await db.query(
-    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true',
     [slug]
   );
   if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
@@ -109,7 +109,7 @@ exports.getAvailableTables = asyncHandler(async (req, res) => {
 exports.getCafeMenu = asyncHandler(async (req, res) => {
   const { slug } = req.params;
   const cafeResult = await db.query(
-    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true',
     [slug]
   );
   if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);

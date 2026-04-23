@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
@@ -20,6 +21,35 @@ const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId 
 };
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+const generateSetupSlug = () => `setup-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+
+function verifyEmailOwnership(email, emailVerifiedToken) {
+  try {
+    const decoded = jwt.verify(emailVerifiedToken, process.env.JWT_SECRET);
+    if (decoded.purpose !== 'email_verified' || decoded.email !== email) {
+      return { valid: false, reason: 'Email verification token is invalid or does not match', code: 'TOKEN_MISMATCH' };
+    }
+    return { valid: true };
+  } catch {
+    return { valid: false, reason: 'Email verification token is expired or invalid — please verify your email again', code: 'TOKEN_EXPIRED' };
+  }
+}
+
+function validateGstin(gstin) {
+  const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+  const VALID_STATE_CODES = new Set([
+    '01','02','03','04','05','06','07','08','09','10','11','12','13','14','15',
+    '16','17','18','19','20','21','22','23','24','25','26','27','28','29','30',
+    '31','32','33','34','35','36','37','38',
+  ]);
+  if (!gstin) return { valid: false, reason: 'GSTIN is empty' };
+  const g = gstin.toUpperCase().trim();
+  if (!GSTIN_REGEX.test(g)) return { valid: false, reason: 'GSTIN format is invalid' };
+  const stateCode = g.slice(0, 2);
+  if (!VALID_STATE_CODES.has(stateCode)) return { valid: false, reason: `Unknown state code: ${stateCode}` };
+  return { valid: true };
+}
 
 // ─── Send OTP (registration — email via Brevo HTTP API) ──────
 exports.sendOtp = asyncHandler(async (req, res) => {
@@ -90,6 +120,144 @@ exports.preVerifyEmail = asyncHandler(async (req, res) => {
     { expiresIn: '24h' }
   );
   ok(res, { emailVerifiedToken }, 'Email verified');
+});
+
+exports.validateCreateAccount = [
+  body('email').isEmail().withMessage('Valid email is required').customSanitizer(v => v.trim().toLowerCase()),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('emailVerifiedToken').trim().notEmpty().withMessage('Email verification token is required'),
+];
+
+exports.createAccount = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return validationFail(res, errors.array());
+
+  const { email, password, emailVerifiedToken } = req.body;
+  const verified = verifyEmailOwnership(email, emailVerifiedToken);
+  if (!verified.valid) return fail(res, verified.reason, 400, verified.code);
+
+  const existing = await db.query(
+    'SELECT id FROM cafes WHERE email = $1 AND is_active = true',
+    [email]
+  );
+  if (existing.rows.length > 0) {
+    return fail(res, 'An account with this email already exists. Try logging in instead.', 409, 'EMAIL_TAKEN');
+  }
+
+  const password_hash = await bcrypt.hash(password, 12);
+  const placeholderSlug = generateSetupSlug();
+  const result = await db.query(
+    `INSERT INTO cafes (
+       name, slug, email, password_hash,
+       plan_type, plan_start_date, plan_expiry_date, setup_completed
+     )
+     VALUES ($1, $2, $3, $4, 'free_trial', NOW(), NOW() + INTERVAL '1 month', false)
+     RETURNING id, name, slug, email, description,
+               address, address_line2, city, state, pincode, phone,
+               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+               pan_number, tax_inclusive, gst_verified, business_type, country,
+               COALESCE(currency, 'INR') AS currency,
+               plan_type, plan_start_date, plan_expiry_date, created_at, setup_completed`,
+    ['My Cafe', placeholderSlug, email, password_hash]
+  );
+
+  const cafe = result.rows[0];
+  const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+  logger.info('Owner account created: %s (%s)', cafe.email, cafe.id);
+  ok(res, { token, cafe, role: 'OWNER' }, 'Account created successfully', 201);
+});
+
+exports.validateCompleteSetup = [
+  body('name').trim().notEmpty().withMessage('Cafe name is required'),
+  body('slug')
+    .trim()
+    .notEmpty().withMessage('Slug is required')
+    .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers, and hyphens'),
+  body('phone').trim().notEmpty().withMessage('Phone number is required'),
+];
+
+exports.completeSetup = asyncHandler(async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return validationFail(res, errors.array());
+
+  const {
+    name, slug, description, address, address_line2, city, state, pincode, phone,
+    gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+    pan_number, tax_inclusive, business_type, country, currency = 'INR',
+  } = req.body;
+
+  const currentRes = await db.query(
+    'SELECT id, email, setup_completed FROM cafes WHERE id = $1 AND is_active = true',
+    [req.cafeId]
+  );
+  if (currentRes.rows.length === 0) return fail(res, 'Account not found', 404);
+
+  const conflict = await db.query(
+    'SELECT id, is_active FROM cafes WHERE slug = $1 AND id != $2',
+    [slug.trim(), req.cafeId]
+  );
+  const activeConflict = conflict.rows.filter((r) => r.is_active !== false);
+  if (activeConflict.length > 0) return fail(res, 'This slug is already taken', 409, 'SLUG_TAKEN');
+
+  let gstVerified = false;
+  if (gst_number && gst_number.trim()) {
+    gstVerified = validateGstin(gst_number).valid;
+  }
+
+  const result = await db.query(
+    `UPDATE cafes
+     SET name            = $1,
+         slug            = $2,
+         description     = $3,
+         address         = $4,
+         address_line2   = $5,
+         city            = $6,
+         state           = $7,
+         pincode         = $8,
+         phone           = $9,
+         gst_number      = $10,
+         gst_rate        = COALESCE($11, gst_rate),
+         fssai_number    = $12,
+         upi_id          = $13,
+         bill_prefix     = COALESCE($14, bill_prefix),
+         bill_footer     = $15,
+         pan_number      = $16,
+         tax_inclusive   = COALESCE($17, tax_inclusive),
+         gst_verified    = $18,
+         business_type   = COALESCE($19, business_type),
+         country         = COALESCE($20, country),
+         currency        = COALESCE($21, currency),
+         setup_completed = true
+     WHERE id = $22
+     RETURNING id, name, slug, email, description,
+               address, address_line2, city, state, pincode, phone,
+               logo_url, cover_image_url, name_style, latitude, longitude,
+               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+               pan_number, tax_inclusive, gst_verified, business_type, country,
+               COALESCE(currency, 'INR') AS currency,
+               plan_type, plan_start_date, plan_expiry_date, created_at, setup_completed`,
+    [
+      name.trim(), slug.trim(), description || null, address || null, address_line2 || null,
+      city || null, state || null, pincode || null, phone.trim(),
+      gst_number || null, gst_rate != null ? parseInt(gst_rate, 10) : null,
+      fssai_number || null, upi_id || null, bill_prefix || null, bill_footer || null,
+      pan_number || null, tax_inclusive != null ? Boolean(tax_inclusive) : null, gstVerified,
+      business_type || null, country || null, currency || null, req.cafeId,
+    ]
+  );
+
+  const existingTables = await db.query('SELECT id FROM cafe_tables WHERE cafe_id = $1 LIMIT 1', [req.cafeId]);
+  if (existingTables.rows.length === 0) {
+    await db.query(
+      'INSERT INTO cafe_tables (cafe_id, label) VALUES ($1, $2), ($1, $3)',
+      [req.cafeId, 'Table 1', 'Table 2']
+    ).catch(() => {});
+  }
+
+  const cafe = result.rows[0];
+  const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+  logger.info('Cafe setup completed: %s (%s)', cafe.name, cafe.slug);
+  ok(res, { token, cafe, role: 'OWNER' }, 'Cafe setup completed successfully');
 });
 
 // ─── Register ─────────────────────────────────────────────────
@@ -209,6 +377,7 @@ exports.login = asyncHandler(async (req, res) => {
     // 1. Check owner accounts — match by email OR phone
     const ownerResult = await db.query(
       `SELECT id, name, slug, email, password_hash, description, address, phone, logo_url,
+              COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(token_version, 1) AS token_version
        FROM cafes WHERE (email = $1 OR phone = $1) AND is_active = true`,
       [id]
@@ -286,6 +455,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
               pan_number, tax_inclusive, gst_verified, business_type, country,
+              COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
               opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
               plan_type, plan_start_date, plan_expiry_date, created_at,
@@ -305,6 +475,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               address, city, phone, logo_url, cover_image_url,
               name_style, latitude, longitude,
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
+              COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
               plan_type, plan_start_date, plan_expiry_date, created_at
        FROM cafes WHERE id = $1`,
@@ -333,22 +504,6 @@ exports.getMe = asyncHandler(async (req, res) => {
 // ─── Update Profile ───────────────────────────────────────────
 // ── GSTIN format validator (India) ────────────────────────────
 // Pattern: 2-digit state code + 10-char PAN + entity digit + Z + checksum
-const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
-const VALID_STATE_CODES = new Set([
-  '01','02','03','04','05','06','07','08','09','10','11','12','13','14','15',
-  '16','17','18','19','20','21','22','23','24','25','26','27','28','29','30',
-  '31','32','33','34','35','36','37','38',
-]);
-
-function validateGstin(gstin) {
-  if (!gstin) return { valid: false, reason: 'GSTIN is empty' };
-  const g = gstin.toUpperCase().trim();
-  if (!GSTIN_REGEX.test(g)) return { valid: false, reason: 'GSTIN format is invalid' };
-  const stateCode = g.slice(0, 2);
-  if (!VALID_STATE_CODES.has(stateCode)) return { valid: false, reason: `Unknown state code: ${stateCode}` };
-  return { valid: true };
-}
-
 exports.updateProfile = asyncHandler(async (req, res) => {
   const {
     name, description,
