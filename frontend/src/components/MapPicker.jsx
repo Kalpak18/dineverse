@@ -37,6 +37,26 @@ async function forwardGeocode(query) {
   }
 }
 
+const TILE_LAYERS = {
+  detailed: {
+    label: 'Detailed',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    options: {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      subdomains: 'abcd',
+      maxZoom: 20,
+    },
+  },
+  satellite: {
+    label: 'Satellite',
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    options: {
+      attribution: 'Tiles &copy; Esri',
+      maxZoom: 19,
+    },
+  },
+};
+
 /**
  * MapPicker — click/drag to pin location, search by address.
  *
@@ -49,6 +69,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const containerRef = useRef(null);
+  const tileLayerRef = useRef(null);
   const lastAutoAddressRef = useRef('');
   const manuallyPinnedRef = useRef(false);
   const [search, setSearch] = useState('');
@@ -57,6 +78,8 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   const [expanded, setExpanded] = useState(false);
   const [autoLocating, setAutoLocating] = useState(false);
   const [autoLocationLabel, setAutoLocationLabel] = useState('');
+  const [mapStyle, setMapStyle] = useState('detailed');
+  const [locatingUser, setLocatingUser] = useState(false);
 
   // Default to India center if no coords
   const initLat = lat || 20.5937;
@@ -67,9 +90,9 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     if (!expanded || mapRef.current) return;
 
     const map = L.map(containerRef.current, { zoomControl: true }).setView([initLat, initLng], initZoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-    }).addTo(map);
+    const style = TILE_LAYERS[mapStyle];
+    const tileLayer = L.tileLayer(style.url, style.options).addTo(map);
+    tileLayerRef.current = tileLayer;
 
     const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
     markerRef.current = marker;
@@ -91,6 +114,21 @@ export default function MapPicker({ lat, lng, address, onChange }) {
       markerRef.current = null;
     };
   }, [expanded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!expanded || !mapRef.current) return;
+    const map = mapRef.current;
+    const currentLayer = tileLayerRef.current;
+    if (currentLayer) map.removeLayer(currentLayer);
+    const style = TILE_LAYERS[mapStyle];
+    tileLayerRef.current = L.tileLayer(style.url, style.options).addTo(map);
+  }, [expanded, mapStyle]);
+
+  useEffect(() => {
+    if (!expanded || !mapRef.current) return;
+    const t = setTimeout(() => mapRef.current?.invalidateSize(), 150);
+    return () => clearTimeout(t);
+  }, [expanded, suggestions.length]);
 
   // Sync marker when lat/lng prop changes externally
   useEffect(() => {
@@ -144,6 +182,34 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     setSearching(false);
   };
 
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      setAutoLocationLabel('Location access is not available on this device');
+      return;
+    }
+    setLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const newLat = position.coords.latitude;
+        const newLng = position.coords.longitude;
+        manuallyPinnedRef.current = true;
+        setLocatingUser(false);
+        if (mapRef.current && markerRef.current) {
+          markerRef.current.setLatLng([newLat, newLng]);
+          mapRef.current.flyTo([newLat, newLng], 18, { duration: 0.8 });
+        }
+        const resolvedAddress = await reverseGeocode(newLat, newLng);
+        onChange({ lat: newLat, lng: newLng, address: resolvedAddress || address });
+        setAutoLocationLabel('Pinned to your current location');
+      },
+      () => {
+        setLocatingUser(false);
+        setAutoLocationLabel('Could not access your current location');
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }
+    );
+  };
+
   const pickSuggestion = (s) => {
     manuallyPinnedRef.current = true;
     const newLat = parseFloat(s.lat);
@@ -188,27 +254,56 @@ export default function MapPicker({ lat, lng, address, onChange }) {
       {expanded && (
         <div className="border border-gray-200 rounded-xl overflow-hidden space-y-0">
           {/* Search bar */}
-          <div className="flex gap-2 p-2 bg-gray-50 border-b border-gray-200 relative">
-            <input
-              type="text"
-              className="input flex-1 text-sm py-1.5"
-              placeholder="Search address or landmark..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSearch())}
-            />
-            <button
-              type="button"
-              onClick={handleSearch}
-              disabled={searching}
-              className="btn-secondary text-sm px-3 py-1.5"
-            >
-              {searching ? '…' : 'Search'}
-            </button>
+          <div className="p-2 sm:p-3 bg-gray-50 border-b border-gray-200 relative space-y-2">
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                className="input flex-1 text-sm py-2"
+                placeholder="Search address, area, or landmark..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleSearch())}
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSearch}
+                  disabled={searching}
+                  className="btn-secondary text-sm px-3 py-2 whitespace-nowrap"
+                >
+                  {searching ? 'Searching...' : 'Search'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUseMyLocation}
+                  disabled={locatingUser}
+                  className="btn-secondary text-sm px-3 py-2 whitespace-nowrap"
+                >
+                  {locatingUser ? 'Locating...' : 'My location'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(TILE_LAYERS).map(([key, layer]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setMapStyle(key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    mapStyle === key
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-300'
+                  }`}
+                >
+                  {layer.label}
+                </button>
+              ))}
+            </div>
 
             {/* Suggestions dropdown */}
             {suggestions.length > 0 && (
-              <div className="absolute top-full left-2 right-2 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-[9999] max-h-48 overflow-y-auto">
+              <div className="absolute top-full left-2 right-2 sm:left-3 sm:right-3 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-[9999] max-h-56 overflow-y-auto">
                 {suggestions.map((s, i) => (
                   <button
                     key={i}
@@ -224,11 +319,20 @@ export default function MapPicker({ lat, lng, address, onChange }) {
           </div>
 
           {/* Map container */}
-          <div ref={containerRef} style={{ height: '280px', width: '100%', zIndex: 0 }} />
+          <div
+            ref={containerRef}
+            style={{ height: 'clamp(320px, 52vh, 520px)', width: '100%', zIndex: 0 }}
+            className="touch-pan-x touch-pan-y"
+          />
 
-          <p className="text-xs text-gray-400 px-3 py-2 bg-gray-50">
-            Click on the map or drag the pin to set your exact location.
-          </p>
+          <div className="px-3 py-2 bg-gray-50 space-y-1">
+            <p className="text-xs text-gray-500">
+              Tap to place the pin, drag it for precision, or switch to satellite for an easier building-level view.
+            </p>
+            <p className="text-xs text-gray-400">
+              Detailed mode is best for roads and labels. Satellite is best when you want to match the real building.
+            </p>
+          </div>
         </div>
       )}
     </div>
