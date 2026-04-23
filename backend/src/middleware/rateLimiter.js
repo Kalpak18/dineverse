@@ -40,15 +40,16 @@ exports.authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// OTP sending: limit by target email so shared networks/proxies do not block
-// unrelated users, while still preventing repeated sends to the same inbox.
+// OTP sending: 5 sends per 5-minute window per email address.
+// Keyed by email (not IP) so shared NATs don't block unrelated users.
+// A separate per-email 60s cooldown is enforced in authController (otpStore.checkSendCooldown).
 exports.otpLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 3,
+  windowMs: 5 * 60 * 1000,
+  max: 5,
   store,
   keyGenerator: otpKeyGenerator,
   skipFailedRequests: true,
-  message: { success: false, message: 'Too many OTP requests. Please wait a few minutes before trying again.' },
+  message: { success: false, message: 'Too many OTP requests. Please wait a few minutes before trying again.', error: 'Too many OTP requests. Please wait a few minutes before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
 });

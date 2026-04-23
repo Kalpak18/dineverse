@@ -6,6 +6,8 @@ import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
 import toast from 'react-hot-toast';
 import PasswordInput from '../../components/PasswordInput';
 import PhoneInput from '../../components/PhoneInput';
+import OtpInput from '../../components/OtpInput';
+import { getApiError } from '../../utils/apiError';
 
 // ── Password strength indicator ───────────────────────────────
 function PasswordStrength({ password }) {
@@ -289,7 +291,13 @@ export default function RegisterPage() {
         toast.success('Verification code sent — check your inbox (and spam folder)');
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to send code');
+      // Sync cooldown from backend if it sent retryAfter
+      const retryAfter = err.response?.data?.retryAfter;
+      if (retryAfter) {
+        setResendCooldown(retryAfter);
+        if (!otpSent) { setVerifiedEmail(trimmed); setOtpSent(true); }
+      }
+      toast.error(getApiError(err));
     } finally {
       setOtpLoading(false);
     }
@@ -445,18 +453,14 @@ export default function RegisterPage() {
                   {/* OTP input — only visible after send */}
                   {otpSent && (
                     <div>
-                      <label className="label">Verification Code *</label>
-                      <input
-                        type="text" inputMode="numeric" maxLength={6}
-                        className="input tracking-widest text-center font-mono text-lg"
-                        placeholder="_ _ _ _ _ _"
+                      <label className="label text-center block mb-3">Enter verification code</label>
+                      <OtpInput
                         value={otp}
-                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        onChange={setOtp}
                         autoFocus
-                        required
                       />
-                      <div className="flex items-center justify-between mt-1">
-                        <p className="text-xs text-gray-400">6-digit code · expires in 10 min</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <p className="text-xs text-gray-400">6-digit code · expires in 5 min</p>
                         <button
                           type="button"
                           onClick={handleSendOtp}
@@ -493,11 +497,15 @@ export default function RegisterPage() {
 
               <button
                 type="submit"
-                disabled={!otpSent || !otp.trim() || password.length < 8}
+                disabled={!otpSent || otp.length < 6 || password.length < 8}
                 className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 Continue to Business Details →
               </button>
+
+              <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
+                <span>🔒</span> Your data is private and never shared
+              </p>
 
               <p className="text-center text-sm text-gray-500">
                 Already registered?{' '}
@@ -644,6 +652,13 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Trust signals */}
+              <div className="flex items-center justify-center gap-4 text-xs text-gray-400 py-1">
+                <span className="flex items-center gap-1">🔒 Secure &amp; encrypted</span>
+                <span className="flex items-center gap-1">🚫 No spam, ever</span>
+                <span className="flex items-center gap-1">⚡ Instant setup</span>
+              </div>
+
               {/* T&C */}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
@@ -674,7 +689,7 @@ export default function RegisterPage() {
                   disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
                   className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Creating account…' : 'Create Café Account'}
+                  {loading ? 'Verifying & creating account…' : 'Create Café Account'}
                 </button>
               </div>
 

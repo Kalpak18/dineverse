@@ -4,11 +4,28 @@
 
 const db = require('../config/database');
 
-const OTP_TTL_MINUTES = 10;
+const OTP_TTL_MINUTES = 5;
 
 function generate6Digit() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
+
+const SEND_COOLDOWN_SECONDS = 60;
+
+// Returns null if ok to send, or { retryAfter: number } if minimum gap not elapsed.
+exports.checkSendCooldown = async (email, purpose = 'register') => {
+  const key = `${purpose}:${email.toLowerCase()}`;
+  const result = await db.query(
+    `SELECT created_at FROM otp_codes WHERE key = $1`,
+    [key]
+  );
+  if (result.rows.length === 0) return null;
+  const secondsSince = (Date.now() - new Date(result.rows[0].created_at).getTime()) / 1000;
+  if (secondsSince < SEND_COOLDOWN_SECONDS) {
+    return { retryAfter: Math.ceil(SEND_COOLDOWN_SECONDS - secondsSince) };
+  }
+  return null;
+};
 
 // Upsert: replaces any existing OTP for this key (latest wins).
 // purpose: 'register' | 'reset' | 'admin_reset'

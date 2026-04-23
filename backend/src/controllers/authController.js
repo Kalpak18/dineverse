@@ -2,7 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { createOtp, verifyOtp } = require('../utils/otpStore');
+const { createOtp, verifyOtp, checkSendCooldown } = require('../utils/otpStore');
 const { sendOtpEmail, sendPasswordResetEmail } = require('../services/emailService');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
@@ -33,6 +33,17 @@ exports.sendOtp = asyncHandler(async (req, res) => {
   );
   if (active.rows.length > 0) {
     return fail(res, 'An account with this email already exists. Try logging in instead.', 409);
+  }
+
+  // Enforce 60s minimum gap between sends to the same email
+  const cooldown = await checkSendCooldown(email.trim().toLowerCase(), 'register');
+  if (cooldown) {
+    return res.status(429).json({
+      success: false,
+      message: `Please wait ${cooldown.retryAfter} seconds before requesting another code`,
+      error:   `Please wait ${cooldown.retryAfter} seconds before requesting another code`,
+      retryAfter: cooldown.retryAfter,
+    });
   }
 
   const otp = await createOtp(email, 'register');
