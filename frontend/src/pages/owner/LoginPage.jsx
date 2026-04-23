@@ -24,13 +24,14 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [registerDraft, setRegisterDraft] = useState(null); // { verifiedEmail, step }
 
-  // Check for an incomplete registration draft in sessionStorage
+  // Check for an incomplete registration draft in localStorage
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem('dv_register_draft');
+      const saved = localStorage.getItem('dv_register_draft');
       if (!saved) return;
       const d = JSON.parse(saved);
-      if (d.verifiedEmail && d.step === 2) {
+      // Only show the banner if email was fully pre-verified (token present)
+      if (d.emailVerifiedToken && d.verifiedEmail && d.step === 2) {
         setRegisterDraft({ verifiedEmail: d.verifiedEmail });
       }
     } catch { /* ignore */ }

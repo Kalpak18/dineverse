@@ -3,7 +3,7 @@ const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const { authLimiter, otpLimiter } = require('../middleware/rateLimiter');
 const {
-  sendOtp,
+  sendOtp, preVerifyEmail,
   validateRegister, register,
   validateLogin, login,
   checkSlug, getMe, updateProfile, deleteCafe,
@@ -13,6 +13,7 @@ const {
 } = require('../controllers/authController');
 
 router.post('/send-otp', otpLimiter, sendOtp);
+router.post('/pre-verify-email', authLimiter, preVerifyEmail);
 router.get('/check-slug', checkSlug);
 router.post('/register', authLimiter, validateRegister, register);
 router.post('/login', authLimiter, validateLogin, login);

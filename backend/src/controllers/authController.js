@@ -64,6 +64,34 @@ exports.sendOtp = asyncHandler(async (req, res) => {
   }
 });
 
+// ─── Pre-verify email — confirms OTP eagerly and returns a 24h token ──
+// Called when user clicks "Continue to Business Details".
+// Frontend stores the token in localStorage and sends it at register time.
+exports.preVerifyEmail = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
+  if (!otp)                           return fail(res, 'Verification code is required');
+
+  const otpCheck = await verifyOtp(email.trim().toLowerCase(), otp, 'register');
+  if (!otpCheck.valid) {
+    const codeMap = {
+      'No OTP sent to this email':                              'OTP_NOT_SENT',
+      'OTP expired — please request a new one':                 'OTP_EXPIRED',
+      'Incorrect verification code':                            'OTP_WRONG',
+      'Too many incorrect attempts — please request a new code':'OTP_MAX_ATTEMPTS',
+    };
+    return fail(res, otpCheck.reason, 400, codeMap[otpCheck.reason] || 'OTP_INVALID');
+  }
+
+  // Issue a short-lived signed token — proves email ownership without another OTP round-trip
+  const emailVerifiedToken = jwt.sign(
+    { email: email.trim().toLowerCase(), purpose: 'email_verified' },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+  ok(res, { emailVerifiedToken }, 'Email verified');
+});
+
 // ─── Register ─────────────────────────────────────────────────
 exports.validateRegister = [
   body('name').trim().notEmpty().withMessage('Café name is required'),
@@ -73,27 +101,40 @@ exports.validateRegister = [
     .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers, and hyphens'),
   body('email').isEmail().withMessage('Valid email is required').customSanitizer(v => v.trim().toLowerCase()),
   body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
-  body('otp').trim().notEmpty().withMessage('Email verification code is required'),
+  // otp is no longer required — emailVerifiedToken is the preferred path
 ];
 
 exports.register = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
-  const { name, slug, email, password, otp, description,
+  const { name, slug, email, password, otp, emailVerifiedToken, description,
           address, address_line2, city, state, pincode, phone,
           currency = 'INR' } = req.body;
 
-  // Verify OTP against email before touching the database
-  const otpCheck = await verifyOtp(email, otp, 'register');
-  if (!otpCheck.valid) {
-    const codeMap = {
-      'No OTP sent to this email':                       'OTP_NOT_SENT',
-      'OTP expired — please request a new one':          'OTP_EXPIRED',
-      'Incorrect verification code':                     'OTP_WRONG',
-      'Too many incorrect attempts — please request a new code': 'OTP_MAX_ATTEMPTS',
-    };
-    return fail(res, otpCheck.reason, 400, codeMap[otpCheck.reason] || 'OTP_INVALID');
+  // Verify email ownership via token (preferred) or raw OTP (fallback)
+  if (emailVerifiedToken) {
+    try {
+      const decoded = jwt.verify(emailVerifiedToken, process.env.JWT_SECRET);
+      if (decoded.purpose !== 'email_verified' || decoded.email !== email) {
+        return fail(res, 'Email verification token is invalid or does not match', 400, 'TOKEN_MISMATCH');
+      }
+    } catch {
+      return fail(res, 'Email verification token is expired or invalid — please verify your email again', 400, 'TOKEN_EXPIRED');
+    }
+  } else if (otp) {
+    const otpCheck = await verifyOtp(email, otp, 'register');
+    if (!otpCheck.valid) {
+      const codeMap = {
+        'No OTP sent to this email':                              'OTP_NOT_SENT',
+        'OTP expired — please request a new one':                 'OTP_EXPIRED',
+        'Incorrect verification code':                            'OTP_WRONG',
+        'Too many incorrect attempts — please request a new code':'OTP_MAX_ATTEMPTS',
+      };
+      return fail(res, otpCheck.reason, 400, codeMap[otpCheck.reason] || 'OTP_INVALID');
+    }
+  } else {
+    return fail(res, 'Email verification is required — please verify your email first', 400, 'OTP_NOT_SENT');
   }
 
   // Only block active accounts — deactivated cafes free up email/slug for re-registration

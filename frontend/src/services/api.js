@@ -33,6 +33,7 @@ api.interceptors.response.use(
 
 // ─── Auth ─────────────────────────────────────────────────────
 export const sendVerificationOtp = (email) => api.post('/auth/send-otp', { email });
+export const preVerifyEmail = (email, otp) => api.post('/auth/pre-verify-email', { email, otp });
 export const registerCafe = (data) => api.post('/auth/register', data);
 export const loginCafe = (data) => api.post('/auth/login', data); // data: { identifier, password }
 export const checkSlugAvailability = (slug) => api.get('/auth/check-slug', { params: { slug } });

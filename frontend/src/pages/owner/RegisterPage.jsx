@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import DineLogo from '../../components/DineLogo';
 import { useAuth } from '../../context/AuthContext';
-import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
+import { checkSlugAvailability, sendVerificationOtp, preVerifyEmail } from '../../services/api';
 import toast from 'react-hot-toast';
 import PasswordInput from '../../components/PasswordInput';
 import PhoneInput from '../../components/PhoneInput';
@@ -112,7 +112,7 @@ const COUNTRIES = [
 
 const DRAFT_KEY = 'dv_register_draft';
 
-function clearDraft() { sessionStorage.removeItem(DRAFT_KEY); }
+function clearDraft() { localStorage.removeItem(DRAFT_KEY); }
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -123,11 +123,12 @@ export default function RegisterPage() {
 
   const [email, setEmail]                 = useState('');
   const [password, setPassword]           = useState('');
-  const [otp, setOtp]                     = useState('');
-  const [otpSent, setOtpSent]             = useState(false);
-  const [verifiedEmail, setVerifiedEmail] = useState(''); // locked after OTP sent
-  const [otpLoading, setOtpLoading]       = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
+  const [otp, setOtp]                               = useState('');
+  const [otpSent, setOtpSent]                       = useState(false);
+  const [verifiedEmail, setVerifiedEmail]           = useState(''); // locked after OTP sent
+  const [emailVerifiedToken, setEmailVerifiedToken] = useState(''); // 24h token issued after OTP passes
+  const [otpLoading, setOtpLoading]                 = useState(false);
+  const [resendCooldown, setResendCooldown]         = useState(0);
 
   const [form, setForm] = useState({
     name: '', slug: '', description: '', phone: '',
@@ -145,28 +146,29 @@ export default function RegisterPage() {
   const registeredRef   = useRef(false); // set true after success so the draft effect doesn't re-write
   const pincodeAbort    = useRef(null);
 
-  // ── Restore draft from sessionStorage on mount ───────────────
+  // ── Restore draft from localStorage on mount ─────────────────
   useEffect(() => {
     try {
-      const saved = sessionStorage.getItem(DRAFT_KEY);
+      const saved = localStorage.getItem(DRAFT_KEY);
       if (!saved) return;
       const d = JSON.parse(saved);
-      if (d.email)         setEmail(d.email);
-      if (d.password)      setPassword(d.password);
-      if (d.otpSent)       setOtpSent(d.otpSent);
-      if (d.verifiedEmail) setVerifiedEmail(d.verifiedEmail);
-      if (d.form)          setForm((f) => ({ ...f, ...d.form }));
-      if (d.form?.slug)    autoSlugRef.current = d.form.slug;
-      // Only jump to step 2 if email was fully verified in last session
-      if (d.verifiedEmail && d.step === 2) setStep(2);
+      if (d.email)               setEmail(d.email);
+      if (d.password)            setPassword(d.password);
+      if (d.otpSent)             setOtpSent(d.otpSent);
+      if (d.verifiedEmail)       setVerifiedEmail(d.verifiedEmail);
+      if (d.emailVerifiedToken)  setEmailVerifiedToken(d.emailVerifiedToken);
+      if (d.form)                setForm((f) => ({ ...f, ...d.form }));
+      if (d.form?.slug)          autoSlugRef.current = d.form.slug;
+      // Jump to step 2 only if email was fully pre-verified (token present)
+      if (d.emailVerifiedToken && d.verifiedEmail && d.step === 2) setStep(2);
     } catch { /* ignore corrupt data */ }
   }, []);
 
-  // ── Persist draft to sessionStorage on every change ──────────
+  // ── Persist draft to localStorage on every change ────────────
   useEffect(() => {
     if (registeredRef.current) return; // don't overwrite after successful registration
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ email, password, otpSent, verifiedEmail, form, step }));
-  }, [email, password, otpSent, verifiedEmail, form, step]);
+    localStorage.setItem(DRAFT_KEY, JSON.stringify({ email, password, otpSent, verifiedEmail, emailVerifiedToken, form, step }));
+  }, [email, password, otpSent, verifiedEmail, emailVerifiedToken, form, step]);
 
   // ── Slug availability check ───────────────────────────────────
   useEffect(() => {
@@ -306,17 +308,46 @@ export default function RegisterPage() {
   const handleChangeEmail = () => {
     setOtpSent(false);
     setVerifiedEmail('');
+    setEmailVerifiedToken('');
     setOtp('');
   };
 
-  // ── Step 1 → Step 2 ──────────────────────────────────────────
-  const handleStep1Continue = (e) => {
+  // ── Step 1 → Step 2 — verify OTP on backend NOW, get 24h token ──
+  const [step1Loading, setStep1Loading] = useState(false);
+
+  const handleStep1Continue = async (e) => {
     e.preventDefault();
-    if (!otpSent)          { toast.error('Please verify your email first'); return; }
-    if (!otp.trim())       { toast.error('Enter the verification code'); return; }
+    if (!otpSent)            { toast.error('Please verify your email first'); return; }
+    if (otp.length < 6)      { toast.error('Enter the 6-digit verification code'); return; }
     if (password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
-    setStep(2);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    // If we already have a valid token from a previous session, skip re-verification
+    if (emailVerifiedToken) {
+      setStep(2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+
+    setStep1Loading(true);
+    try {
+      const res = await preVerifyEmail(verifiedEmail, otp);
+      const token = res.data.emailVerifiedToken;
+      setEmailVerifiedToken(token);
+      setStep(2);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      const msg = getApiError(err);
+      const code = err.response?.data?.errorCode;
+      toast.error(msg);
+      // Force re-OTP if the code was wrong / expired
+      if (['OTP_NOT_SENT', 'OTP_EXPIRED', 'OTP_MAX_ATTEMPTS'].includes(code)) {
+        setOtpSent(false);
+        setVerifiedEmail('');
+        setOtp('');
+      }
+    } finally {
+      setStep1Loading(false);
+    }
   };
 
   // ── Final submit ─────────────────────────────────────────────
@@ -332,7 +363,7 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await register({ ...form, email: verifiedEmail, password, otp });
+      await register({ ...form, email: verifiedEmail, password, emailVerifiedToken });
       registeredRef.current = true;
       clearDraft();
       toast.success('Café registered successfully!');
@@ -342,18 +373,16 @@ export default function RegisterPage() {
       if (errors) {
         errors.forEach((e) => toast.error(e.msg));
       } else {
-        const msg = err.response?.data?.error || 'Registration failed';
+        const msg = getApiError(err);
+        const code = err.response?.data?.errorCode;
         toast.error(msg);
-        // Only reset to step 1 for known OTP rejection messages from the backend
-        const otpRejected = [
-          'no otp sent', 'otp expired', 'incorrect verification code',
-          'too many incorrect attempts',
-        ].some((phrase) => msg.toLowerCase().includes(phrase));
-        if (otpRejected) {
-          setStep(1);
+        // If the verified token expired (>24h), send user back to Step 1 to re-verify
+        if (code === 'TOKEN_EXPIRED' || code === 'TOKEN_MISMATCH') {
+          setEmailVerifiedToken('');
           setOtpSent(false);
           setVerifiedEmail('');
           setOtp('');
+          setStep(1);
         }
       }
     } finally {
@@ -499,10 +528,10 @@ export default function RegisterPage() {
               <div className="hidden sm:block">
                 <button
                   type="submit"
-                  disabled={!otpSent || otp.length < 6 || password.length < 8}
+                  disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
                   className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  Continue to Business Details →
+                  {step1Loading ? 'Verifying…' : 'Continue to Business Details →'}
                 </button>
               </div>
 
@@ -713,10 +742,10 @@ export default function RegisterPage() {
         <button
           type="submit"
           form="reg-form-1"
-          disabled={!otpSent || otp.length < 6 || password.length < 8}
+          disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
           className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Continue to Business Details →
+          {step1Loading ? 'Verifying…' : 'Continue to Business Details →'}
         </button>
       </div>
     )}
