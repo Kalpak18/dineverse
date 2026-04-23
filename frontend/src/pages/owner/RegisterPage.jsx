@@ -370,7 +370,8 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-10">
+    <>
+    <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 pt-10 pb-28 sm:py-10">
       <div className="w-full max-w-lg">
 
         {/* Header */}
@@ -403,7 +404,7 @@ export default function RegisterPage() {
 
           {/* ── STEP 1: Email + Password + OTP ── */}
           {step === 1 && (
-            <form onSubmit={handleStep1Continue} className="space-y-5">
+            <form id="reg-form-1" onSubmit={handleStep1Continue} className="space-y-5">
               <div>
                 <p className="text-sm font-semibold text-gray-700 mb-4">
                   First, let's verify your email address.
@@ -495,13 +496,15 @@ export default function RegisterPage() {
                 )}
               </div>
 
-              <button
-                type="submit"
-                disabled={!otpSent || otp.length < 6 || password.length < 8}
-                className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Continue to Business Details →
-              </button>
+              <div className="hidden sm:block">
+                <button
+                  type="submit"
+                  disabled={!otpSent || otp.length < 6 || password.length < 8}
+                  className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  Continue to Business Details →
+                </button>
+              </div>
 
               <p className="text-center text-xs text-gray-400 flex items-center justify-center gap-1">
                 <span>🔒</span> Your data is private and never shared
@@ -516,7 +519,7 @@ export default function RegisterPage() {
 
           {/* ── STEP 2: Business + Location ── */}
           {step === 2 && (
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form id="reg-form-2" onSubmit={handleSubmit} className="space-y-5">
 
               {/* Verified email pill */}
               <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
@@ -676,7 +679,7 @@ export default function RegisterPage() {
                 </span>
               </label>
 
-              <div className="flex gap-3">
+              <div className="hidden sm:flex gap-3">
                 <button
                   type="button"
                   onClick={() => setStep(1)}
@@ -702,5 +705,45 @@ export default function RegisterPage() {
         </div>
       </div>
     </div>
+
+    {/* ── Mobile sticky CTA — Step 1 ────────────────────────────── */}
+    {step === 1 && (
+      <div className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 px-4 py-3 z-20"
+           style={{ boxShadow: '0 -2px 12px rgba(0,0,0,0.08)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+        <button
+          type="submit"
+          form="reg-form-1"
+          disabled={!otpSent || otp.length < 6 || password.length < 8}
+          className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          Continue to Business Details →
+        </button>
+      </div>
+    )}
+
+    {/* ── Mobile sticky CTA — Step 2 ────────────────────────────── */}
+    {step === 2 && (
+      <div className="sm:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 px-4 py-3 z-20"
+           style={{ boxShadow: '0 -2px 12px rgba(0,0,0,0.08)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => setStep(1)}
+            className="btn-secondary flex-shrink-0"
+          >
+            ← Back
+          </button>
+          <button
+            type="submit"
+            form="reg-form-2"
+            disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
+            className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Verifying & creating account…' : 'Create Café Account'}
+          </button>
+        </div>
+      </div>
+    )}
+    </>
   );
 }
