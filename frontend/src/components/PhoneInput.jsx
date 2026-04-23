@@ -24,7 +24,7 @@ const COUNTRIES = [
  *   error        string
  *   className    string  extra classes on wrapper
  */
-export default function PhoneInput({ value = '', onChange, placeholder = '9876543210', required, error, className = '' }) {
+export default function PhoneInput({ value = '', onChange, placeholder = 'xxxxxxxxxx', required, error, className = '' }) {
   // Parse existing value into countryCode + local
   const parseValue = (v) => {
     if (!v) return { countryCode: '+91', local: '' };

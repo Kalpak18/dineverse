@@ -279,7 +279,7 @@ export default function ProfilePage() {
               className="input"
               value={form.phone}
               onChange={set('phone')}
-              placeholder="+91 98765 43210"
+              placeholder="+91 xxxxx xxxxx"
               required
             />
             <p className="text-xs text-gray-400 mt-1">Can be used to login instead of email.</p>
@@ -821,7 +821,7 @@ export default function ProfilePage() {
                 </div>
                 <div className="col-span-2">
                   <label className="label">Outlet Phone</label>
-                  <input className="input" placeholder="+91 98765 43210" value={outletForm.phone}
+                  <input className="input" placeholder="+91 xxxxx xxxxx" value={outletForm.phone}
                     onChange={(e) => setOutletForm((f) => ({ ...f, phone: e.target.value }))} />
                 </div>
               </div>

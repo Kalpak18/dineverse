@@ -678,7 +678,7 @@ export default function RegisterPage() {
                   <PhoneInput
                     value={form.phone}
                     onChange={handlePhoneChange}
-                    placeholder="98765 43210"
+                    placeholder="xxxxx xxxxx"
                     required
                   />
                 </div>

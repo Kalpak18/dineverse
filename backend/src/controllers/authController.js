@@ -5,6 +5,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { createOtp, verifyOtp, checkSendCooldown } = require('../utils/otpStore');
 const { sendOtpEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { geocodeAddress } = require('../services/geocodingService');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
@@ -184,6 +185,7 @@ exports.completeSetup = asyncHandler(async (req, res) => {
     name, slug, description, address, address_line2, city, state, pincode, phone,
     gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
     pan_number, tax_inclusive, business_type, country, currency = 'INR',
+    latitude: manualLatitude, longitude: manualLongitude,
   } = req.body;
 
   const currentRes = await db.query(
@@ -203,6 +205,12 @@ exports.completeSetup = asyncHandler(async (req, res) => {
   if (gst_number && gst_number.trim()) {
     gstVerified = validateGstin(gst_number).valid;
   }
+
+  const geocoded = (!manualLatitude && !manualLongitude)
+    ? await geocodeAddress([address, address_line2, city, state, pincode, country])
+    : null;
+  const latitude = manualLatitude || geocoded?.latitude || null;
+  const longitude = manualLongitude || geocoded?.longitude || null;
 
   const result = await db.query(
     `UPDATE cafes
@@ -227,8 +235,10 @@ exports.completeSetup = asyncHandler(async (req, res) => {
          business_type   = COALESCE($19, business_type),
          country         = COALESCE($20, country),
          currency        = COALESCE($21, currency),
+         latitude        = COALESCE($22, latitude),
+         longitude       = COALESCE($23, longitude),
          setup_completed = true
-     WHERE id = $22
+     WHERE id = $24
      RETURNING id, name, slug, email, description,
                address, address_line2, city, state, pincode, phone,
                logo_url, cover_image_url, name_style, latitude, longitude,
@@ -242,7 +252,7 @@ exports.completeSetup = asyncHandler(async (req, res) => {
       gst_number || null, gst_rate != null ? parseInt(gst_rate, 10) : null,
       fssai_number || null, upi_id || null, bill_prefix || null, bill_footer || null,
       pan_number || null, tax_inclusive != null ? Boolean(tax_inclusive) : null, gstVerified,
-      business_type || null, country || null, currency || null, req.cafeId,
+      business_type || null, country || null, currency || null, latitude, longitude, req.cafeId,
     ]
   );
 
@@ -527,6 +537,12 @@ exports.updateProfile = asyncHandler(async (req, res) => {
 
   if (!phone || !phone.trim()) return fail(res, 'Phone number is required');
 
+  const geocoded = (!latitude && !longitude)
+    ? await geocodeAddress([address, address_line2, city, state, pincode, country])
+    : null;
+  const nextLatitude = latitude || geocoded?.latitude || null;
+  const nextLongitude = longitude || geocoded?.longitude || null;
+
   // Try update with new address fields (migration 016); fall back to base columns if not applied
   let result;
   try {
@@ -582,7 +598,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
       [name, description,
        address, address_line2 || null, city || null, state || null, pincode || null,
        phone.trim(), logo_url, cover_image_url,
-       name_style || null, latitude || null, longitude || null,
+       name_style || null, nextLatitude, nextLongitude,
        gst_number || null, gst_rate != null ? parseInt(gst_rate) : null,
        fssai_number || null, upi_id || null,
        bill_prefix || null, bill_footer || null,
@@ -628,7 +644,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
                  gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer`,
       [name, description, address, city || null, phone.trim(),
        logo_url, cover_image_url,
-       name_style || null, latitude || null, longitude || null,
+       name_style || null, nextLatitude, nextLongitude,
        gst_number || null, gst_rate != null ? parseInt(gst_rate) : null,
        fssai_number || null, upi_id || null,
        bill_prefix || null, bill_footer || null,
@@ -663,19 +679,21 @@ exports.createOutlet = asyncHandler(async (req, res) => {
   const existing = await db.query('SELECT id FROM cafes WHERE slug = $1', [slug]);
   if (existing.rows.length > 0) return fail(res, 'This slug is already taken', 409);
 
+  const geocoded = await geocodeAddress([address, address_line2, city, state, pincode]);
+
   const result = await db.query(
     `INSERT INTO cafes
        (name, slug, email, password_hash, description,
         address, address_line2, city, state, pincode, phone,
-        parent_cafe_id, plan_type, plan_start_date, plan_expiry_date)
-     SELECT $1,$2,c.email,c.password_hash,$3,$4,$5,$6,$7,$8,$9,$10,
+        latitude, longitude, parent_cafe_id, plan_type, plan_start_date, plan_expiry_date)
+     SELECT $1,$2,c.email,c.password_hash,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
             c.plan_type,c.plan_start_date,c.plan_expiry_date
-     FROM cafes c WHERE c.id = $11
-     RETURNING id, name, slug, description, address, address_line2, city, state, pincode, phone, parent_cafe_id`,
+     FROM cafes c WHERE c.id = $13
+     RETURNING id, name, slug, description, address, address_line2, city, state, pincode, phone, latitude, longitude, parent_cafe_id`,
     [name.trim(), slug.trim(), description || null,
      address || null, address_line2 || null, city || null,
      state || null, pincode || null, phone || null,
-     parentId, parentId]
+     geocoded?.latitude || null, geocoded?.longitude || null, parentId, parentId]
   );
   logger.info('New outlet created: %s (%s) under %s', name, slug, parentId);
   ok(res, { outlet: result.rows[0] }, 'Outlet created successfully', 201);
