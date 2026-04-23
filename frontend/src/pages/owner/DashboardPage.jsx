@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getDashboardStats, getMenuItems, getAreas, getPublicSetting, toggleCafeOpen } from '../../services/api';
-import LoadingSpinner from '../../components/LoadingSpinner';
 import SetupWizard from '../../components/SetupWizard';
+import WelcomeModal from '../../components/WelcomeModal';
 import CafeQRCard from '../../components/CafeQRCard';
 import { Link, useNavigate } from 'react-router-dom';
 import { STATUS_CONFIG } from '../../constants/statusConfig';
@@ -60,6 +60,7 @@ export default function DashboardPage() {
 
   const [stats,    setStats]    = useState(null);
   const [loading,  setLoading]  = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [showWizard, setShowWizard]   = useState(false);
   const [wizardStep, setWizardStep]   = useState(0);
   const [announcement, setAnnouncement] = useState(null);
@@ -111,11 +112,16 @@ export default function DashboardPage() {
       };
       setSetupStatus(status);
 
-      // Auto-open wizard on very first visit if menu is empty
-      const firstVisitKey = `dv_wizard_seen_${cafe?.id}`;
-      if (!localStorage.getItem(firstVisitKey) && (itemsRes.data.items || []).length === 0) {
-        localStorage.setItem(firstVisitKey, '1');
-        setShowWizard(true);
+      // Show welcome modal once per account (first registration)
+      if (cafe?.id && !localStorage.getItem(`dv_welcomed_${cafe.id}`)) {
+        setShowWelcome(true);
+      } else {
+        // Auto-open wizard on very first visit if menu is empty (only if welcome already dismissed)
+        const firstVisitKey = `dv_wizard_seen_${cafe?.id}`;
+        if (!localStorage.getItem(firstVisitKey) && (itemsRes.data.items || []).length === 0) {
+          localStorage.setItem(firstVisitKey, '1');
+          setShowWizard(true);
+        }
       }
 
       if (annRes?.data?.value?.active && annRes.data.value.text) {
@@ -161,12 +167,20 @@ export default function DashboardPage() {
     }
   };
 
-  if (loading) return <LoadingSpinner />;
+  if (loading) return <DashboardSkeleton />;
 
   const cafeUrl = `${window.location.origin}/cafe/${cafe?.slug}`;
 
   return (
     <>
+      {showWelcome && (
+        <WelcomeModal
+          cafeName={cafe?.name}
+          cafeId={cafe?.id}
+          onSetup={() => { setShowWelcome(false); openWizardAt(0); }}
+          onDismiss={() => setShowWelcome(false)}
+        />
+      )}
       {showWizard && (
         <SetupWizard
           initialStep={wizardStep}
@@ -513,4 +527,66 @@ function StatCard({ label, value, icon, color, href, pulse }) {
   );
   if (href) return <Link to={href} className="card hover:shadow-md transition-shadow">{inner}</Link>;
   return <div className="card">{inner}</div>;
+}
+
+function Shimmer({ className = '' }) {
+  return <div className={`animate-pulse bg-gray-200 rounded-lg ${className}`} />;
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 max-w-4xl">
+      {/* Profile card */}
+      <div className="card flex items-center gap-4">
+        <Shimmer className="w-16 h-16 rounded-xl flex-shrink-0" />
+        <div className="flex-1 space-y-2">
+          <Shimmer className="h-5 w-40" />
+          <Shimmer className="h-3 w-24" />
+          <Shimmer className="h-5 w-20 rounded-full" />
+        </div>
+        <div className="flex flex-col items-end gap-2">
+          <Shimmer className="h-7 w-24 rounded-lg" />
+          <Shimmer className="h-7 w-20 rounded-lg" />
+        </div>
+      </div>
+
+      {/* "Good day!" heading */}
+      <div className="flex items-center justify-between">
+        <div className="space-y-1.5">
+          <Shimmer className="h-6 w-32" />
+          <Shimmer className="h-4 w-48" />
+        </div>
+        <Shimmer className="hidden sm:block h-8 w-28 rounded-lg" />
+      </div>
+
+      {/* QR card placeholder */}
+      <Shimmer className="h-24 rounded-2xl" />
+
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="card space-y-3">
+            <Shimmer className="w-10 h-10 rounded-lg" />
+            <Shimmer className="h-7 w-12" />
+            <Shimmer className="h-3 w-24" />
+          </div>
+        ))}
+      </div>
+
+      {/* Two-col grid */}
+      <div className="grid md:grid-cols-2 gap-6">
+        {[0, 1].map((i) => (
+          <div key={i} className="card space-y-3">
+            <Shimmer className="h-5 w-32" />
+            {[0, 1, 2].map((j) => (
+              <div key={j} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+                <Shimmer className="h-4 w-40" />
+                <Shimmer className="h-4 w-16" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

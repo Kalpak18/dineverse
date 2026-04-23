@@ -81,7 +81,8 @@ export default function BillingPage() {
   const [history, setHistory]   = useState([]);
   const [loading, setLoading]   = useState(true);
   const [paying, setPaying]     = useState(false);
-  const [selected, setSelected] = useState('1year'); // default duration
+  const [selected, setSelected] = useState('1year');
+  const [activated, setActivated] = useState(null); // { plan_type, plan_expiry_date } after successful payment
 
   const selectedDuration = DURATIONS.find((d) => d.key === selected);
 
@@ -126,7 +127,7 @@ export default function BillingPage() {
               plan_type:        verified.plan_type,
               plan_expiry_date: verified.plan_expiry_date,
             });
-            toast.success('Subscription activated! Thanks for choosing DineVerse.');
+            setActivated(verified);
             const [plansRes, histRes] = await Promise.all([getPlans(), getPaymentHistory()]);
             setData(plansRes.data);
             setHistory(histRes.data.payments);
@@ -185,6 +186,31 @@ export default function BillingPage() {
         <h1 className="text-2xl font-bold text-gray-900">Billing & Subscription</h1>
         <p className="text-gray-500 text-sm mt-1">Manage your DineVerse plan.</p>
       </div>
+
+      {/* Payment success banner */}
+      {activated && (
+        <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-start gap-4">
+          <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xl">
+            ✓
+          </div>
+          <div className="flex-1">
+            <p className="font-bold text-green-800 text-base">Subscription activated!</p>
+            <p className="text-sm text-green-700 mt-0.5">
+              {planLabel(activated.plan_type)} is now active.
+              {activated.plan_expiry_date && (
+                <> Valid until <strong>{new Date(activated.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>.</>
+              )}
+            </p>
+            <p className="text-xs text-green-600 mt-1">Thanks for choosing DineVerse — all features are now unlocked.</p>
+          </div>
+          <button
+            onClick={() => setActivated(null)}
+            className="text-green-500 hover:text-green-700 font-bold text-lg leading-none flex-shrink-0"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Current Plan */}
       <div className="card">
