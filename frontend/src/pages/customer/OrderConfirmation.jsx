@@ -4,20 +4,7 @@ import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
-import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
-import toast from 'react-hot-toast';
-
-// Load Razorpay checkout script once
-function loadRazorpayScript() {
-  return new Promise((resolve) => {
-    if (window.Razorpay) { resolve(true); return; }
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
-}
+import { loadRazorpayScript } from '../../utils/razorpayLoader';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },

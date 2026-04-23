@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getPlans, createPaymentOrder, verifyPayment, getPaymentHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { getApiError } from '../../utils/apiError';
+import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
@@ -146,9 +147,13 @@ export default function BillingPage() {
       };
 
       if (!window.Razorpay) {
-        toast.error('Payment gateway not loaded. Please refresh and try again.');
-        setPaying(false);
-        return;
+        // Load Razorpay script dynamically
+        const loaded = await loadRazorpayScript();
+        if (!loaded) {
+          toast.error('Payment gateway not loaded. Please refresh and try again.');
+          setPaying(false);
+          return;
+        }
       }
       const rzp = new window.Razorpay(options);
       rzp.on('payment.failed', (response) => {
