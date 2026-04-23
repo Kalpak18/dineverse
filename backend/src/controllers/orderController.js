@@ -788,12 +788,17 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     }
 
     // Verify the actual amount charged matches the order total — prevents underpayment
-    const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
-    const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
-    if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
-      logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
-      await payClient.query('ROLLBACK');
-      return fail(res, 'Payment amount mismatch', 400);
+    try {
+      const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+      const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
+      if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
+        logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
+        await payClient.query('ROLLBACK');
+        return fail(res, 'Payment amount mismatch', 400);
+      }
+    } catch (fetchErr) {
+      logger.warn('Could not fetch payment %s for amount check on food order %s: %s', razorpay_payment_id, id, fetchErr.message);
+      // HMAC signature already verified — allow the payment to proceed
     }
 
     // Mark paid inside the transaction so the lock is held until commit

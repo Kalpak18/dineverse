@@ -43,6 +43,13 @@ export default function PhoneInput({ value = '', onChange, placeholder = '987654
   const [open, setOpen] = useState(false);
   const dropRef = useRef(null);
 
+  // Sync internal state when the parent updates the value externally (e.g. country→dial sync)
+  useEffect(() => {
+    const p = parseValue(value);
+    setCountryCode(p.countryCode);
+    setLocal(p.local);
+  }, [value]);
+
   // Close dropdown on outside click
   useEffect(() => {
     const handler = (e) => {

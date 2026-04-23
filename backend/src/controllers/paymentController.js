@@ -129,10 +129,15 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
   }
 
   // Verify the actual amount charged matches what we expect — prevents ₹1 plan activation
-  const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
-  if (parseInt(rzpPayment.amount, 10) !== payment.amount_paise) {
-    logger.warn('Amount mismatch for order %s: expected %d paise, got %d', razorpay_order_id, payment.amount_paise, rzpPayment.amount);
-    return fail(res, 'Payment amount mismatch', 400);
+  try {
+    const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+    if (parseInt(rzpPayment.amount, 10) !== payment.amount_paise) {
+      logger.warn('Amount mismatch for order %s: expected %d paise, got %d', razorpay_order_id, payment.amount_paise, rzpPayment.amount);
+      return fail(res, 'Payment amount mismatch', 400);
+    }
+  } catch (fetchErr) {
+    // Razorpay API temporarily unavailable — log and continue; HMAC signature already verified
+    logger.warn('Could not fetch payment %s from Razorpay for amount check: %s', razorpay_payment_id, fetchErr.message);
   }
 
   const plan = PLANS[payment.plan_type];

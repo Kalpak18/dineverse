@@ -110,8 +110,9 @@ export default function BillingPage() {
         description: `${dur.label} — ${dur.months} months`,
         order_id: order.order_id,
         prefill: {
-          name: order.cafe_name,
-          email: order.cafe_email,
+          name:    order.cafe_name,
+          email:   order.cafe_email,
+          contact: cafe?.phone || '',
         },
         theme: { color: '#f97316' },
         handler: async (response) => {
@@ -125,12 +126,17 @@ export default function BillingPage() {
               plan_type:        verified.plan_type,
               plan_expiry_date: verified.plan_expiry_date,
             });
-            toast.success('🎉 Subscription activated! Thanks for choosing DineVerse.');
+            toast.success('Subscription activated! Thanks for choosing DineVerse.');
             const [plansRes, histRes] = await Promise.all([getPlans(), getPaymentHistory()]);
             setData(plansRes.data);
             setHistory(histRes.data.payments);
-          } catch (err) {
-            toast.error(getApiError(err));
+          } catch {
+            // Payment succeeded on Razorpay's side — the webhook will activate the subscription.
+            // Don't show a scary error; just let the user know it's being processed.
+            toast('Payment received! Your subscription is being activated — it should reflect within a minute. If it doesn\'t, contact support.', {
+              duration: 10000,
+              icon: '⏳',
+            });
           } finally {
             setPaying(false);
           }

@@ -5,6 +5,63 @@ import { useAuth } from '../../context/AuthContext';
 import { checkSlugAvailability, sendVerificationOtp } from '../../services/api';
 import toast from 'react-hot-toast';
 import PasswordInput from '../../components/PasswordInput';
+import PhoneInput from '../../components/PhoneInput';
+
+// ── Password strength indicator ───────────────────────────────
+function PasswordStrength({ password }) {
+  if (!password) return null;
+  const checks = [
+    password.length >= 8,
+    /[A-Z]/.test(password),
+    /[a-z]/.test(password),
+    /[0-9]/.test(password),
+    /[^A-Za-z0-9]/.test(password),
+  ];
+  const score = checks.filter(Boolean).length;
+  const meta = [
+    null,
+    { label: 'Weak',        text: 'text-red-500',    bar: 'bg-red-400' },
+    { label: 'Fair',        text: 'text-amber-500',  bar: 'bg-amber-400' },
+    { label: 'Good',        text: 'text-yellow-600', bar: 'bg-yellow-400' },
+    { label: 'Strong',      text: 'text-green-600',  bar: 'bg-green-500' },
+    { label: 'Very Strong', text: 'text-green-700',  bar: 'bg-green-600' },
+  ][score];
+  return (
+    <div className="mt-1.5 space-y-1">
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className={`h-1 flex-1 rounded-full transition-colors duration-200 ${i <= score ? meta.bar : 'bg-gray-200'}`} />
+        ))}
+      </div>
+      <p className={`text-xs font-medium ${meta.text}`}>{meta.label}</p>
+    </div>
+  );
+}
+
+// ── Country ↔ dial-code maps (covers PhoneInput's 10 countries) ─
+const COUNTRY_TO_DIAL = {
+  'India': '+91', 'United States': '+1', 'Canada': '+1',
+  'United Kingdom': '+44', 'Australia': '+61',
+  'United Arab Emirates': '+971', 'Singapore': '+65',
+  'Malaysia': '+60', 'Sri Lanka': '+94', 'Nepal': '+977',
+  'Bangladesh': '+880',
+};
+const DIAL_TO_COUNTRY = {
+  '+91': 'India', '+44': 'United Kingdom', '+61': 'Australia',
+  '+971': 'United Arab Emirates', '+65': 'Singapore',
+  '+60': 'Malaysia', '+94': 'Sri Lanka', '+977': 'Nepal', '+880': 'Bangladesh',
+  '+1': 'United States',
+};
+// Longest codes first so "+977" doesn't match "+9" accidentally
+const KNOWN_DIALS = ['+977', '+971', '+880', '+94', '+65', '+61', '+60', '+44', '+91', '+1'];
+
+function extractLocal(phone) {
+  for (const code of KNOWN_DIALS) {
+    if (phone.startsWith(code + ' ')) return phone.slice(code.length + 1);
+    if (phone === code) return '';
+  }
+  return phone;
+}
 
 function toSlug(str) {
   return str.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '');
@@ -84,6 +141,7 @@ export default function RegisterPage() {
   const cooldownTimer   = useRef(null);
   const autoSlugRef     = useRef('');
   const registeredRef   = useRef(false); // set true after success so the draft effect doesn't re-write
+  const pincodeAbort    = useRef(null);
 
   // ── Restore draft from sessionStorage on mount ───────────────
   useEffect(() => {
@@ -145,7 +203,59 @@ export default function RegisterPage() {
     return () => clearTimeout(cooldownTimer.current);
   }, [resendCooldown]);
 
+  // ── Country → phone dial-code sync ───────────────────────────
+  useEffect(() => {
+    const dialCode = COUNTRY_TO_DIAL[form.country];
+    if (!dialCode) return;
+    if (form.phone.startsWith(dialCode + ' ') || form.phone === dialCode) return;
+    const local = extractLocal(form.phone);
+    setForm((f) => ({ ...f, phone: local ? `${dialCode} ${local}` : '' }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.country]);
+
+  // ── Pincode → city / state auto-fill (India only) ─────────
+  useEffect(() => {
+    const pin = form.pincode?.trim();
+    if (!/^\d{6}$/.test(pin)) return;
+    if (form.country && form.country !== 'India') return;
+    pincodeAbort.current?.abort();
+    const ctrl = new AbortController();
+    pincodeAbort.current = ctrl;
+    (async () => {
+      try {
+        const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`, { signal: ctrl.signal });
+        const data = await res.json();
+        if (data[0]?.Status === 'Success' && data[0].PostOffice?.length > 0) {
+          const po = data[0].PostOffice[0];
+          setForm((f) => ({
+            ...f,
+            city:    f.city    || po.Division || po.Block || '',
+            state:   f.state   || po.State    || '',
+            country: f.country || 'India',
+          }));
+        }
+      } catch { /* aborted or network error — ignore */ }
+    })();
+    return () => ctrl.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.pincode]);
+
   const setField = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const handlePhoneChange = (fullPhone) => {
+    let countryFromDial = null;
+    for (const code of KNOWN_DIALS) {
+      if (fullPhone.startsWith(code + ' ') || fullPhone === code) {
+        countryFromDial = DIAL_TO_COUNTRY[code];
+        break;
+      }
+    }
+    setForm((f) => ({
+      ...f,
+      phone: fullPhone,
+      ...(countryFromDial && f.country !== countryFromDial ? { country: countryFromDial } : {}),
+    }));
+  };
 
   const handleNameChange = (e) => {
     const name = e.target.value;
@@ -370,6 +480,7 @@ export default function RegisterPage() {
                       autoComplete="new-password"
                       required
                     />
+                    <PasswordStrength password={password} />
                   </div>
                 </div>
 
@@ -479,8 +590,12 @@ export default function RegisterPage() {
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contact</p>
                 <div>
                   <label className="label">Phone Number *</label>
-                  <input type="tel" className="input" placeholder="+91 98765 43210"
-                    value={form.phone} onChange={setField('phone')} required />
+                  <PhoneInput
+                    value={form.phone}
+                    onChange={handlePhoneChange}
+                    placeholder="98765 43210"
+                    required
+                  />
                 </div>
               </div>
 

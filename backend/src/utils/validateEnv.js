@@ -19,7 +19,7 @@ module.exports = function validateEnv() {
     process.exit(1);
   }
 
-  // Razorpay: support both RAZORPAY_KEY_ID (prod) and RAZORPAY_TEST_KEY_ID (legacy)
+  // Razorpay: support both RAZORPAY_KEY_ID (prod) and RAZORPAY_TEST_KEY_ID (legacy/dev)
   const hasRazorpay = (process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID) &&
                       (process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET);
   if (!hasRazorpay) {
