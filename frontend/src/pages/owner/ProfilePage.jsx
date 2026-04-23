@@ -317,7 +317,7 @@ export default function ProfilePage() {
             <MapPicker
               lat={form.latitude}
               lng={form.longitude}
-              address={[form.address, form.city].filter(Boolean).join(', ')}
+              address={[form.address, form.address_line2, form.city, form.state, form.pincode, form.country].filter(Boolean).join(', ')}
               onChange={handleMapChange}
             />
           </div>

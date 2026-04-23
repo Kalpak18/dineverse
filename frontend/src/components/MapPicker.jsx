@@ -49,10 +49,14 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   const mapRef = useRef(null);
   const markerRef = useRef(null);
   const containerRef = useRef(null);
+  const lastAutoAddressRef = useRef('');
+  const manuallyPinnedRef = useRef(false);
   const [search, setSearch] = useState('');
   const [suggestions, setSuggestions] = useState([]);
   const [searching, setSearching] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const [autoLocating, setAutoLocating] = useState(false);
+  const [autoLocationLabel, setAutoLocationLabel] = useState('');
 
   // Default to India center if no coords
   const initLat = lat || 20.5937;
@@ -72,6 +76,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     mapRef.current = map;
 
     const handlePick = async (latlng) => {
+      manuallyPinnedRef.current = true;
       marker.setLatLng(latlng);
       const addr = await reverseGeocode(latlng.lat, latlng.lng);
       onChange({ lat: latlng.lat, lng: latlng.lng, address: addr });
@@ -95,6 +100,42 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     }
   }, [lat, lng]);
 
+  useEffect(() => {
+    const query = (address || '').trim();
+    if (!query || query.length < 8) {
+      setAutoLocationLabel('');
+      return;
+    }
+    if (query === lastAutoAddressRef.current) return;
+    if (manuallyPinnedRef.current && lat && lng) return;
+
+    const timeout = setTimeout(async () => {
+      setAutoLocating(true);
+      const results = await forwardGeocode(query);
+      setAutoLocating(false);
+
+      const first = Array.isArray(results) ? results[0] : null;
+      if (!first?.lat || !first?.lon) {
+        setAutoLocationLabel('Could not auto-locate this address yet');
+        return;
+      }
+
+      const newLat = parseFloat(first.lat);
+      const newLng = parseFloat(first.lon);
+      lastAutoAddressRef.current = query;
+      setAutoLocationLabel('Auto-located from typed address');
+
+      if (mapRef.current && markerRef.current) {
+        markerRef.current.setLatLng([newLat, newLng]);
+        mapRef.current.setView([newLat, newLng], 16);
+      }
+
+      onChange({ lat: newLat, lng: newLng, address });
+    }, 700);
+
+    return () => clearTimeout(timeout);
+  }, [address, lat, lng, onChange]);
+
   const handleSearch = async () => {
     if (!search.trim()) return;
     setSearching(true);
@@ -104,6 +145,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   };
 
   const pickSuggestion = (s) => {
+    manuallyPinnedRef.current = true;
     const newLat = parseFloat(s.lat);
     const newLng = parseFloat(s.lon);
     setSuggestions([]);
@@ -127,8 +169,19 @@ export default function MapPicker({ lat, lng, address, onChange }) {
       </button>
 
       {lat && lng && !expanded && (
-        <p className="text-xs text-gray-400">
-          Pinned: {parseFloat(lat).toFixed(5)}, {parseFloat(lng).toFixed(5)}
+        <div className="space-y-1">
+          <p className="text-xs text-gray-400">
+            Pinned: {parseFloat(lat).toFixed(5)}, {parseFloat(lng).toFixed(5)}
+          </p>
+          {autoLocationLabel && (
+            <p className="text-xs text-green-600">{autoLocationLabel}</p>
+          )}
+        </div>
+      )}
+
+      {!lat && !lng && (autoLocating || autoLocationLabel) && (
+        <p className={`text-xs ${autoLocationLabel.startsWith('Could not') ? 'text-amber-600' : 'text-gray-500'}`}>
+          {autoLocating ? 'Finding this address on the map...' : autoLocationLabel}
         </p>
       )}
 

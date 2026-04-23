@@ -7,6 +7,7 @@ import toast from 'react-hot-toast';
 import PasswordInput from '../../components/PasswordInput';
 import PhoneInput from '../../components/PhoneInput';
 import OtpInput from '../../components/OtpInput';
+import MapPicker from '../../components/MapPicker';
 import { getApiError } from '../../utils/apiError';
 
 // ── Password strength indicator ───────────────────────────────
@@ -138,6 +139,8 @@ export default function RegisterPage() {
     currency: 'INR',
     gst_number: '',
     gst_rate: 5,
+    latitude: null,
+    longitude: null,
   });
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [slugStatus, setSlugStatus] = useState('idle');
@@ -187,6 +190,8 @@ export default function RegisterPage() {
       currency: cafe.currency || prev.currency,
       gst_number: cafe.gst_number || prev.gst_number,
       gst_rate: cafe.gst_rate ?? prev.gst_rate,
+      latitude: cafe.latitude ?? prev.latitude,
+      longitude: cafe.longitude ?? prev.longitude,
     }));
   }, [cafe]);
 
@@ -298,6 +303,10 @@ export default function RegisterPage() {
     const slug = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
     autoSlugRef.current = slug;
     setForm((prev) => ({ ...prev, slug }));
+  };
+
+  const handleMapChange = ({ lat, lng }) => {
+    setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }));
   };
 
   // ── OTP send ─────────────────────────────────────────────────
@@ -716,6 +725,19 @@ export default function RegisterPage() {
                     <label className="label">State / Region</label>
                     <input className="input" placeholder="e.g. Maharashtra"
                       value={form.state} onChange={setField('state')} />
+                  </div>
+
+                  <div>
+                    <label className="label">Map Preview</label>
+                    <MapPicker
+                      lat={form.latitude}
+                      lng={form.longitude}
+                      address={[form.address, form.address_line2, form.city, form.state, form.pincode, form.country].filter(Boolean).join(', ')}
+                      onChange={handleMapChange}
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      We auto-locate your cafe from the typed address. You can still adjust the pin if needed.
+                    </p>
                   </div>
                 </div>
               </div>
