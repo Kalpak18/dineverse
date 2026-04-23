@@ -32,7 +32,7 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     [email.trim().toLowerCase()]
   );
   if (active.rows.length > 0) {
-    return fail(res, 'An account with this email already exists. Try logging in instead.', 409);
+    return fail(res, 'An account with this email already exists. Try logging in instead.', 409, 'EMAIL_TAKEN');
   }
 
   // Enforce 60s minimum gap between sends to the same email
@@ -42,6 +42,7 @@ exports.sendOtp = asyncHandler(async (req, res) => {
       success: false,
       message: `Please wait ${cooldown.retryAfter} seconds before requesting another code`,
       error:   `Please wait ${cooldown.retryAfter} seconds before requesting another code`,
+      errorCode: 'OTP_COOLDOWN',
       retryAfter: cooldown.retryAfter,
     });
   }
@@ -85,7 +86,15 @@ exports.register = asyncHandler(async (req, res) => {
 
   // Verify OTP against email before touching the database
   const otpCheck = await verifyOtp(email, otp, 'register');
-  if (!otpCheck.valid) return fail(res, otpCheck.reason);
+  if (!otpCheck.valid) {
+    const codeMap = {
+      'No OTP sent to this email':                       'OTP_NOT_SENT',
+      'OTP expired — please request a new one':          'OTP_EXPIRED',
+      'Incorrect verification code':                     'OTP_WRONG',
+      'Too many incorrect attempts — please request a new code': 'OTP_MAX_ATTEMPTS',
+    };
+    return fail(res, otpCheck.reason, 400, codeMap[otpCheck.reason] || 'OTP_INVALID');
+  }
 
   // Only block active accounts — deactivated cafes free up email/slug for re-registration
   const existing = await db.query(
@@ -93,7 +102,7 @@ exports.register = asyncHandler(async (req, res) => {
     [slug, email]
   );
   const activeConflict = existing.rows.filter((r) => r.is_active !== false);
-  if (activeConflict.length > 0) return fail(res, 'Slug or email already in use', 409);
+  if (activeConflict.length > 0) return fail(res, 'Slug or email already in use', 409, 'SLUG_OR_EMAIL_TAKEN');
 
   const password_hash = await bcrypt.hash(password, 12);
   // Check if migration 016 (address_line2, state, pincode) has been applied
@@ -168,11 +177,11 @@ exports.login = asyncHandler(async (req, res) => {
       const cafe = ownerResult.rows[0];
       if (!cafe.password_hash) {
         logger.warn('Login failed - missing password_hash for cafe id %s', cafe.id);
-        return fail(res, 'Invalid credentials', 401);
+        return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
       }
 
       const isValid = await bcrypt.compare(password, cafe.password_hash);
-      if (!isValid) return fail(res, 'Invalid credentials', 401);
+      if (!isValid) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
 
       const { password_hash, token_version, ...cafeData } = cafe;
       const token = generateToken(cafe.id, cafe.slug, 'OWNER', null, null, null, token_version);
@@ -193,11 +202,11 @@ exports.login = asyncHandler(async (req, res) => {
       const staff = staffResult.rows[0];
       if (!staff.password_hash) {
         logger.warn('Login failed - missing password_hash for staff id %s', staff.staff_id);
-        return fail(res, 'Invalid credentials', 401);
+        return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
       }
 
       const isValid = await bcrypt.compare(password, staff.password_hash);
-      if (!isValid) return fail(res, 'Invalid credentials', 401);
+      if (!isValid) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
 
       const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role);
       return ok(res, {
@@ -209,7 +218,7 @@ exports.login = asyncHandler(async (req, res) => {
       }, 'Login successful');
     }
 
-    return fail(res, 'Invalid credentials', 401);
+    return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
   } catch (err) {
     logger.error('Login handler error: %s', err.stack || err.message);
     return res.status(500).json({ success: false, message: 'Internal server error' });

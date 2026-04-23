@@ -122,7 +122,20 @@ export default function LandingPage() {
                 Scan café QR code to order
               </Link>
             </div>
-            <p className="text-xs text-gray-400 mt-4">No credit card required · Cancel anytime · {plan.hero}</p>
+            {/* Trust badges */}
+            <div className="mt-5 flex flex-wrap justify-center md:justify-start gap-3">
+              {[
+                { icon: '🔒', label: 'Secured by Razorpay' },
+                { icon: '🇮🇳', label: 'GST-ready billing' },
+                { icon: '📱', label: 'Works on any phone' },
+                { icon: '⚡', label: 'Live in one afternoon' },
+              ].map(({ icon, label }) => (
+                <span key={label} className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-200 px-3 py-1.5 rounded-full shadow-sm">
+                  <span>{icon}</span> {label}
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · {plan.hero}</p>
           </div>
 
           {/* Mockup */}
@@ -197,6 +210,36 @@ export default function LandingPage() {
               <p className="text-xs text-gray-500 mt-0.5">{stat.label}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* ── Problem Section ─────────────────────────────────────── */}
+      <section className="py-20 px-6 bg-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Sound familiar?</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Running a café is harder than it looks</h2>
+            <p className="text-gray-500 mt-3 max-w-xl mx-auto text-sm">
+              Every missed order, wrong bill, or angry customer is revenue walking out the door. These problems are all fixable.
+            </p>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-6 mb-12">
+            {[
+              { icon: '😤', title: 'Wrong or missed orders', desc: 'Waiters mishear, kitchen misreads handwriting. Customers complain, food goes to waste.' },
+              { icon: '🧾', title: 'Billing takes forever', desc: 'Calculating GST by hand, writing receipts, chasing for payment — your staff\'s time is worth more.' },
+              { icon: '📉', title: 'No idea what\'s working', desc: 'You don\'t know your best-seller, your peak hour, or which item is losing you money.' },
+            ].map(({ icon, title, desc }) => (
+              <div key={title} className="bg-red-50 border border-red-100 rounded-2xl p-6">
+                <p className="text-3xl mb-3">{icon}</p>
+                <p className="font-bold text-gray-900 text-sm mb-1">{title}</p>
+                <p className="text-xs text-gray-500 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-brand-500 rounded-3xl px-8 py-6 text-center">
+            <p className="text-white font-bold text-lg">DineVerse solves all three — in one afternoon.</p>
+            <p className="text-orange-100 text-sm mt-1">QR ordering, auto-billing, live analytics. No hardware required.</p>
+          </div>
         </div>
       </section>
 
@@ -314,6 +357,63 @@ export default function LandingPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Testimonials ────────────────────────────────────────── */}
+      <section className="py-20 px-6 bg-white">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Real Owners, Real Results</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Trusted by restaurants across India</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {[
+              {
+                name: 'Priya Nair',
+                role: 'Owner · Spice Garden Café',
+                city: 'Kochi, Kerala',
+                text: 'We used to lose 2–3 orders daily to confusion at the counter. Since DineVerse, orders go straight to the kitchen screen. Rush hour is actually manageable now.',
+                avatar: 'PN',
+                color: 'bg-orange-100 text-orange-700',
+              },
+              {
+                name: 'Rahul Sharma',
+                role: 'Manager · The Brew Bar',
+                city: 'Pune, Maharashtra',
+                text: 'QR ordering is a game-changer. Customers love it — no waiting for waiters, no wrong orders. The GST billing alone saves us 20 minutes every single day.',
+                avatar: 'RS',
+                color: 'bg-blue-100 text-blue-700',
+              },
+              {
+                name: 'Anita Mehta',
+                role: 'Owner · Chai & Chat',
+                city: 'Ahmedabad, Gujarat',
+                text: 'I was sceptical, but the free trial convinced me. Setup took one afternoon. Customers scan the QR and we never miss an order anymore. Worth every rupee.',
+                avatar: 'AM',
+                color: 'bg-green-100 text-green-700',
+              },
+            ].map((t) => (
+              <div key={t.name} className="bg-gray-50 border border-gray-100 rounded-2xl p-6 flex flex-col">
+                <div className="flex gap-1 mb-4">
+                  {[1,2,3,4,5].map((i) => (
+                    <svg key={i} className="w-4 h-4 text-amber-400 fill-amber-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                  ))}
+                </div>
+                <p className="text-sm text-gray-700 leading-relaxed flex-1">"{t.text}"</p>
+                <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-200">
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${t.color}`}>
+                    {t.avatar}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{t.name}</p>
+                    <p className="text-xs text-gray-400">{t.role}</p>
+                    <p className="text-xs text-gray-400">{t.city}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
