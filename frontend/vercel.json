@@ -21,7 +21,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://cdn.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.amazonaws.com https://*.tile.openstreetmap.org; connect-src 'self' https://dineverse.onrender.com wss://dineverse.onrender.com https://ipapi.co https://nominatim.openstreetmap.org https://*.razorpay.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://checkout.razorpay.com https://cdn.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.amazonaws.com https://*.tile.openstreetmap.org; connect-src 'self' https://dineverse.onrender.com wss://dineverse.onrender.com https://ipapi.co https://nominatim.openstreetmap.org https://*.razorpay.com https://cafestation2026.s3.ap-south-1.amazonaws.com; frame-src https://api.razorpay.com https://checkout.razorpay.com; object-src 'none'; base-uri 'self'; form-action 'self';"
         },
         {
           "key": "Strict-Transport-Security",
