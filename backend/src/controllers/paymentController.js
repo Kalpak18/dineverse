@@ -329,27 +329,24 @@ exports.getRouteStatus = asyncHandler(async (req, res) => {
 });
 
 // ─── POST /api/payments/route/connect ─────────────────────────
-// Creates a Razorpay linked account (Route) for the café.
-// Café owner provides business details once; payouts are then automatic.
+// Creates a Razorpay linked account with minimal info.
+// Razorpay then emails the café owner a hosted onboarding link where
+// they enter their own bank details, PAN, and complete KYC directly
+// on Razorpay's platform — we never see or store any sensitive data.
 exports.connectRoute = asyncHandler(async (req, res) => {
   const {
     legal_business_name,
     business_type = 'proprietorship',
     contact_name,
-    pan,
-    gst,
-    account_number,
-    ifsc_code,
-    beneficiary_name,
   } = req.body;
 
-  if (!legal_business_name || !contact_name || !account_number || !ifsc_code || !beneficiary_name) {
-    return fail(res, 'Missing required fields: legal_business_name, contact_name, account_number, ifsc_code, beneficiary_name', 400);
+  if (!legal_business_name || !contact_name) {
+    return fail(res, 'legal_business_name and contact_name are required', 400);
   }
 
   const cafeRes = await db.query(
     `SELECT id, name, email, phone, address, city, state, pincode,
-            razorpay_account_id, razorpay_account_status
+            razorpay_account_id
      FROM cafes WHERE id = $1`,
     [req.cafeId]
   );
@@ -357,7 +354,7 @@ exports.connectRoute = asyncHandler(async (req, res) => {
   if (!cafe) return fail(res, 'Café not found', 404);
 
   if (cafe.razorpay_account_id) {
-    return fail(res, 'A Razorpay payout account is already connected', 409);
+    return fail(res, 'A payout account is already registered for this café', 409);
   }
 
   const keyId     = process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID;
@@ -366,7 +363,8 @@ exports.connectRoute = asyncHandler(async (req, res) => {
 
   const phone = (cafe.phone || '9999999999').replace(/\D/g, '').slice(-10);
 
-  // Step 1 — create linked account
+  // Create linked account — Razorpay emails the owner a hosted KYC link
+  // so they fill in bank details, PAN, etc. directly on Razorpay's platform.
   let account;
   try {
     account = await razorpay.accounts.create({
@@ -389,58 +387,12 @@ exports.connectRoute = asyncHandler(async (req, res) => {
           },
         },
       },
-      ...(pan && {
-        legal_info: {
-          pan,
-          ...(gst && { gst }),
-        },
-      }),
     });
   } catch (err) {
     logger.error('Razorpay account create failed for cafe %s: %s', req.cafeId, err.message);
-    return fail(res, err.error?.description || 'Failed to create Razorpay account', 502);
+    return fail(res, err.error?.description || 'Failed to create payout account', 502);
   }
 
-  // Step 2 — add stakeholder (required for KYC)
-  try {
-    await razorpay.stakeholders.create(account.id, {
-      name:         contact_name,
-      email:        cafe.email,
-      phone:        { primary: phone },
-      relationship: { director: true },
-    });
-  } catch (err) {
-    logger.warn('Stakeholder create failed for account %s: %s', account.id, err.message);
-    // Non-fatal — account still usable
-  }
-
-  // Step 3 — add bank account via direct API (SDK doesn't expose this endpoint)
-  try {
-    const resp = await fetch(
-      `https://api.razorpay.com/v2/accounts/${account.id}/bank_account`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Basic ' + Buffer.from(`${keyId}:${keySecret}`).toString('base64'),
-        },
-        body: JSON.stringify({
-          ifsc_code,
-          beneficiary_name,
-          account_number,
-        }),
-      }
-    );
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({}));
-      logger.warn('Bank account add failed for %s: %s', account.id, JSON.stringify(body));
-      // Non-fatal — owner can update via Razorpay dashboard
-    }
-  } catch (err) {
-    logger.warn('Bank account add error for %s: %s', account.id, err.message);
-  }
-
-  // Save account ID and set status to pending (Razorpay verifies KYC asynchronously)
   await db.query(
     `UPDATE cafes
      SET razorpay_account_id = $1, razorpay_account_status = 'pending', razorpay_route_enabled = false
@@ -452,8 +404,7 @@ exports.connectRoute = asyncHandler(async (req, res) => {
   ok(res, {
     account_id: account.id,
     status:     'pending',
-    message:    'Account created. Razorpay will verify your KYC — payouts activate once approved (usually 2–3 business days).',
-  }, 'Payout account connected!');
+  }, 'Payout account registered! Check your email to complete KYC on Razorpay.');
 });
 
 // ─── POST /api/payments/route/enable ──────────────────────────

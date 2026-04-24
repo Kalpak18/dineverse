@@ -152,11 +152,6 @@ export default function ProfilePage() {
     legal_business_name: '',
     business_type: 'proprietorship',
     contact_name: '',
-    pan: '',
-    gst: '',
-    account_number: '',
-    ifsc_code: '',
-    beneficiary_name: '',
   });
   const [connectingRoute, setConnectingRoute] = useState(false);
 
@@ -170,10 +165,6 @@ export default function ProfilePage() {
     e.preventDefault();
     if (!routeForm.legal_business_name.trim()) return toast.error('Legal business name is required');
     if (!routeForm.contact_name.trim()) return toast.error('Contact name is required');
-    if (!routeForm.pan.trim()) return toast.error('PAN number is required');
-    if (!routeForm.account_number.trim()) return toast.error('Bank account number is required');
-    if (!routeForm.ifsc_code.trim()) return toast.error('IFSC code is required');
-    if (!routeForm.beneficiary_name.trim()) return toast.error('Beneficiary name is required');
     setConnectingRoute(true);
     try {
       await connectRoute(routeForm);
@@ -838,21 +829,24 @@ export default function ProfilePage() {
 
         {routeStatus?.status === 'not_connected' && (
           <form onSubmit={handleConnectRoute} className="space-y-4">
-            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-700">
-              Once connected, every customer payment is automatically split: 99% goes to your bank, 1% to DineVerse. No manual transfers needed.
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">How it works</p>
+              <p>1. Fill in your business name and contact — that's all we need.</p>
+              <p>2. Razorpay emails you a secure link to enter your bank details and complete KYC on their platform.</p>
+              <p>3. Once verified, every customer payment automatically splits: 99% to your bank, 1% to DineVerse.</p>
+            </div>
+
+            <div>
+              <label className="label">Legal Business Name <span className="text-red-500">*</span></label>
+              <input
+                className="input"
+                value={routeForm.legal_business_name}
+                onChange={(e) => setRouteForm((f) => ({ ...f, legal_business_name: e.target.value }))}
+                placeholder="As registered (e.g. Sunrise Café Pvt. Ltd.)"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2">
-                <label className="label">Legal Business Name <span className="text-red-500">*</span></label>
-                <input
-                  className="input"
-                  value={routeForm.legal_business_name}
-                  onChange={(e) => setRouteForm((f) => ({ ...f, legal_business_name: e.target.value }))}
-                  placeholder="As per PAN / GST registration"
-                />
-              </div>
-
               <div>
                 <label className="label">Business Type <span className="text-red-500">*</span></label>
                 <select
@@ -875,68 +869,8 @@ export default function ProfilePage() {
                   className="input"
                   value={routeForm.contact_name}
                   onChange={(e) => setRouteForm((f) => ({ ...f, contact_name: e.target.value }))}
-                  placeholder="Owner / Director name"
+                  placeholder="Owner / Director"
                 />
-              </div>
-
-              <div>
-                <label className="label">PAN Number <span className="text-red-500">*</span></label>
-                <input
-                  className="input uppercase font-mono tracking-wider"
-                  value={routeForm.pan}
-                  onChange={(e) => setRouteForm((f) => ({ ...f, pan: e.target.value.toUpperCase().replace(/\s/g, '') }))}
-                  placeholder="AAAAA0000A"
-                  maxLength={10}
-                />
-              </div>
-
-              <div>
-                <label className="label">GST Number <span className="text-gray-400 font-normal">(optional)</span></label>
-                <input
-                  className="input uppercase font-mono tracking-wider"
-                  value={routeForm.gst}
-                  onChange={(e) => setRouteForm((f) => ({ ...f, gst: e.target.value.toUpperCase().replace(/\s/g, '') }))}
-                  placeholder="22AAAAA0000A1Z5"
-                  maxLength={15}
-                />
-              </div>
-            </div>
-
-            <div className="border-t border-gray-100 pt-4 space-y-3">
-              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Bank Account Details</p>
-
-              <div>
-                <label className="label">Account Number <span className="text-red-500">*</span></label>
-                <input
-                  className="input font-mono"
-                  type="password"
-                  autoComplete="off"
-                  value={routeForm.account_number}
-                  onChange={(e) => setRouteForm((f) => ({ ...f, account_number: e.target.value.replace(/\s/g, '') }))}
-                  placeholder="Enter account number"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">IFSC Code <span className="text-red-500">*</span></label>
-                  <input
-                    className="input uppercase font-mono"
-                    value={routeForm.ifsc_code}
-                    onChange={(e) => setRouteForm((f) => ({ ...f, ifsc_code: e.target.value.toUpperCase().replace(/\s/g, '') }))}
-                    placeholder="HDFC0001234"
-                    maxLength={11}
-                  />
-                </div>
-                <div>
-                  <label className="label">Beneficiary Name <span className="text-red-500">*</span></label>
-                  <input
-                    className="input"
-                    value={routeForm.beneficiary_name}
-                    onChange={(e) => setRouteForm((f) => ({ ...f, beneficiary_name: e.target.value }))}
-                    placeholder="Name on bank account"
-                  />
-                </div>
               </div>
             </div>
 
@@ -945,11 +879,11 @@ export default function ProfilePage() {
               disabled={connectingRoute}
               className="btn-primary w-full"
             >
-              {connectingRoute ? 'Connecting…' : 'Connect Payout Account'}
+              {connectingRoute ? 'Setting up…' : 'Set Up Payouts'}
             </button>
 
             <p className="text-xs text-gray-400 text-center">
-              Your details are sent securely to Razorpay for KYC verification. DineVerse does not store your bank account number.
+              Razorpay will email <strong>{cafe?.email}</strong> with a secure link to complete KYC. We never see your bank details.
             </p>
           </form>
         )}
