@@ -115,13 +115,6 @@ export default function DashboardPage() {
       // Show welcome modal once per account (first registration)
       if (cafe?.id && !localStorage.getItem(`dv_welcomed_${cafe.id}`)) {
         setShowWelcome(true);
-      } else {
-        // Auto-open wizard on very first visit if menu is empty (only if welcome already dismissed)
-        const firstVisitKey = `dv_wizard_seen_${cafe?.id}`;
-        if (!localStorage.getItem(firstVisitKey) && (itemsRes.data.items || []).length === 0) {
-          localStorage.setItem(firstVisitKey, '1');
-          setShowWizard(true);
-        }
       }
 
       if (annRes?.data?.value?.active && annRes.data.value.text) {
@@ -158,13 +151,11 @@ export default function DashboardPage() {
   const doneCount    = CHECKLIST.filter((c) => c.done(setupStatus)).length;
   const totalCount   = CHECKLIST.length;
   const allDone      = doneCount === totalCount;
-  const showChecklist = !checklistDismissed || !allDone;
+  const showChecklist = !checklistDismissed;
 
   const dismissChecklist = () => {
-    if (allDone) {
-      localStorage.setItem(`dv_checklist_done_${cafe?.id}`, '1');
-      setChecklistDismissed(true);
-    }
+    localStorage.setItem(`dv_checklist_done_${cafe?.id}`, '1');
+    setChecklistDismissed(true);
   };
 
   if (loading) return <DashboardSkeleton />;
@@ -252,7 +243,7 @@ export default function DashboardPage() {
                 <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center text-lg flex-shrink-0">🚀</div>
                 <div className="text-left">
                   <p className="font-semibold text-gray-900 text-sm">
-                    {allDone ? 'Setup complete!' : 'Get your café ready'}
+                    {allDone ? 'Setup complete!' : 'Get started'}
                   </p>
                   <p className="text-xs text-gray-400">
                     {allDone
@@ -262,7 +253,6 @@ export default function DashboardPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Mini progress dots */}
                 <div className="hidden sm:flex items-center gap-1">
                   {CHECKLIST.map((item) => (
                     <div
@@ -273,7 +263,14 @@ export default function DashboardPage() {
                     />
                   ))}
                 </div>
-                <span className="text-gray-400 text-sm">{checklistOpen ? '▲' : '▼'}</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); dismissChecklist(); }}
+                  className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+                <span className="text-gray-300 text-sm">{checklistOpen ? '▲' : '▼'}</span>
               </div>
             </button>
 
@@ -281,9 +278,9 @@ export default function DashboardPage() {
             {checklistOpen && (
               <>
                 {/* Progress bar */}
-                <div className="h-1.5 bg-gray-100">
+                <div className="h-1 bg-gray-100">
                   <div
-                    className="h-1.5 bg-brand-500 transition-all duration-500"
+                    className="h-1 bg-brand-500 transition-all duration-500"
                     style={{ width: `${(doneCount / totalCount) * 100}%` }}
                   />
                 </div>
@@ -295,17 +292,15 @@ export default function DashboardPage() {
                     return (
                       <div
                         key={item.id}
-                        className={`flex items-center gap-3 px-5 py-3 transition-colors ${
-                          done ? 'opacity-60' : 'hover:bg-gray-50'
-                        }`}
+                        className={`flex items-center gap-3 px-5 py-3 ${done ? 'opacity-50' : ''}`}
                       >
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                           done ? 'bg-green-500 border-green-500' : 'border-gray-300'
                         }`}>
-                          {done && <span className="text-white text-[11px] font-bold">✓</span>}
+                          {done && <span className="text-white text-[10px] font-bold">✓</span>}
                         </div>
-                        <span className={`text-sm flex-1 ${done ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
-                          {item.icon} {item.label}
+                        <span className={`text-sm flex-1 ${done ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                          {item.label}
                         </span>
                         {!done && (
                           item.route ? (
@@ -313,7 +308,7 @@ export default function DashboardPage() {
                               onClick={() => openWizardAt(item.wizardStep)}
                               className="text-xs text-brand-600 font-semibold hover:underline flex-shrink-0"
                             >
-                              How? →
+                              Start →
                             </button>
                           ) : (
                             <button
@@ -328,29 +323,6 @@ export default function DashboardPage() {
                       </div>
                     );
                   })}
-                </div>
-
-                {/* Footer actions */}
-                <div className="px-5 py-3 border-t border-gray-50 flex items-center justify-between">
-                  {!allDone ? (
-                    <button
-                      onClick={() => {
-                        const firstPending = CHECKLIST.findIndex((c) => !c.done(setupStatus));
-                        openWizardAt(firstPending >= 0 ? firstPending : 0);
-                      }}
-                      className="text-xs font-semibold text-brand-600 bg-brand-50 hover:bg-brand-100 border border-brand-200 px-3 py-1.5 rounded-lg transition-colors"
-                    >
-                      Setup Guide →
-                    </button>
-                  ) : (
-                    <button
-                      onClick={dismissChecklist}
-                      className="text-xs text-gray-400 hover:text-gray-600 font-medium"
-                    >
-                      Dismiss checklist
-                    </button>
-                  )}
-                  <span className="text-xs text-gray-400">{doneCount}/{totalCount} complete</span>
                 </div>
               </>
             )}

@@ -6,6 +6,7 @@ import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist } from '.
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
+import { fmtCurrency } from '../../utils/formatters';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
@@ -49,7 +50,7 @@ export default function CafeEntry() {
   const tableFromUrl = searchParams.get('table') || '';
   const [form, setForm] = useState(() => {
     try {
-      const saved = sessionStorage.getItem(`session_${slug}`);
+      const saved = localStorage.getItem(`session_${slug}`);
       const base = saved
         ? JSON.parse(saved)
         : { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: '', order_type: 'dine-in' };
@@ -163,7 +164,7 @@ export default function CafeEntry() {
       delivery_est_mins:  cafe?.delivery_est_mins,
       delivery_radius_km: cafe?.delivery_radius_km,
     };
-    sessionStorage.setItem(`session_${slug}`, JSON.stringify(session));
+    localStorage.setItem(`session_${slug}`, JSON.stringify(session));
     navigate(`/cafe/${slug}/menu`);
   };
 
@@ -171,7 +172,7 @@ export default function CafeEntry() {
   const hasAnyHistory = loadOrders(slug).length > 0 || loadReservations(slug).length > 0;
 
   // Auto-redirect returning customer with active orders straight to tracking
-  const existingSession = (() => { try { return JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null'); } catch { return null; } })();
+  const existingSession = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || 'null'); } catch { return null; } })();
   if (!loading && cafe && activeOrders.length > 0 && existingSession?.customer_name) {
     navigate(`/cafe/${slug}/confirmation`, { replace: true });
     return null;
@@ -361,14 +362,14 @@ export default function CafeEntry() {
               <div className="text-xs bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 space-y-0.5">
                 <p className="font-semibold text-blue-800">🛵 Delivery to your address</p>
                 {cafe?.delivery_fee_base > 0
-                  ? <p className="text-blue-600">Delivery fee: ₹{parseFloat(cafe.delivery_fee_base).toFixed(0)}</p>
+                  ? <p className="text-blue-600">Delivery fee: {fmtCurrency(cafe.delivery_fee_base, cafe?.currency)}</p>
                   : <p className="text-blue-600">Free delivery!</p>
                 }
                 {cafe?.delivery_est_mins > 0 && (
                   <p className="text-blue-600">Estimated time: ~{cafe.delivery_est_mins} min</p>
                 )}
                 {cafe?.delivery_min_order > 0 && (
-                  <p className="text-blue-600">Min order: ₹{parseFloat(cafe.delivery_min_order).toFixed(0)}</p>
+                  <p className="text-blue-600">Min order: {fmtCurrency(cafe.delivery_min_order, cafe?.currency)}</p>
                 )}
                 <p className="text-blue-500 mt-1">You'll enter your delivery address at checkout.</p>
               </div>

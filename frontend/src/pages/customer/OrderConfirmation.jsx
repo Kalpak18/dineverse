@@ -2,7 +2,7 @@ import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { fmtToken, fmtPrice, fmtTime } from '../../utils/formatters';
+import { fmtToken, fmtPrice, fmtTime, fmtCurrency } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
 import { loadRazorpayScript } from '../../utils/razorpayLoader';
 
@@ -23,10 +23,12 @@ export default function OrderConfirmation() {
   const { slug } = useParams();
   const navigate  = useNavigate();
   const location  = useLocation();
+  const sessionCurrency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
   const [orders, setOrders] = useState([]);
   const [cancelling, setCancelling] = useState(null);
   const [paying, setPaying] = useState(null);          // order ID currently in payment flow
   const [cafeInfo, setCafeInfo] = useState(null);
+  const c = (n) => fmtCurrency(n, cafeInfo?.currency || sessionCurrency);
   const [ratingOrder, setRatingOrder] = useState(null); // order being rated
   const [tableBill, setTableBill] = useState(null);
   const [loadingBill, setLoadingBill] = useState(false);
@@ -287,7 +289,7 @@ export default function OrderConfirmation() {
   const hasDineIn   = orders.some((o) => o.order_type === 'dine-in' && o.table_number);
 
   const startNewOrder = () => {
-    sessionStorage.removeItem(`session_${slug}`);
+    localStorage.removeItem(`session_${slug}`);
     navigate(`/cafe/${slug}`, { replace: true });
   };
 
@@ -406,7 +408,7 @@ export default function OrderConfirmation() {
                         {item.item_name} × {item.quantity}
                       </span>
                       <span className={`font-medium ${order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
-                        ₹{fmtPrice(item.subtotal)}
+                        {c(item.subtotal)}
                       </span>
                     </div>
                   ))}
@@ -417,7 +419,7 @@ export default function OrderConfirmation() {
               <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900 text-sm">
                 <span>Total</span>
                 <span className={order.status === 'cancelled' ? 'line-through text-gray-400' : ''}>
-                  ₹{fmtPrice(order.total_amount)}
+                  {c(order.total_amount)}
                 </span>
               </div>
 
@@ -487,7 +489,7 @@ export default function OrderConfirmation() {
                         </svg>
                         Processing…
                       </>
-                    ) : '💳 Pay Now — ₹' + fmtPrice(order.final_amount || order.total_amount)}
+                    ) : `💳 Pay Now — ${c(order.final_amount || order.total_amount)}`}
                   </button>
                 )}
 
@@ -581,7 +583,7 @@ export default function OrderConfirmation() {
                 {(receiptOrder.items || []).map((item, i) => (
                   <div key={i} className="flex justify-between text-sm">
                     <span className="text-gray-700">{item.item_name} × {item.quantity}</span>
-                    <span className="font-medium text-gray-900">₹{fmtPrice(item.subtotal)}</span>
+                    <span className="font-medium text-gray-900">{c(item.subtotal)}</span>
                   </div>
                 ))}
               </div>
@@ -591,24 +593,24 @@ export default function OrderConfirmation() {
                 {parseFloat(receiptOrder.tax_amount || 0) > 0 && (
                   <div className="flex justify-between text-gray-500">
                     <span>GST {receiptOrder.tax_rate}% (CGST {receiptOrder.tax_rate / 2}% + SGST {receiptOrder.tax_rate / 2}%)</span>
-                    <span>₹{fmtPrice(receiptOrder.tax_amount)}</span>
+                    <span>{c(receiptOrder.tax_amount)}</span>
                   </div>
                 )}
                 {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
-                    <span>−₹{fmtPrice(receiptOrder.discount_amount)}</span>
+                    <span>−{c(receiptOrder.discount_amount)}</span>
                   </div>
                 )}
                 {parseFloat(receiptOrder.tip_amount || 0) > 0 && (
                   <div className="flex justify-between text-gray-500">
                     <span>Tip</span>
-                    <span>₹{fmtPrice(receiptOrder.tip_amount)}</span>
+                    <span>{c(receiptOrder.tip_amount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-gray-900 text-base pt-1">
                   <span>Total Paid</span>
-                  <span>₹{fmtPrice(receiptOrder.final_amount || receiptOrder.total_amount)}</span>
+                  <span>{c(receiptOrder.final_amount || receiptOrder.total_amount)}</span>
                 </div>
               </div>
 
@@ -653,12 +655,12 @@ export default function OrderConfirmation() {
                   {(order.items || []).map((item, j) => (
                     <div key={j} className="flex justify-between text-sm text-gray-700 py-0.5">
                       <span>{item.item_name} × {item.quantity}</span>
-                      <span>₹{fmtPrice(item.subtotal)}</span>
+                      <span>{c(item.subtotal)}</span>
                     </div>
                   ))}
                   <div className="flex justify-between text-xs text-gray-500 mt-1.5 pt-1.5 border-t border-dashed border-gray-100">
                     <span>Order subtotal</span>
-                    <span>₹{fmtPrice(order.final_amount || order.total_amount)}</span>
+                    <span>{c(order.final_amount || order.total_amount)}</span>
                   </div>
                 </div>
               ))}
@@ -666,12 +668,12 @@ export default function OrderConfirmation() {
                 {tableBill.combined_tip > 0 && (
                   <div className="flex justify-between text-sm text-gray-500">
                     <span>Tips</span>
-                    <span>₹{fmtPrice(tableBill.combined_tip)}</span>
+                    <span>{c(tableBill.combined_tip)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-gray-900 text-base">
                   <span>Total ({(tableBill.orders || []).length} order{(tableBill.orders || []).length !== 1 ? 's' : ''})</span>
-                  <span>₹{fmtPrice(tableBill.combined_total)}</span>
+                  <span>{c(tableBill.combined_total)}</span>
                 </div>
               </div>
             </div>

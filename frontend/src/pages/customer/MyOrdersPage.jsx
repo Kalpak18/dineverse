@@ -7,7 +7,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { fmtToken, fmtPrice, fmtTime, groupByDate } from '../../utils/formatters';
+import { fmtToken, fmtPrice, fmtTime, fmtCurrency, groupByDate } from '../../utils/formatters';
 import { useCart } from '../../context/CartContext';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
@@ -38,6 +38,8 @@ export default function MyOrdersPage() {
   const { slug }              = useParams();
   const navigate              = useNavigate();
   const { addItem, clearCart } = useCart();
+  const sessionCurrency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
+  const c = (n) => fmtCurrency(n, sessionCurrency);
   const [orders, setOrders]           = useState([]);
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
@@ -183,7 +185,7 @@ export default function MyOrdersPage() {
   const allDone = activeOrders.length === 0 && activeRes.length === 0 && orders.length > 0;
 
   const startNewOrder = () => {
-    sessionStorage.removeItem(`session_${slug}`);
+    localStorage.removeItem(`session_${slug}`);
     navigate(`/cafe/${slug}`, { replace: true });
   };
 
@@ -392,7 +394,7 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
                   </div>
                 )}
               </div>
-              <span className="text-gray-600 font-medium">₹{fmtPrice(item.subtotal)}</span>
+              <span className="text-gray-600 font-medium">{c(item.subtotal)}</span>
             </div>
           ))}
         </div>
@@ -400,7 +402,7 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
         {/* Total */}
         <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
           <span>Total</span>
-          <span>₹{fmtPrice(order.final_amount || order.total_amount)}</span>
+          <span>{c(order.final_amount || order.total_amount)}</span>
         </div>
 
         {/* Cancellation reason */}

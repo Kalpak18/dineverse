@@ -23,7 +23,7 @@ export default function CartPage() {
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
 
-  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+  const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null');
 
   // Delivery address form state
   const [deliveryForm, setDeliveryForm] = useState({

@@ -6,6 +6,7 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { loadOrders } from '../../utils/cafeOrderStorage';
+import { fmtCurrency } from '../../utils/formatters';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
@@ -61,9 +62,10 @@ export default function MenuPage() {
   const [selectedCatId, setSelectedCatId] = useState(null);
   const contentRef = useRef(null);
 
-  const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
+  const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null');
   const allOrders    = loadOrders(slug);
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
+  const c = (n) => fmtCurrency(n, session?.currency || cafe?.currency || 'INR');
 
   // Fetch emoji map from platform settings (one-time on mount)
   useEffect(() => {
@@ -91,9 +93,10 @@ export default function MenuPage() {
         setCafeOpen(cafeData.is_open !== false);
         setCafeCurrency(cafeData.currency || 'INR');
         // Store tax info in session so CartPage can show breakdown
-        const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
-        sessionStorage.setItem(`session_${slug}`, JSON.stringify({
+        const existing = JSON.parse(localStorage.getItem(`session_${slug}`) || '{}');
+        localStorage.setItem(`session_${slug}`, JSON.stringify({
           ...existing,
+          currency:     cafeData.currency || 'INR',
           gst_rate:     cafeData.gst_rate ?? 0,
           gst_number:   cafeData.gst_number || '',
           tax_inclusive: cafeData.tax_inclusive !== false,
@@ -125,8 +128,8 @@ export default function MenuPage() {
       setCafeOpen(is_open);
       setCafe((prev) => prev ? { ...prev, is_open } : prev);
       // Keep session in sync so CartPage reads fresh value
-      const existing = JSON.parse(sessionStorage.getItem(`session_${slug}`) || '{}');
-      sessionStorage.setItem(`session_${slug}`, JSON.stringify({ ...existing, is_open }));
+      const existing = JSON.parse(localStorage.getItem(`session_${slug}`) || '{}');
+      localStorage.setItem(`session_${slug}`, JSON.stringify({ ...existing, is_open }));
     });
     return () => socket.disconnect();
   }, [slug]);
@@ -312,12 +315,12 @@ export default function MenuPage() {
             {bannerOffers.map((o) => {
               const label = o.offer_type === 'percentage'
                 ? `${o.discount_value}% OFF`
-                : `₹${o.discount_value} OFF`;
+                : `${c(o.discount_value)} OFF`;
               return (
                 <div key={o.id} className="flex items-center gap-1.5 bg-white border border-orange-200 rounded-full px-3 py-1 shadow-sm whitespace-nowrap">
                   <span className="text-xs">🏷️</span>
                   <span className="text-xs font-bold text-orange-700">{label}</span>
-                  {o.min_order_amount > 0 && <span className="text-xs text-gray-500">on orders ₹{o.min_order_amount}+</span>}
+                  {o.min_order_amount > 0 && <span className="text-xs text-gray-500">on orders {c(o.min_order_amount)}+</span>}
                   {o.description && <span className="text-xs text-gray-500">· {o.description}</span>}
                 </div>
               );
@@ -461,9 +464,9 @@ export default function MenuPage() {
                         {offer.description && <p className="text-xs text-white/80 mt-0.5">{offer.description}</p>}
                       </div>
                       <div className="text-right">
-                        <p className="font-black text-white text-xl leading-none">₹{parseFloat(offer.combo_price).toFixed(0)}</p>
+                        <p className="font-black text-white text-xl leading-none">{c(offer.combo_price)}</p>
                         {savings > 0 && (
-                          <p className="text-[11px] text-white/80 mt-0.5">Save ₹{savings.toFixed(0)}</p>
+                          <p className="text-[11px] text-white/80 mt-0.5">Save {c(savings)}</p>
                         )}
                       </div>
                     </div>
@@ -475,7 +478,7 @@ export default function MenuPage() {
                             <span className="flex-1 font-medium">{item.name}</span>
                             {item.comboQty > 1 && <span className="text-gray-400 text-xs">×{item.comboQty}</span>}
                             {savings > 0 && (
-                              <span className="text-gray-400 text-xs line-through">₹{(parseFloat(item.price) * item.comboQty).toFixed(0)}</span>
+                              <span className="text-gray-400 text-xs line-through">{c(parseFloat(item.price) * item.comboQty)}</span>
                             )}
                           </div>
                         ))}
@@ -575,7 +578,7 @@ export default function MenuPage() {
             >
               <span className="bg-brand-700 rounded-lg px-2 py-0.5 text-sm font-bold">{itemCount}</span>
               <span className="font-semibold">View Cart</span>
-              <span className="font-bold">₹{total.toFixed(2)}</span>
+              <span className="font-bold">{c(total)}</span>
             </button>
           )}
         </div>
@@ -636,7 +639,7 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty }) {
 
         {/* Price + Add */}
         <div className="flex items-center justify-between mt-auto pt-2">
-          <span className="font-bold text-gray-900 text-sm">₹{parseFloat(item.price).toFixed(0)}</span>
+          <span className="font-bold text-gray-900 text-sm">{c(item.price)}</span>
           {qty === 0 ? (
             <button
               onClick={onAdd}
