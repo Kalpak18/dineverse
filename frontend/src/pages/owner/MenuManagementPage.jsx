@@ -4,10 +4,12 @@ import {
   getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability,
   updateStock,
 } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import ImageUpload from '../../components/ImageUpload';
 import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
+import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
 // Group items by category, return array of { category, items[] }
@@ -320,6 +322,8 @@ function FoodTypeSection({ type, label, icon, groups, collapsedGroups, onToggleG
 
 /* ── Single item row ── */
 function ItemRow({ item, onEdit, onDelete, onToggleAvail, onRestock }) {
+  const { cafe } = useAuth();
+  const c = (n) => fmtCurrency(n, cafe?.currency);
   const isOutOfStock = item.track_stock && item.stock_quantity === 0;
   const isLowStock   = item.track_stock && item.stock_quantity > 0 && item.stock_quantity <= 5;
 
@@ -344,7 +348,7 @@ function ItemRow({ item, onEdit, onDelete, onToggleAvail, onRestock }) {
         )}
       </div>
       <div className="text-right flex-shrink-0">
-        <span className="font-bold text-gray-900 text-sm block">₹{parseFloat(item.price).toFixed(2)}</span>
+        <span className="font-bold text-gray-900 text-sm block">{c(item.price)}</span>
         {item.track_stock && (
           <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${
             isOutOfStock  ? 'bg-red-100 text-red-600' :
@@ -393,6 +397,7 @@ function ItemRow({ item, onEdit, onDelete, onToggleAvail, onRestock }) {
 
 /* ── Item Modal ── */
 function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCategoryCreated }) {
+  const { cafe } = useAuth();
   const ALLERGEN_TAGS = [
     { key: 'vegan',       label: 'Vegan',        emoji: '🌱' },
     { key: 'gluten-free', label: 'Gluten-Free',   emoji: '🌾' },
@@ -559,7 +564,7 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
         </div>
 
         <div>
-          <label className="label">Price (₹) *</label>
+          <label className="label">Price ({cafe?.currency || 'INR'}) *</label>
           <input type="number" min="0" step="0.01" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
         </div>
 
