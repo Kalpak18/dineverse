@@ -364,9 +364,34 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
         <div className="space-y-0.5 mb-3 border-t border-dashed border-gray-100 pt-2.5">
           {(order.items || []).map((item, i) => (
             <div key={i} className="flex justify-between text-sm">
-              <span className={`text-gray-700 ${isTerminal && order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
-                {item.item_name} × {item.quantity}
-              </span>
+              <div className="flex-1">
+                <span className={`text-gray-700 ${isTerminal && order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
+                  {item.item_name} × {item.quantity}
+                </span>
+                {/* Item status for individual mode */}
+                {order.kitchen_mode === 'individual' && item.item_status && (
+                  <div className="flex items-center gap-1 mt-0.5">
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
+                      item.item_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                      item.item_status === 'preparing' ? 'bg-orange-100 text-orange-700' :
+                      item.item_status === 'ready' ? 'bg-teal-100 text-teal-700' :
+                      item.item_status === 'served' ? 'bg-green-100 text-green-700' :
+                      item.item_status === 'cancelled' ? 'bg-red-100 text-red-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {item.item_status === 'pending' ? '⏳' :
+                       item.item_status === 'preparing' ? '👨‍🍳' :
+                       item.item_status === 'ready' ? '🔔' :
+                       item.item_status === 'served' ? '✅' :
+                       item.item_status === 'cancelled' ? '❌' : '❓'}
+                      {item.item_status}
+                    </span>
+                    {item.cancellation_reason && (
+                      <span className="text-[10px] text-red-600 ml-1">{item.cancellation_reason}</span>
+                    )}
+                  </div>
+                )}
+              </div>
               <span className="text-gray-600 font-medium">₹{fmtPrice(item.subtotal)}</span>
             </div>
           ))}

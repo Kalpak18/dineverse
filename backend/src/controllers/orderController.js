@@ -923,3 +923,236 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   }
   ok(res, { order: fullOrder });
 });
+
+// Accept entire order (kitchen staff accepts all items)
+exports.acceptOrder = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { cafeId } = req;
+
+  const order = await db.query(
+    'SELECT * FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+
+  if (order.rows.length === 0) {
+    return error(res, 'Order not found', 404);
+  }
+
+  const orderData = order.rows[0];
+
+  // Check if order is in individual mode
+  if (orderData.kitchen_mode !== 'individual') {
+    return error(res, 'Order acceptance only available in individual mode', 400);
+  }
+
+  // Check if order is already accepted
+  if (orderData.accepted) {
+    return error(res, 'Order already accepted', 400);
+  }
+
+  // Accept the order
+  await db.query(
+    'UPDATE orders SET accepted = true, acceptance_time = NOW(), updated_at = NOW() WHERE id = $1',
+    [id]
+  );
+
+  // Accept all items
+  await db.query(
+    'UPDATE order_items SET accepted = true WHERE order_id = $1',
+    [id]
+  );
+
+  // Log event
+  await db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+     VALUES ($1, $2, $3, 'staff', $4, $5)`,
+    [id, orderData.status, orderData.status, req.staffId || req.userId, req.userName || 'Staff']
+  );
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// Reject entire order (kitchen staff rejects all items)
+exports.rejectOrder = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const { cafeId } = req;
+
+  if (!reason || reason.trim().length === 0) {
+    return error(res, 'Rejection reason is required', 400);
+  }
+
+  const order = await db.query(
+    'SELECT * FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+
+  if (order.rows.length === 0) {
+    return error(res, 'Order not found', 404);
+  }
+
+  const orderData = order.rows[0];
+
+  // Check if order is in individual mode
+  if (orderData.kitchen_mode !== 'individual') {
+    return error(res, 'Order rejection only available in individual mode', 400);
+  }
+
+  // Check if order is already accepted
+  if (orderData.accepted) {
+    return error(res, 'Cannot reject an already accepted order', 400);
+  }
+
+  // Reject the order and all items
+  await db.query(
+    'UPDATE orders SET status = \'cancelled\', updated_at = NOW() WHERE id = $1',
+    [id]
+  );
+
+  await db.query(
+    'UPDATE order_items SET item_status = \'cancelled\', cancellation_reason = $1 WHERE order_id = $2',
+    [reason, id]
+  );
+
+  // Log event
+  await db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+     VALUES ($1, $2, $3, 'staff', $4, $5)`,
+    [id, orderData.status, 'cancelled', req.staffId || req.userId, req.userName || 'Staff']
+  );
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// Accept individual item
+exports.acceptItem = catchAsync(async (req, res) => {
+  const { id, itemId } = req.params;
+  const { cafeId } = req;
+
+  const order = await db.query(
+    'SELECT * FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+
+  if (order.rows.length === 0) {
+    return error(res, 'Order not found', 404);
+  }
+
+  const orderData = order.rows[0];
+
+  // Check if order is in individual mode
+  if (orderData.kitchen_mode !== 'individual') {
+    return error(res, 'Item acceptance only available in individual mode', 400);
+  }
+
+  // Check if item exists
+  const item = await db.query(
+    'SELECT * FROM order_items WHERE id = $1 AND order_id = $2',
+    [itemId, id]
+  );
+
+  if (item.rows.length === 0) {
+    return error(res, 'Item not found', 404);
+  }
+
+  const itemData = item.rows[0];
+
+  // Check if item is already accepted
+  if (itemData.accepted) {
+    return error(res, 'Item already accepted', 400);
+  }
+
+  // Accept the item
+  await db.query(
+    'UPDATE order_items SET accepted = true WHERE id = $1',
+    [itemId]
+  );
+
+  // Log event
+  await db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+     VALUES ($1, $2, $3, 'staff', $4, $5)`,
+    [id, orderData.status, orderData.status, req.staffId || req.userId, req.userName || 'Staff']
+  );
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// Reject individual item
+exports.rejectItem = catchAsync(async (req, res) => {
+  const { id, itemId } = req.params;
+  const { reason } = req.body;
+  const { cafeId } = req;
+
+  if (!reason || reason.trim().length === 0) {
+    return error(res, 'Rejection reason is required', 400);
+  }
+
+  const order = await db.query(
+    'SELECT * FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+
+  if (order.rows.length === 0) {
+    return error(res, 'Order not found', 404);
+  }
+
+  const orderData = order.rows[0];
+
+  // Check if order is in individual mode
+  if (orderData.kitchen_mode !== 'individual') {
+    return error(res, 'Item rejection only available in individual mode', 400);
+  }
+
+  // Check if item exists
+  const item = await db.query(
+    'SELECT * FROM order_items WHERE id = $1 AND order_id = $2',
+    [itemId, id]
+  );
+
+  if (item.rows.length === 0) {
+    return error(res, 'Item not found', 404);
+  }
+
+  const itemData = item.rows[0];
+
+  // Check if item is already accepted
+  if (itemData.accepted) {
+    return error(res, 'Cannot reject an already accepted item', 400);
+  }
+
+  // Reject the item
+  await db.query(
+    'UPDATE order_items SET item_status = \'cancelled\', cancellation_reason = $1 WHERE id = $2',
+    [reason, itemId]
+  );
+
+  // Log event
+  await db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+     VALUES ($1, $2, $3, 'staff', $4, $5)`,
+    [id, orderData.status, orderData.status, req.staffId || req.userId, req.userName || 'Staff']
+  );
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});

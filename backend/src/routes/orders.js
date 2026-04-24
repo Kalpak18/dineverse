@@ -11,6 +11,7 @@ const {
   createOrderPayment, verifyOrderPayment,
   getTableBill,
   setKitchenMode, updateItemStatus,
+  acceptOrder, rejectOrder, acceptItem, rejectItem,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -45,6 +46,10 @@ router.get('/:id', authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status', authenticate, checkSubscription, updateOrderStatus);
 router.patch('/:id/kitchen-mode', authenticate, checkSubscription, setKitchenMode);
 router.patch('/:id/items/:itemId/status', authenticate, checkSubscription, updateItemStatus);
+router.post('/:id/accept', authenticate, checkSubscription, acceptOrder);
+router.post('/:id/reject', authenticate, checkSubscription, rejectOrder);
+router.post('/:id/items/:itemId/accept', authenticate, checkSubscription, acceptItem);
+router.post('/:id/items/:itemId/reject', authenticate, checkSubscription, rejectItem);
 
 // Owner: all conversations inbox
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);

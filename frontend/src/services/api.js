@@ -162,6 +162,10 @@ export const updateOrderStatus = (id, status, cash_received = null, cancellation
   });
 export const setKitchenMode   = (id, mode)             => api.patch(`/orders/${id}/kitchen-mode`, { mode });
 export const updateItemStatus = (id, itemId, status)   => api.patch(`/orders/${id}/items/${itemId}/status`, { status });
+export const acceptOrder = (id) => api.post(`/orders/${id}/accept`);
+export const rejectOrder = (id, reason) => api.post(`/orders/${id}/reject`, { reason });
+export const acceptItem = (id, itemId) => api.post(`/orders/${id}/items/${itemId}/accept`);
+export const rejectItem = (id, itemId, reason) => api.post(`/orders/${id}/items/${itemId}/reject`, { reason });
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────
