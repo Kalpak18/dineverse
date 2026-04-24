@@ -171,13 +171,6 @@ export default function CafeEntry() {
   const activeOrders  = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
   const hasAnyHistory = loadOrders(slug).length > 0 || loadReservations(slug).length > 0;
 
-  // Auto-redirect returning customer with active orders straight to tracking
-  const existingSession = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || 'null'); } catch { return null; } })();
-  if (!loading && cafe && activeOrders.length > 0 && existingSession?.customer_name) {
-    navigate(`/cafe/${slug}/confirmation`, { replace: true });
-    return null;
-  }
-
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
       <div className="w-full max-w-sm space-y-4 animate-pulse">
