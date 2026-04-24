@@ -1,10 +1,12 @@
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import toast from 'react-hot-toast';
 import SOCKET_URL from '../../utils/socketUrl';
-import { fmtToken, fmtPrice, fmtTime, fmtCurrency } from '../../utils/formatters';
+import { fmtToken, fmtTime, fmtCurrency } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
 import { loadRazorpayScript } from '../../utils/razorpayLoader';
+import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },

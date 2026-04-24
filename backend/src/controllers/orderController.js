@@ -350,7 +350,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 // ─── Owner/Staff: get all orders ──────────────────────────────
 exports.getOrders = asyncHandler(async (req, res) => {
   const { status, date, page = 1 } = req.query;
-  const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+  const limit  = Math.min(parseInt(req.query.limit) || 50, 200);
   const offset = (Math.max(parseInt(page), 1) - 1) * limit;
 
   let whereClause = 'WHERE o.cafe_id = $1';

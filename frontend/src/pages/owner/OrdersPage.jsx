@@ -73,7 +73,7 @@ export default function OrdersPage() {
   const loadOrders = useCallback(async () => {
     try {
       const { data } = await getOrders({ limit: 200 });
-      setOrders(data.orders);
+      setOrders(data.orders || []);
     } catch {
       toast.error('Failed to load orders');
     } finally {
@@ -131,6 +131,7 @@ export default function OrdersPage() {
       toast.success(`Order marked as ${newStatus}`);
     } catch (err) {
       toast.error(getApiError(err));
+      throw err; // re-throw so callers (BillingModal, handleCollect) can detect failure
     }
   };
 
@@ -187,6 +188,7 @@ export default function OrdersPage() {
   // Takeaway "ready" → Bills tab (ready for pickup + payment)
   // Dine-in "served" → Bills tab (Table Bills)
   const isOrdersTabVisible = (o) => {
+    if (!o.status) return false;
     if (['paid', 'cancelled'].includes(o.status)) return false;
     if (o.order_type === 'takeaway' && o.status === 'ready') return false;
     if (o.order_type !== 'takeaway' && o.status === 'served') return false;
@@ -200,7 +202,7 @@ export default function OrdersPage() {
       if (statusFilter && o.status !== statusFilter) return false;
       if (!q) return true;
       const token = String(o.daily_order_number || '');
-      return o.customer_name.toLowerCase().includes(q) || o.table_number.toLowerCase().includes(q) || token.includes(q);
+      return (o.customer_name || '').toLowerCase().includes(q) || (o.table_number || '').toLowerCase().includes(q) || token.includes(q);
     });
   }, [orders, statusFilter, search]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -461,10 +463,19 @@ export default function OrdersPage() {
 function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
-  const statusCfg = STATUS_CONFIG[order.status];
+  const [advancing, setAdvancing] = useState(false);
+  const statusCfg = STATUS_CONFIG[order.status] || {};
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
   const isIndividual = order.kitchen_mode === 'individual';
+
+  const handleAdvance = async () => {
+    if (!nextStatus || advancing) return;
+    setAdvancing(true);
+    try { await onStatusUpdate(order.id, nextStatus); }
+    catch { /* toast already shown by handleStatusUpdate */ }
+    finally { setAdvancing(false); }
+  };
 
   const borderColor = {
     pending:   'border-l-yellow-400',
@@ -567,10 +578,11 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
       <div className="px-3 pb-3 pt-2 flex gap-2 mt-auto">
         {showNextBtn && (
           <button
-            onClick={() => onStatusUpdate(order.id, nextStatus)}
-            className="flex-1 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition-colors"
+            onClick={handleAdvance}
+            disabled={advancing}
+            className="flex-1 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-xs font-bold transition-colors"
           >
-            {actionLabel}
+            {advancing ? '…' : actionLabel}
           </button>
         )}
         <button
@@ -699,14 +711,21 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
       const toPay = bill.orders.filter((o) =>
         bill.isTakeaway ? o.status === 'ready' : o.status === 'served'
       );
-      await Promise.all(
+      const results = await Promise.allSettled(
         toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null))
       );
-      toast.success(
-        bill.isTakeaway
-          ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
-          : `Table ${bill.table_number} — payment collected!`
-      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      if (failed === 0) {
+        toast.success(
+          bill.isTakeaway
+            ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
+            : `Table ${bill.table_number} — payment collected!`
+        );
+      } else if (failed < toPay.length) {
+        toast.error(`${failed} order(s) could not be marked paid — please retry`);
+      }
+    } catch (err) {
+      toast.error('Failed to collect payment — please try again');
     } finally {
       setCollecting(null);
     }
@@ -1115,12 +1134,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
       {/* Cash received */}
       {isCash && (
         <div>
-          <label className="label">Cash Received (₹)</label>
+          <label className="label">Cash Received</label>
           <input
             type="number"
             min={bill.total}
             step="0.50"
-            placeholder={`Min ₹${bill.total.toFixed(2)}`}
+            placeholder={`Min ${c(bill.total)}`}
             className="input text-lg font-semibold"
             value={cashInput}
             onChange={(e) => setCashInput(e.target.value)}
