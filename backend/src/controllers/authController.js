@@ -57,9 +57,10 @@ exports.sendOtp = asyncHandler(async (req, res) => {
   const { email } = req.body;
   if (!email || !isValidEmail(email)) return fail(res, 'Valid email is required');
 
-  // Block sending OTP to an already-active account (avoid confusion)
+  // Block sending OTP only to fully set-up accounts (setup_completed = true)
+  // Accounts with setup_completed = false are still in progress — allow re-sending
   const active = await db.query(
-    'SELECT id FROM cafes WHERE email = $1 AND is_active = true',
+    'SELECT id FROM cafes WHERE email = $1 AND is_active = true AND setup_completed = true',
     [email.trim().toLowerCase()]
   );
   if (active.rows.length > 0) {

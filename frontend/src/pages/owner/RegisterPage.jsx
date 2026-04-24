@@ -347,14 +347,49 @@ export default function RegisterPage() {
     setOtp('');
   };
 
-  // ── Step 1 → Step 2 — verify OTP on backend NOW, get 24h token ──
   const [step1Loading, setStep1Loading] = useState(false);
 
+  // Stage 1: validate → auto-send OTP → show OTP input
+  // Stage 2: verify OTP → create account → proceed to Step 2
   const handleStep1Continue = async (e) => {
     e.preventDefault();
-    if (!otpSent)            { toast.error('Please verify your email first'); return; }
-    if (otp.length < 6)      { toast.error('Enter the 6-digit verification code'); return; }
-    if (password.length < 8) { toast.error('Password must be at least 8 characters'); return; }
+
+    if (!otpSent) {
+      // ── Stage 1: send OTP ──────────────────────────────────────
+      const trimmed = email.trim().toLowerCase();
+      if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        toast.error('Enter a valid email address'); return;
+      }
+      if (password.length < 8) {
+        toast.error('Password must be at least 8 characters'); return;
+      }
+      setStep1Loading(true);
+      try {
+        const res = await sendVerificationOtp(trimmed);
+        setVerifiedEmail(trimmed);
+        setOtpSent(true);
+        setResendCooldown(60);
+        if (res.data?.dev) {
+          toast('DEV: OTP printed to server logs (BREVO_API_KEY not set)', { icon: '⚠️', duration: 8000 });
+        } else {
+          toast.success('Verification code sent — check your inbox');
+        }
+      } catch (err) {
+        const retryAfter = err.response?.data?.retryAfter;
+        if (retryAfter) {
+          setResendCooldown(retryAfter);
+          setVerifiedEmail(trimmed);
+          setOtpSent(true); // show OTP box even on cooldown — code was already sent
+        }
+        toast.error(getApiError(err));
+      } finally {
+        setStep1Loading(false);
+      }
+      return;
+    }
+
+    // ── Stage 2: verify OTP + create account ──────────────────
+    if (otp.length < 6) { toast.error('Enter the 6-digit code sent to your email'); return; }
 
     setStep1Loading(true);
     try {
@@ -367,13 +402,12 @@ export default function RegisterPage() {
       setEmailVerifiedToken('');
       clearDraft();
       setStep(2);
-      toast.success('Account created. Now finish your cafe setup.');
+      toast.success('Account created! Now finish your café setup.');
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       const msg = getApiError(err);
       const code = err.response?.data?.errorCode;
       toast.error(msg);
-      // Force re-OTP if the code was wrong / expired
       if (['OTP_NOT_SENT', 'OTP_EXPIRED', 'OTP_MAX_ATTEMPTS'].includes(code)) {
         setOtpSent(false);
         setVerifiedEmail('');
@@ -455,79 +489,44 @@ export default function RegisterPage() {
 
         <div className="card shadow-lg">
 
-          {/* ── STEP 1: Email + Password + OTP ── */}
+          {/* ── STEP 1: Email + Password → auto OTP → Create Account ── */}
           {step === 1 && (
             <form id="reg-form-1" onSubmit={handleStep1Continue} className="space-y-5">
-              <div>
-                <p className="text-sm font-semibold text-gray-700 mb-4">
-                  First, verify your email and create your owner account.
-                </p>
+              <p className="text-sm font-semibold text-gray-700">
+                {otpSent ? 'Enter the code we sent to your email.' : 'Create your owner account.'}
+              </p>
 
-                {/* Email field — locked after OTP sent */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="label">Email Address *</label>
-                    {otpSent ? (
-                      <div className="flex items-center gap-2">
-                        <div className="input flex-1 bg-green-50 border-green-400 text-gray-700 flex items-center gap-2 cursor-default select-none">
-                          <span className="text-green-600 text-sm">✓</span>
-                          <span className="truncate text-sm">{verifiedEmail}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleChangeEmail}
-                          className="text-xs text-gray-500 hover:text-gray-700 underline whitespace-nowrap"
-                        >
-                          Change
-                        </button>
+              <div className="space-y-3">
+                {/* Email — editable before OTP, locked after */}
+                <div>
+                  <label className="label">Email Address *</label>
+                  {otpSent ? (
+                    <div className="flex items-center gap-2">
+                      <div className="input flex-1 bg-green-50 border-green-400 flex items-center gap-2 cursor-default select-none">
+                        <span className="text-green-600 text-sm">✓</span>
+                        <span className="truncate text-sm text-gray-700">{verifiedEmail}</span>
                       </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="email"
-                          className="input flex-1"
-                          placeholder="owner@cafe.com"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          autoComplete="email"
-                          required
-                        />
-                        <button
-                          type="button"
-                          onClick={handleSendOtp}
-                          disabled={otpLoading || resendCooldown > 0}
-                          className="btn-secondary whitespace-nowrap text-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          {otpLoading ? 'Sending…' : resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Send Code'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* OTP input — only visible after send */}
-                  {otpSent && (
-                    <div>
-                      <label className="label text-center block mb-3">Enter verification code</label>
-                      <OtpInput
-                        value={otp}
-                        onChange={setOtp}
-                        autoFocus
-                      />
-                      <div className="flex items-center justify-between mt-2">
-                        <p className="text-xs text-gray-400">6-digit code · expires in 5 min</p>
-                        <button
-                          type="button"
-                          onClick={handleSendOtp}
-                          disabled={otpLoading || resendCooldown > 0}
-                          className="text-xs text-brand-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
-                        </button>
-                      </div>
+                      <button type="button" onClick={handleChangeEmail}
+                        className="text-xs text-gray-500 hover:text-gray-700 underline whitespace-nowrap">
+                        Change
+                      </button>
                     </div>
+                  ) : (
+                    <input
+                      type="email"
+                      className="input"
+                      placeholder="owner@cafe.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="email"
+                      autoFocus
+                      required
+                    />
                   )}
+                </div>
 
-                  {/* Password */}
+                {/* Password — hidden once OTP is sent */}
+                {!otpSent && (
                   <div>
                     <label className="label">Password *</label>
                     <PasswordInput
@@ -540,22 +539,37 @@ export default function RegisterPage() {
                     />
                     <PasswordStrength password={password} />
                   </div>
-                </div>
+                )}
 
-                {!otpSent && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
-                    Send a verification code to your email before creating your account.
-                  </p>
+                {/* OTP boxes — appear after auto-send */}
+                {otpSent && (
+                  <div>
+                    <label className="label text-center block mb-3">6-digit verification code</label>
+                    <OtpInput value={otp} onChange={setOtp} autoFocus />
+                    <div className="flex items-center justify-between mt-2">
+                      <p className="text-xs text-gray-400">Expires in 5 min</p>
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={otpLoading || resendCooldown > 0}
+                        className="text-xs text-brand-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
 
               <div className="hidden sm:block">
                 <button
                   type="submit"
-                  disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
+                  disabled={step1Loading || (!otpSent && (!email || password.length < 8)) || (otpSent && otp.length < 6)}
                   className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {step1Loading ? 'Creating account…' : 'Verify & Create Account →'}
+                  {step1Loading
+                    ? (otpSent ? 'Verifying…' : 'Sending code…')
+                    : (otpSent ? 'Verify & Create Account →' : 'Register →')}
                 </button>
               </div>
 
@@ -800,10 +814,12 @@ export default function RegisterPage() {
         <button
           type="submit"
           form="reg-form-1"
-          disabled={step1Loading || !otpSent || otp.length < 6 || password.length < 8}
+          disabled={step1Loading || (!otpSent && (!email || password.length < 8)) || (otpSent && otp.length < 6)}
           className="btn-primary w-full disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {step1Loading ? 'Creating account…' : 'Verify & Create Account →'}
+          {step1Loading
+            ? (otpSent ? 'Verifying…' : 'Sending code…')
+            : (otpSent ? 'Verify & Create Account →' : 'Register →')}
         </button>
       </div>
     )}
