@@ -683,7 +683,9 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
     `SELECT o.id, o.status, o.final_amount, o.total_amount, o.payment_verified,
             o.customer_name, o.order_number,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-            c.name AS cafe_name, c.email AS cafe_email
+            c.name AS cafe_name, c.email AS cafe_email,
+            c.logo_url AS cafe_logo_url, c.currency AS cafe_currency,
+            c.razorpay_account_id, c.razorpay_route_enabled
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
@@ -701,16 +703,37 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   const amountPaise = Math.round(parseFloat(order.final_amount || order.total_amount) * 100);
   if (amountPaise <= 0) return fail(res, 'Invalid order amount', 400);
 
+  // Build Razorpay Route transfer — 1% commission to platform, 99% to café
+  const routeTransfers = [];
+  if (order.razorpay_route_enabled && order.razorpay_account_id) {
+    // Minimum transfer is ₹1 (100 paise); skip routing for tiny orders
+    const cafeSharePaise = Math.floor(amountPaise * 0.99);
+    if (cafeSharePaise >= 100) {
+      routeTransfers.push({
+        account:  order.razorpay_account_id,
+        amount:   cafeSharePaise,
+        currency: 'INR',
+        on_hold:  0,
+        notes: {
+          cafe_slug: slug,
+          order_id:  id,
+          type:      'food_order_payout',
+        },
+      });
+    }
+  }
+
   const rpOrder = await razorpay.orders.create({
-    amount: amountPaise,
+    amount:   amountPaise,
     currency: 'INR',
-    receipt: `ord_${id.slice(0, 8)}_${Date.now()}`,
+    receipt:  `ord_${id.slice(0, 8)}_${Date.now()}`,
     notes: {
       order_id:   id,
       cafe_slug:  slug,
       cafe_name:  order.cafe_name,
       daily_num:  order.daily_order_number,
     },
+    ...(routeTransfers.length > 0 && { transfers: routeTransfers }),
   });
 
   // Store Razorpay order id so we can verify later
@@ -720,12 +743,14 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   );
 
   ok(res, {
-    razorpay_order_id: rpOrder.id,
-    amount:            amountPaise,
-    currency:          'INR',
-    cafe_name:         order.cafe_name,
-    customer_name:     order.customer_name,
-    daily_order_number: order.daily_order_number,
+    razorpay_order_id:   rpOrder.id,
+    amount:              amountPaise,
+    currency:            order.cafe_currency || 'INR',
+    cafe_name:           order.cafe_name,
+    cafe_logo_url:       order.cafe_logo_url || null,
+    customer_name:       order.customer_name,
+    daily_order_number:  order.daily_order_number,
+    route_enabled:       routeTransfers.length > 0,
     key_id: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID,
   });
 });

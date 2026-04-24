@@ -235,8 +235,12 @@ export default function OrderConfirmation() {
           order_id:     data.razorpay_order_id,
           name:         data.cafe_name,
           description:  `Order #${data.daily_order_number}`,
+          image:        data.cafe_logo_url || undefined,
           prefill: { name: order.customer_name, contact: order.customer_phone || '' },
           theme:        { color: '#f97316' },
+          notes: {
+            payee: data.cafe_name,
+          },
           handler: async (response) => {
             try {
               const verifyRes = await verifyOrderPayment(slug, order.id, {
@@ -476,21 +480,32 @@ export default function OrderConfirmation() {
 
                 {/* Pay Now — shown when food is ready/served and not yet paid */}
                 {canPayOnline && !order.payment_verified && (
-                  <button
-                    onClick={() => handlePay(order)}
-                    disabled={isPaying}
-                    className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                  >
-                    {isPaying ? (
-                      <>
-                        <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                        </svg>
-                        Processing…
-                      </>
-                    ) : `💳 Pay Now — ${c(order.final_amount || order.total_amount)}`}
-                  </button>
+                  <div className="space-y-1.5">
+                    {/* Payer-payee transparency — Razorpay requirement */}
+                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                      {cafeInfo?.logo_url && (
+                        <img src={cafeInfo.logo_url} alt={cafeInfo.name} className="w-6 h-6 rounded-md object-cover flex-shrink-0" />
+                      )}
+                      <p className="text-xs text-gray-600">
+                        Payment received by <span className="font-semibold text-gray-900">{cafeInfo?.name || 'the café'}</span>
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handlePay(order)}
+                      disabled={isPaying}
+                      className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                    >
+                      {isPaying ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                          Processing…
+                        </>
+                      ) : `💳 Pay Now — ${c(order.final_amount || order.total_amount)}`}
+                    </button>
+                  </div>
                 )}
 
                 {/* Digital receipt — only after payment */}

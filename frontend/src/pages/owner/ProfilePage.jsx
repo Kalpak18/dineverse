@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe } from '../../services/api';
+import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute } from '../../services/api';
 import ImageUpload from '../../components/ImageUpload';
 import MapPicker from '../../components/MapPicker';
 import toast from 'react-hot-toast';
@@ -145,6 +145,46 @@ export default function ProfilePage() {
   useEffect(() => {
     getOutlets().then(({ data }) => setOutlets(data.outlets || [])).catch(() => {});
   }, []);
+
+  // Payout (Razorpay Route) state
+  const [routeStatus, setRouteStatus]     = useState(null); // null = loading
+  const [routeForm, setRouteForm]         = useState({
+    legal_business_name: '',
+    business_type: 'proprietorship',
+    contact_name: '',
+    pan: '',
+    gst: '',
+    account_number: '',
+    ifsc_code: '',
+    beneficiary_name: '',
+  });
+  const [connectingRoute, setConnectingRoute] = useState(false);
+
+  useEffect(() => {
+    getRouteStatus()
+      .then(({ data }) => setRouteStatus(data))
+      .catch(() => setRouteStatus({ status: 'not_connected' }));
+  }, []);
+
+  const handleConnectRoute = async (e) => {
+    e.preventDefault();
+    if (!routeForm.legal_business_name.trim()) return toast.error('Legal business name is required');
+    if (!routeForm.contact_name.trim()) return toast.error('Contact name is required');
+    if (!routeForm.pan.trim()) return toast.error('PAN number is required');
+    if (!routeForm.account_number.trim()) return toast.error('Bank account number is required');
+    if (!routeForm.ifsc_code.trim()) return toast.error('IFSC code is required');
+    if (!routeForm.beneficiary_name.trim()) return toast.error('Beneficiary name is required');
+    setConnectingRoute(true);
+    try {
+      await connectRoute(routeForm);
+      setRouteStatus({ status: 'pending' });
+      toast.success('Payout account submitted! Verification in progress.');
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to connect payout account');
+    } finally {
+      setConnectingRoute(false);
+    }
+  };
 
   const handleOutletSlugSuggest = (name) => {
     setOutletForm((f) => ({ ...f, name, slug: toSlug(name) }));
@@ -752,6 +792,166 @@ export default function ProfilePage() {
           >
             {saving ? 'Saving...' : 'Save (delivery off)'}
           </button>
+        )}
+      </div>
+
+      {/* ── Payout Account (Razorpay Route) ── */}
+      <div className="card space-y-4 mt-2">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Payout Account</h2>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Connect your bank account so customer payments go directly to you. DineVerse retains 1% as platform fee.
+          </p>
+        </div>
+
+        {routeStatus === null && (
+          <p className="text-sm text-gray-400">Loading…</p>
+        )}
+
+        {routeStatus?.status === 'active' && (
+          <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
+            <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-green-800">Payouts active</p>
+              <p className="text-xs text-green-600 mt-0.5">Customer payments route directly to your bank account (99% of each order).</p>
+            </div>
+          </div>
+        )}
+
+        {routeStatus?.status === 'pending' && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Verification in progress</p>
+              <p className="text-xs text-amber-600 mt-0.5">Razorpay is reviewing your account details (usually 1–2 business days). We'll notify you when it's active.</p>
+            </div>
+          </div>
+        )}
+
+        {routeStatus?.status === 'not_connected' && (
+          <form onSubmit={handleConnectRoute} className="space-y-4">
+            <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-xs text-blue-700">
+              Once connected, every customer payment is automatically split: 99% goes to your bank, 1% to DineVerse. No manual transfers needed.
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="label">Legal Business Name <span className="text-red-500">*</span></label>
+                <input
+                  className="input"
+                  value={routeForm.legal_business_name}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, legal_business_name: e.target.value }))}
+                  placeholder="As per PAN / GST registration"
+                />
+              </div>
+
+              <div>
+                <label className="label">Business Type <span className="text-red-500">*</span></label>
+                <select
+                  className="input"
+                  value={routeForm.business_type}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, business_type: e.target.value }))}
+                >
+                  <option value="proprietorship">Proprietorship / Individual</option>
+                  <option value="partnership">Partnership</option>
+                  <option value="private_limited">Private Limited</option>
+                  <option value="public_limited">Public Limited</option>
+                  <option value="llp">LLP</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="label">Contact Person Name <span className="text-red-500">*</span></label>
+                <input
+                  className="input"
+                  value={routeForm.contact_name}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, contact_name: e.target.value }))}
+                  placeholder="Owner / Director name"
+                />
+              </div>
+
+              <div>
+                <label className="label">PAN Number <span className="text-red-500">*</span></label>
+                <input
+                  className="input uppercase font-mono tracking-wider"
+                  value={routeForm.pan}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, pan: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                  placeholder="AAAAA0000A"
+                  maxLength={10}
+                />
+              </div>
+
+              <div>
+                <label className="label">GST Number <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input
+                  className="input uppercase font-mono tracking-wider"
+                  value={routeForm.gst}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, gst: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                  placeholder="22AAAAA0000A1Z5"
+                  maxLength={15}
+                />
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Bank Account Details</p>
+
+              <div>
+                <label className="label">Account Number <span className="text-red-500">*</span></label>
+                <input
+                  className="input font-mono"
+                  type="password"
+                  autoComplete="off"
+                  value={routeForm.account_number}
+                  onChange={(e) => setRouteForm((f) => ({ ...f, account_number: e.target.value.replace(/\s/g, '') }))}
+                  placeholder="Enter account number"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">IFSC Code <span className="text-red-500">*</span></label>
+                  <input
+                    className="input uppercase font-mono"
+                    value={routeForm.ifsc_code}
+                    onChange={(e) => setRouteForm((f) => ({ ...f, ifsc_code: e.target.value.toUpperCase().replace(/\s/g, '') }))}
+                    placeholder="HDFC0001234"
+                    maxLength={11}
+                  />
+                </div>
+                <div>
+                  <label className="label">Beneficiary Name <span className="text-red-500">*</span></label>
+                  <input
+                    className="input"
+                    value={routeForm.beneficiary_name}
+                    onChange={(e) => setRouteForm((f) => ({ ...f, beneficiary_name: e.target.value }))}
+                    placeholder="Name on bank account"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={connectingRoute}
+              className="btn-primary w-full"
+            >
+              {connectingRoute ? 'Connecting…' : 'Connect Payout Account'}
+            </button>
+
+            <p className="text-xs text-gray-400 text-center">
+              Your details are sent securely to Razorpay for KYC verification. DineVerse does not store your bank account number.
+            </p>
+          </form>
         )}
       </div>
 

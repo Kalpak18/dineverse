@@ -56,6 +56,11 @@ export const createPaymentOrder = (plan_key) => api.post('/payments/create-order
 export const verifyPayment = (data) => api.post('/payments/verify', data);
 export const getPaymentHistory = () => api.get('/payments/history');
 
+// ─── Razorpay Route (Owner payout account) ────────────────────
+export const getRouteStatus  = () => api.get('/payments/route/status');
+export const connectRoute    = (data) => api.post('/payments/route/connect', data);
+export const enableRoute     = () => api.post('/payments/route/enable');
+
 // ─── Support Tickets (Owner) ──────────────────────────────────
 export const getMyTickets = () => api.get('/support');
 export const createTicket = (data) => api.post('/support', data);
