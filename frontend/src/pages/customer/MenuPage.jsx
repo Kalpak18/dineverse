@@ -64,8 +64,6 @@ export default function MenuPage() {
   const session = JSON.parse(sessionStorage.getItem(`session_${slug}`) || 'null');
   const allOrders    = loadOrders(slug);
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
-  // If all past orders are terminal and no active ones, the session is stale — force re-enrollment
-  const sessionStale = session && allOrders.length > 0 && activeOrders.length === 0;
 
   // Fetch emoji map from platform settings (one-time on mount)
   useEffect(() => {
@@ -82,8 +80,7 @@ export default function MenuPage() {
   }, []);
 
   useEffect(() => {
-    if (!session || sessionStale) {
-      sessionStorage.removeItem(`session_${slug}`);
+    if (!session) {
       navigate(`/cafe/${slug}`, { replace: true });
       return;
     }
