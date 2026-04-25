@@ -6,11 +6,12 @@ import { useRef, useEffect } from 'react';
  * Props:
  *   value      string   e.g. "123456" (partial values like "123" are fine)
  *   onChange   fn(str)  called with the full digit string on every change
+ *   onComplete fn(str)  called once when all `length` digits are filled
  *   length     number   defaults to 6
  *   autoFocus  bool     focus the first box on mount
  *   disabled   bool
  */
-export default function OtpInput({ value = '', onChange, length = 6, autoFocus = false, disabled = false }) {
+export default function OtpInput({ value = '', onChange, onComplete, length = 6, autoFocus = false, disabled = false }) {
   const inputs = useRef([]);
   const digits = Array.from({ length }, (_, i) => value[i] || '');
 
@@ -18,7 +19,11 @@ export default function OtpInput({ value = '', onChange, length = 6, autoFocus =
     if (autoFocus) inputs.current[0]?.focus();
   }, [autoFocus]);
 
-  const emit = (arr) => onChange?.(arr.join(''));
+  const emit = (arr) => {
+    const str = arr.join('');
+    onChange?.(str);
+    if (str.length === length && arr.every(Boolean)) onComplete?.(str);
+  };
 
   const handleChange = (i, e) => {
     const char = e.target.value.replace(/\D/g, '').slice(-1);
@@ -65,6 +70,7 @@ export default function OtpInput({ value = '', onChange, length = 6, autoFocus =
           value={digits[i]}
           onChange={(e) => handleChange(i, e)}
           onKeyDown={(e) => handleKeyDown(i, e)}
+          onPaste={handlePaste}
           disabled={disabled}
           className={`w-11 h-12 text-center text-xl font-bold rounded-xl border-2 outline-none transition-all select-none
             ${digits[i]

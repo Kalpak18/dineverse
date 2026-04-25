@@ -44,6 +44,7 @@ export default function OrderConfirmation() {
   const [loadingBill, setLoadingBill] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null); // digital receipt modal
   const [initialized, setInitialized] = useState(false);
+  const [showSuccessFlash, setShowSuccessFlash] = useState(!!location.state?.order);
   const [lostConnection, setLostConnection] = useState(false); // socket gave up reconnecting
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
@@ -221,6 +222,13 @@ export default function OrderConfirmation() {
     };
   }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-dismiss success flash after 2.5s
+  useEffect(() => {
+    if (!showSuccessFlash) return;
+    const t = setTimeout(() => setShowSuccessFlash(false), 2500);
+    return () => clearTimeout(t);
+  }, [showSuccessFlash]);
+
   // When a new order is placed (e.g. second round from same session),
   // join its socket room immediately without remounting the whole effect
   useEffect(() => {
@@ -345,6 +353,26 @@ export default function OrderConfirmation() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 px-4 py-8">
+
+      {/* Order-placed success flash — shown for 2.5s after navigating from CartPage */}
+      {showSuccessFlash && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowSuccessFlash(false)}
+        >
+          <div className="bg-white rounded-3xl shadow-2xl px-8 py-10 text-center max-w-xs mx-4 animate-scale-in">
+            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <span className="text-5xl">🎉</span>
+            </div>
+            <h2 className="text-2xl font-black text-gray-900 mb-1">Order Placed!</h2>
+            <p className="text-gray-500 text-sm">
+              {cafeInfo?.name ? `Your order is with ${cafeInfo.name}` : 'Your order is with the kitchen'}
+            </p>
+            <p className="text-xs text-gray-400 mt-3">Tap anywhere to continue</p>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-sm mx-auto space-y-4">
 
         {/* Lost-connection warning — shown when socket exhausted all reconnect attempts */}
@@ -577,20 +605,23 @@ export default function OrderConfirmation() {
 
                 {/* Pay Now — shown when food is ready/served and not yet paid */}
                 {canPayOnline && !order.payment_verified && (
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {/* Payer-payee transparency — Razorpay requirement */}
-                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
-                      {cafeInfo?.logo_url && (
-                        <img src={cafeInfo.logo_url} alt={cafeInfo.name} className="w-6 h-6 rounded-md object-cover flex-shrink-0" />
+                    <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5">
+                      {cafeInfo?.logo_url ? (
+                        <img src={cafeInfo.logo_url} alt={cafeInfo.name} className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+                      ) : (
+                        <span className="text-green-600 text-xl flex-shrink-0">🔒</span>
                       )}
-                      <p className="text-xs text-gray-600">
-                        Payment received by <span className="font-semibold text-gray-900">{cafeInfo?.name || 'the café'}</span>
-                      </p>
+                      <div>
+                        <p className="text-xs text-green-700">Payment goes to</p>
+                        <p className="text-sm font-bold text-green-900">{cafeInfo?.name || 'the café'}</p>
+                      </div>
                     </div>
                     <button
                       onClick={() => handlePay(order)}
                       disabled={isPaying}
-                      className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                      className="w-full py-3.5 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
                     >
                       {isPaying ? (
                         <>

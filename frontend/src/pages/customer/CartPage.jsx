@@ -639,6 +639,16 @@ export default function CartPage() {
                 </p>
               </div>
 
+              {session.cafe_name && (
+                <div className="flex items-center justify-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+                  <span className="text-green-600 text-lg">🔒</span>
+                  <div className="text-center">
+                    <p className="text-xs text-green-700">Payment goes to</p>
+                    <p className="text-sm font-bold text-green-900">{session.cafe_name}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1">
                 <div className="flex justify-between text-sm text-gray-500">
                   <span>{itemCount} item{itemCount !== 1 ? 's' : ''}</span>

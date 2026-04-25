@@ -559,17 +559,29 @@ export default function RegisterPage() {
                 {otpSent && (
                   <div>
                     <label className="label text-center block mb-3">6-digit verification code</label>
-                    <OtpInput value={otp} onChange={setOtp} autoFocus />
-                    <div className="flex items-center justify-between mt-2">
+                    <OtpInput
+                      value={otp}
+                      onChange={setOtp}
+                      onComplete={() => document.getElementById('reg-form-1')?.requestSubmit()}
+                      autoFocus
+                    />
+                    <div className="flex items-center justify-between mt-3">
                       <p className="text-xs text-gray-400">Expires in 5 min</p>
-                      <button
-                        type="button"
-                        onClick={handleSendOtp}
-                        disabled={otpLoading || resendCooldown > 0}
-                        className="text-xs text-brand-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend code'}
-                      </button>
+                      {resendCooldown > 0 ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs bg-gray-100 text-gray-500 rounded-full px-3 py-1 font-medium">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                          Resend in {resendCooldown}s
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleSendOtp}
+                          disabled={otpLoading}
+                          className="text-xs text-brand-600 font-medium hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {otpLoading ? 'Sending…' : '↺ Resend code'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

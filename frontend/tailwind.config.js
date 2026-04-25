@@ -9,9 +9,14 @@ export default {
           '50%':  { top: '100%' },
           '100%': { top: '0%' },
         },
+        'scale-in': {
+          '0%':   { opacity: '0', transform: 'scale(0.85)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
       },
       animation: {
         'scan-line': 'scan-line 2s linear infinite',
+        'scale-in':  'scale-in 0.3s ease-out',
       },
       colors: {
         brand: {
