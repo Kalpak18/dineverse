@@ -5,7 +5,6 @@ import { getOutlets, switchOutlet } from '../services/api';
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
-import DineLogo from './DineLogo';
 import NavIcon from './NavIcon';
 
 // All nav items — filtered by role below
@@ -139,8 +138,6 @@ function OwnerLayoutInner() {
       >
         {/* Brand + profile header */}
         <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex-shrink-0 space-y-3">
-          <DineLogo size="sm" />
-
           {/* Owner: café profile link. Staff: their name + role badge */}
           {isStaff ? (
             <div className="flex items-center gap-3 min-w-0">

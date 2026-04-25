@@ -1,57 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getDashboardStats, getMenuItems, getAreas, getPublicSetting, toggleCafeOpen } from '../../services/api';
-import SetupWizard from '../../components/SetupWizard';
-import WelcomeModal from '../../components/WelcomeModal';
+import { getDashboardStats, getPublicSetting, toggleCafeOpen } from '../../services/api';
 import CafeQRCard from '../../components/CafeQRCard';
 import { Link, useNavigate } from 'react-router-dom';
 import { STATUS_CONFIG } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
-// Setup checklist items (mirrors wizard steps, excludes optional "staff")
-const CHECKLIST = [
-  {
-    id: 'profile',
-    icon: '🎨',
-    label: 'Upload logo & complete profile',
-    route: '/owner/profile',
-    wizardStep: 0,
-    done: (s) => !!s.hasLogo,
-  },
-  {
-    id: 'tax',
-    icon: '🧾',
-    label: 'Set GSTIN & tax details',
-    route: '/owner/profile',
-    wizardStep: 1,
-    done: (s) => !!s.hasGSTIN,
-  },
-  {
-    id: 'menu',
-    icon: '🍽️',
-    label: 'Add menu items',
-    route: '/owner/menu',
-    wizardStep: 2,
-    done: (s) => s.hasMenuItems,
-  },
-  {
-    id: 'tables',
-    icon: '🪑',
-    label: 'Set up tables & QR codes',
-    route: '/owner/tables',
-    wizardStep: 3,
-    done: (s) => s.hasTables,
-  },
-  {
-    id: 'live',
-    icon: '🟢',
-    label: 'Go live — toggle café Open',
-    route: null,
-    wizardStep: 5,
-    done: (s) => s.isOpen,
-  },
-];
 
 export default function DashboardPage() {
   const { cafe } = useAuth();
@@ -60,62 +15,22 @@ export default function DashboardPage() {
 
   const [stats,    setStats]    = useState(null);
   const [loading,  setLoading]  = useState(true);
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [showWizard, setShowWizard]   = useState(false);
-  const [wizardStep, setWizardStep]   = useState(0);
   const [announcement, setAnnouncement] = useState(null);
   const [isOpen,   setIsOpen]   = useState(cafe?.is_open ?? true);
   const [togglingOpen, setTogglingOpen] = useState(false);
-  const [checklistDismissed, setChecklistDismissed] = useState(
-    () => !!localStorage.getItem(`dv_checklist_done_${cafe?.id}`)
-  );
-  const [checklistOpen, setChecklistOpen] = useState(
-    () => localStorage.getItem(`dv_checklist_open_${cafe?.id}`) !== 'false'
-  );
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(
     () => localStorage.getItem('dineverse_announcement_dismissed') || ''
   );
 
-  // Derived setup status
-  const [setupStatus, setSetupStatus] = useState({
-    hasLogo:      false,
-    hasGSTIN:     false,
-    hasMenuItems: false,
-    hasTables:    false,
-    isOpen:       false,
-  });
-
   const loadDashboard = useCallback(async () => {
     try {
-      const [statsRes, itemsRes, areasRes, annRes] = await Promise.all([
+      const [statsRes, annRes] = await Promise.all([
         getDashboardStats(),
-        getMenuItems(),
-        getAreas().catch(() => ({ data: { areas: [] } })),
         getPublicSetting('announcement').catch(() => null),
       ]);
 
       setStats(statsRes.data);
-
-      const tables   = [
-        ...(areasRes.data.areas || []).flatMap((a) => a.tables || []),
-        ...(areasRes.data.unassigned || []),
-      ];
-      const cafeOpen = statsRes.data?.cafe_is_open ?? cafe?.is_open ?? true;
-      setIsOpen(cafeOpen);
-
-      const status = {
-        hasLogo:      !!cafe?.logo_url,
-        hasGSTIN:     !!cafe?.gst_number,
-        hasMenuItems: (itemsRes.data.items || []).length > 0,
-        hasTables:    tables.length > 0,
-        isOpen:       cafeOpen,
-      };
-      setSetupStatus(status);
-
-      // Show welcome modal once per account (first registration)
-      if (cafe?.id && !localStorage.getItem(`dv_welcomed_${cafe.id}`)) {
-        setShowWelcome(true);
-      }
+      setIsOpen(statsRes.data?.cafe_is_open ?? cafe?.is_open ?? true);
 
       if (annRes?.data?.value?.active && annRes.data.value.text) {
         setAnnouncement(annRes.data.value);
@@ -125,7 +40,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [cafe?.id, cafe?.logo_url, cafe?.gst_number, cafe?.is_open]);
+  }, [cafe?.id, cafe?.is_open]);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
@@ -134,7 +49,6 @@ export default function DashboardPage() {
     try {
       const res = await toggleCafeOpen();
       setIsOpen(res.data.is_open);
-      setSetupStatus((prev) => ({ ...prev, isOpen: res.data.is_open }));
       toast.success(res.data.is_open ? 'Café is now Open 🟢' : 'Café is now Closed 🔴');
     } catch {
       toast.error('Failed to update status');
@@ -143,42 +57,12 @@ export default function DashboardPage() {
     }
   };
 
-  const openWizardAt = (step) => {
-    setWizardStep(step);
-    setShowWizard(true);
-  };
-
-  const doneCount    = CHECKLIST.filter((c) => c.done(setupStatus)).length;
-  const totalCount   = CHECKLIST.length;
-  const allDone      = doneCount === totalCount;
-  const showChecklist = !checklistDismissed;
-
-  const dismissChecklist = () => {
-    localStorage.setItem(`dv_checklist_done_${cafe?.id}`, '1');
-    setChecklistDismissed(true);
-  };
-
   if (loading) return <DashboardSkeleton />;
 
   const cafeUrl = `${window.location.origin}/cafe/${cafe?.slug}`;
 
   return (
     <>
-      {showWelcome && (
-        <WelcomeModal
-          cafeName={cafe?.name}
-          cafeId={cafe?.id}
-          onSetup={() => { setShowWelcome(false); openWizardAt(0); }}
-          onDismiss={() => setShowWelcome(false)}
-        />
-      )}
-      {showWizard && (
-        <SetupWizard
-          initialStep={wizardStep}
-          onComplete={() => { setShowWizard(false); loadDashboard(); }}
-        />
-      )}
-
       <div className="space-y-6 max-w-4xl">
 
         {/* Platform announcement */}
@@ -225,109 +109,6 @@ export default function DashboardPage() {
             </div>
           );
         })()}
-
-        {/* ── SETUP CHECKLIST ── */}
-        {showChecklist && (
-          <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-            {/* Header — always visible, clicking toggles expand/collapse */}
-            <button
-              type="button"
-              className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-50 transition-colors text-left"
-              onClick={() => {
-                const next = !checklistOpen;
-                setChecklistOpen(next);
-                localStorage.setItem(`dv_checklist_open_${cafe?.id}`, String(next));
-              }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center text-lg flex-shrink-0">🚀</div>
-                <div className="text-left">
-                  <p className="font-semibold text-gray-900 text-sm">
-                    {allDone ? 'Setup complete!' : 'Get started'}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {allDone
-                      ? 'Your café is fully configured'
-                      : `${doneCount} of ${totalCount} steps done`}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="hidden sm:flex items-center gap-1">
-                  {CHECKLIST.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`w-2 h-2 rounded-full transition-colors ${
-                        item.done(setupStatus) ? 'bg-green-500' : 'bg-gray-200'
-                      }`}
-                    />
-                  ))}
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); dismissChecklist(); }}
-                  className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
-                  title="Dismiss"
-                >
-                  ✕
-                </button>
-                <span className="text-gray-300 text-sm">{checklistOpen ? '▲' : '▼'}</span>
-              </div>
-            </button>
-
-            {/* Collapsable body */}
-            {checklistOpen && (
-              <>
-                {/* Progress bar */}
-                <div className="h-1 bg-gray-100">
-                  <div
-                    className="h-1 bg-brand-500 transition-all duration-500"
-                    style={{ width: `${(doneCount / totalCount) * 100}%` }}
-                  />
-                </div>
-
-                {/* Checklist items */}
-                <div className="divide-y divide-gray-50">
-                  {CHECKLIST.map((item) => {
-                    const done = item.done(setupStatus);
-                    return (
-                      <div
-                        key={item.id}
-                        className={`flex items-center gap-3 px-5 py-3 ${done ? 'opacity-50' : ''}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                          done ? 'bg-green-500 border-green-500' : 'border-gray-300'
-                        }`}>
-                          {done && <span className="text-white text-[10px] font-bold">✓</span>}
-                        </div>
-                        <span className={`text-sm flex-1 ${done ? 'line-through text-gray-400' : 'text-gray-700'}`}>
-                          {item.label}
-                        </span>
-                        {!done && (
-                          item.route ? (
-                            <button
-                              onClick={() => openWizardAt(item.wizardStep)}
-                              className="text-xs text-brand-600 font-semibold hover:underline flex-shrink-0"
-                            >
-                              Start →
-                            </button>
-                          ) : (
-                            <button
-                              onClick={handleToggleOpen}
-                              disabled={togglingOpen}
-                              className="text-xs text-green-600 font-semibold hover:underline flex-shrink-0"
-                            >
-                              {togglingOpen ? '...' : 'Open now →'}
-                            </button>
-                          )
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        )}
 
         {/* Profile header card */}
         <div className="card flex items-center gap-4">
