@@ -639,22 +639,24 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
         )}
 
         {/* Price + Add */}
-        <div className="flex items-center justify-between mt-auto pt-2">
-          <span className="font-bold text-gray-900 text-sm">{c(item.price)}</span>
-          {qty === 0 ? (
-            <button
-              onClick={onAdd}
-              className="text-xs font-bold px-3 py-1 rounded-lg border-2 border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 transition-colors"
-            >
-              ADD
-            </button>
-          ) : (
-            <QuantityControl
-              qty={qty}
-              onDecrement={() => onUpdateQty(qty - 1)}
-              onIncrement={onAdd}
-            />
-          )}
+        <div className="flex items-center justify-between mt-auto pt-2 gap-2">
+          <span className="font-bold text-gray-900 text-sm min-w-0 truncate">{c(item.price)}</span>
+          <div className="flex-shrink-0">
+            {qty === 0 ? (
+              <button
+                onClick={onAdd}
+                className="text-xs font-bold px-3 py-1 rounded-lg border-2 border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 transition-colors"
+              >
+                ADD
+              </button>
+            ) : (
+              <QuantityControl
+                qty={qty}
+                onDecrement={() => onUpdateQty(qty - 1)}
+                onIncrement={onAdd}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -160,18 +160,20 @@ const ITEM_STATUS_LABEL = {
   pending: 'Pending', preparing: 'Cooking', ready: 'Ready', served: 'Served', cancelled: 'Cancelled',
 };
 
-const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing'];
+const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
 
 const STATUS_COLORS = {
   pending:   'border-yellow-400 bg-yellow-950/30',
   confirmed: 'border-blue-400  bg-blue-950/30',
   preparing: 'border-orange-400 bg-orange-950/30',
+  ready:     'border-teal-400  bg-teal-950/30',
 };
 
 const ACTION_COLORS = {
   pending:   'bg-blue-600 hover:bg-blue-500',
   confirmed: 'bg-orange-600 hover:bg-orange-500',
   preparing: 'bg-green-600 hover:bg-green-500',
+  ready:     'bg-teal-600 hover:bg-teal-500',
 };
 
 function KitchenHint() {
@@ -466,7 +468,7 @@ export default function KitchenPage() {
       <KitchenHint />
 
       {/* Columns */}
-      <div className="flex-1 grid grid-cols-3 gap-0 divide-x divide-gray-800 overflow-hidden">
+      <div className="flex-1 grid grid-cols-4 gap-0 divide-x divide-gray-800 overflow-hidden">
         {KITCHEN_STATUSES.map((status) => {
           const cfg = STATUS_CONFIG[status];
           const col = byStatus[status];

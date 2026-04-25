@@ -1017,14 +1017,8 @@ function BillingModal({ bill, onConfirm, onClose }) {
   const isValid = cash >= bill.total;
   const isCash  = paymentMode === 'cash';
 
-  const doPrint = (mode, cashVal) =>
-    printBill({
-      cafe,
-      bill,
-      cashReceived: cashVal,
-      paymentMode: mode,
-      isPaid: true,
-    });
+  const doPrint = (mode, cashVal, isPaid = true) =>
+    printBill({ cafe, bill, cashReceived: cashVal, paymentMode: mode, isPaid });
 
   const handleMarkPaid = async () => {
     const cashVal = isCash && cashInput ? parseFloat(cashInput) : null;
@@ -1181,7 +1175,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
           {confirming ? 'Processing…' : isCash && cashInput ? 'Confirm & Mark Paid' : 'Mark Paid'}
         </button>
         <button
-          onClick={() => doPrint(paymentMode, isCash && cashInput ? parseFloat(cashInput) : null)}
+          onClick={() => doPrint(paymentMode, isCash && cashInput ? parseFloat(cashInput) : null, false)}
           className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm transition-colors"
         >
           🖨️ Print Draft Bill

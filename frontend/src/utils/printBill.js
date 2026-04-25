@@ -14,7 +14,13 @@
  * @param {string}      params.paymentMode  — 'cash' | 'upi' | 'card' | 'online' | 'pending'
  * @param {boolean}     params.isPaid       — true → show PAID stamp, false/undefined → show PENDING stamp
  */
+const CURRENCY_SYMBOLS = {
+  INR: '₹', USD: '$', EUR: '€', GBP: '£', AUD: 'A$',
+  CAD: 'C$', SGD: 'S$', AED: 'د.إ', JPY: '¥', CNY: '¥',
+};
+
 export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash', isPaid = false }) {
+  const sym = escHtml(CURRENCY_SYMBOLS[cafe?.currency] ?? ((cafe?.currency || 'INR') + ' '));
   const prefix     = cafe?.bill_prefix || 'INV';
   // daily_order_number resets each day — preferred for display; fall back to global serial
   const dailyNum   = bill.orderNumber || bill.orders?.[0]?.daily_order_number || bill.orders?.[0]?.order_number || 0;
@@ -254,29 +260,29 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     ${hasGst ? `
     <tr>
       <td class="lbl">Taxable Amount</td>
-      <td class="val">&#8377;${fmt(taxableAmt)}</td>
+      <td class="val">${sym}${fmt(taxableAmt)}</td>
     </tr>
     <tr>
       <td class="lbl indent">CGST @ ${gstRate / 2}%</td>
-      <td class="val">&#8377;${fmt(cgst)}</td>
+      <td class="val">${sym}${fmt(cgst)}</td>
     </tr>
     <tr>
       <td class="lbl indent">SGST @ ${gstRate / 2}%</td>
-      <td class="val">&#8377;${fmt(sgst)}</td>
+      <td class="val">${sym}${fmt(sgst)}</td>
     </tr>
     ` : ''}
     <tr class="grand-total">
       <td>TOTAL</td>
-      <td class="val">&#8377;${fmt(total)}</td>
+      <td class="val">${sym}${fmt(total)}</td>
     </tr>
     ${cashReceived != null ? `
     <tr>
       <td class="lbl">Cash Received</td>
-      <td class="val">&#8377;${fmt(cashReceived)}</td>
+      <td class="val">${sym}${fmt(cashReceived)}</td>
     </tr>
     <tr>
       <td class="lbl">Change Returned</td>
-      <td class="val">&#8377;${fmt(change)}</td>
+      <td class="val">${sym}${fmt(change)}</td>
     </tr>
     ` : ''}
   </table>

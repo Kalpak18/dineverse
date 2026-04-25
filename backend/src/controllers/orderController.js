@@ -1202,27 +1202,40 @@ exports.generateKot = asyncHandler(async (req, res) => {
   const { cafeId } = req;
 
   const orderCheck = await db.query(
-    'SELECT id, table_number, customer_name FROM orders WHERE id = $1 AND cafe_id = $2',
+    'SELECT id, table_number, customer_name, kitchen_mode FROM orders WHERE id = $1 AND cafe_id = $2',
     [id, cafeId]
   );
   if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
   const order = orderCheck.rows[0];
 
-  // Find ready items not yet included in any KOT slip for this order
-  const readyItems = await db.query(
-    `SELECT oi.id, oi.item_name, oi.quantity
-     FROM order_items oi
-     WHERE oi.order_id = $1
-       AND oi.item_status = 'ready'
-       AND oi.id NOT IN (
-         SELECT (elem->>'id')::uuid
-         FROM kot_slips k, jsonb_array_elements(k.items) AS elem
-         WHERE k.order_id = $1
-       )`,
-    [id]
-  );
+  // Combined mode: print all non-cancelled items (no "ready" requirement)
+  // Individual mode: only 'ready' items not already in a previous slip
+  let readyItems;
+  if (order.kitchen_mode === 'combined') {
+    readyItems = await db.query(
+      `SELECT oi.id, oi.item_name, oi.quantity
+       FROM order_items oi
+       WHERE oi.order_id = $1 AND oi.item_status != 'cancelled'
+       ORDER BY oi.sort_order ASC, oi.id ASC`,
+      [id]
+    );
+  } else {
+    readyItems = await db.query(
+      `SELECT oi.id, oi.item_name, oi.quantity
+       FROM order_items oi
+       WHERE oi.order_id = $1
+         AND oi.item_status = 'ready'
+         AND oi.id NOT IN (
+           SELECT (elem->>'id')::uuid
+           FROM kot_slips k, jsonb_array_elements(k.items) AS elem
+           WHERE k.order_id = $1
+         )
+       ORDER BY oi.sort_order ASC, oi.id ASC`,
+      [id]
+    );
+  }
 
-  if (readyItems.rows.length === 0) return fail(res, 'No new ready items to print KOT for', 400);
+  if (readyItems.rows.length === 0) return fail(res, 'No items to print KOT for', 400);
 
   const slipCount = await db.query(
     'SELECT COALESCE(MAX(slip_number), 0) AS max_slip FROM kot_slips WHERE order_id = $1',
