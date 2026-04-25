@@ -2,96 +2,105 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import DineLogo from '../components/DineLogo';
 
-const PLANS = {
+// ── Pricing data ──────────────────────────────────────────────
+const PRICING = {
   INR: {
-    sym: '₹',
-    trial:  { price: '₹0' },
-    year1:  { perMonth: '₹499', total: '₹5,988', billed: 'billed yearly',     save: null },
-    year2:  { perMonth: '₹449', total: '₹10,788', billed: 'billed for 2 years', save: 'Save ₹1,188 vs. 1-year' },
-    year3:  { perMonth: '₹444', total: '₹15,999', billed: 'billed for 3 years', save: 'Save ₹1,965 vs. 1-year' },
-    footer: 'All plans include GST · Secure payment via Razorpay · Instant activation',
-    hero:   'From ₹499/month after trial',
-    year1features: ['Everything in Free Trial', 'Priority support', 'Data never deleted', 'GST invoice for input credit'],
+    essential: {
+      perMonth: ['₹499', '₹449', '₹444'],
+      total:    ['₹5,988', '₹10,788', '₹15,999'],
+      save:     [null, 'Save ₹1,188', 'Save ₹1,965'],
+    },
+    pro: {
+      perMonth: ['₹999', '₹899', '₹888'],
+      total:    ['₹11,988', '₹21,576', '₹31,968'],
+      save:     [null, 'Save ₹2,400', 'Save ₹3,996'],
+    },
+    footer: 'All prices include GST · Razorpay secured · Instant activation',
   },
   USD: {
-    sym: '$',
-    trial:  { price: '$0' },
-    year1:  { perMonth: '$6',    total: '$72',  billed: 'billed yearly',     save: null },
-    year2:  { perMonth: '$5.50', total: '$130', billed: 'billed for 2 years', save: 'Save $14 vs. 1-year' },
-    year3:  { perMonth: '$5',    total: '$180', billed: 'billed for 3 years', save: 'Save $36 vs. 1-year' },
-    footer: 'All plans include applicable taxes · Secure payment · Instant activation',
-    hero:   'From $6/month after trial',
-    year1features: ['Everything in Free Trial', 'Priority support', 'Data never deleted', 'Tax invoice provided'],
+    essential: {
+      perMonth: ['$6', '$5.50', '$5'],
+      total:    ['$72', '$132', '$180'],
+      save:     [null, 'Save $12', 'Save $36'],
+    },
+    pro: {
+      perMonth: ['$12', '$10.80', '$10'],
+      total:    ['$144', '$259', '$360'],
+      save:     [null, 'Save $29', 'Save $72'],
+    },
+    footer: 'Prices include applicable taxes · Secure payment · Instant activation',
   },
 };
 
-async function detectPricingCurrency() {
+const DURATION_LABELS = ['1 Year', '2 Years', '3 Years'];
+const DURATION_BADGES = [null, '10% OFF', 'BEST VALUE'];
+
+async function detectCurrency() {
   const cached = sessionStorage.getItem('dv_pricing_currency');
   if (cached) return cached;
   try {
     const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
-    const data = await res.json();
-    const currency = data.country_code === 'IN' ? 'INR' : 'USD';
-    sessionStorage.setItem('dv_pricing_currency', currency);
-    return currency;
-  } catch {
-    return 'INR';
-  }
+    const { country_code } = await res.json();
+    const c = country_code === 'IN' ? 'INR' : 'USD';
+    sessionStorage.setItem('dv_pricing_currency', c);
+    return c;
+  } catch { return 'INR'; }
+}
+
+function CheckIcon({ cls = 'text-green-500' }) {
+  return (
+    <svg className={`w-3.5 h-3.5 flex-shrink-0 ${cls}`} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+    </svg>
+  );
 }
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [pricingCurrency, setPricingCurrency] = useState('INR');
+  const [currency, setCurrency] = useState('INR');
+  const [durIdx, setDurIdx]     = useState(1); // default: 2 years (most popular billing)
 
-  useEffect(() => {
-    detectPricingCurrency().then(setPricingCurrency);
-  }, []);
+  useEffect(() => { detectCurrency().then(setCurrency); }, []);
 
-  const plan = PLANS[pricingCurrency] ?? PLANS.INR;
+  const p = PRICING[currency] ?? PRICING.INR;
 
   return (
     <div className="min-h-screen bg-white font-sans">
-      {/* ── Navbar ─────────────────────────────────────────────── */}
+
+      {/* ── Navbar ── */}
       <nav className="sticky top-0 z-50 bg-white/90 backdrop-blur border-b border-gray-100 px-6 py-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <DineLogo size="sm" />
           <div className="hidden md:flex items-center gap-8 text-sm text-gray-600">
             <a href="#how-it-works" className="hover:text-brand-600 transition-colors">How It Works</a>
-            <a href="#features" className="hover:text-brand-600 transition-colors">Features</a>
-            <a href="#pricing" className="hover:text-brand-600 transition-colors">Pricing</a>
+            <a href="#features"     className="hover:text-brand-600 transition-colors">Features</a>
+            <a href="#pricing"      className="hover:text-brand-600 transition-colors">Pricing</a>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => navigate('/owner/login')}
-              className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-            >
+            <button onClick={() => navigate('/owner/login')} className="text-sm text-gray-600 hover:text-gray-900 font-medium">
               Login
             </button>
-            <button
-              onClick={() => navigate('/owner/register')}
-              className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-            >
+            <button onClick={() => navigate('/owner/register')} className="text-sm bg-brand-500 hover:bg-brand-600 text-white px-4 py-2 rounded-lg font-medium transition-colors">
               Start Free
             </button>
           </div>
         </div>
       </nav>
 
-      {/* ── Hero ────────────────────────────────────────────────── */}
+      {/* ── Hero ── */}
       <section className="relative bg-gradient-to-br from-brand-50 via-orange-50 to-white overflow-hidden">
         <div className="max-w-6xl mx-auto px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
-          {/* Text */}
           <div className="flex-1 text-center md:text-left">
             <span className="inline-block text-xs font-semibold bg-brand-100 text-brand-700 px-3 py-1 rounded-full mb-5 tracking-wide uppercase">
-              India's Smart Café OS
+              Built for Indian Restaurants & Cafés
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-5">
-              Your Café,<br />
-              <span className="text-brand-500">Running Itself</span>
+              Stop losing orders.<br />
+              <span className="text-brand-500">Start growing revenue.</span>
             </h1>
             <p className="text-lg text-gray-500 mb-8 max-w-md mx-auto md:mx-0">
-              QR-based digital ordering, real-time kitchen updates, GST-ready billing —
-              all in one platform. No apps needed for customers.
+              QR ordering, live kitchen display, and GST-ready billing — one platform
+              that pays for itself in the first week. No hardware. No app downloads.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center md:justify-start">
               <button
@@ -107,13 +116,9 @@ export default function LandingPage() {
                 Explore Cafés →
               </button>
             </div>
-            {/* Customer scanner shortcut */}
             <div className="mt-4 flex justify-center md:justify-start">
-              <Link
-                to="/scan"
-                className="inline-flex items-center gap-2 text-sm text-brand-600 font-medium bg-brand-50 border border-brand-200 hover:bg-brand-100 transition-colors px-4 py-2.5 rounded-xl"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <Link to="/scan" className="inline-flex items-center gap-2 text-sm text-brand-600 font-medium bg-brand-50 border border-brand-200 hover:bg-brand-100 transition-colors px-4 py-2.5 rounded-xl">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
                   <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="5" y="5" width="3" height="3" fill="currentColor" stroke="none" />
                   <rect x="14" y="3" width="7" height="7" rx="1" /><rect x="16" y="5" width="3" height="3" fill="currentColor" stroke="none" />
                   <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="5" y="16" width="3" height="3" fill="currentColor" stroke="none" />
@@ -122,7 +127,6 @@ export default function LandingPage() {
                 Scan café QR code to order
               </Link>
             </div>
-            {/* Trust badges */}
             <div className="mt-5 flex flex-wrap justify-center md:justify-start gap-3">
               {[
                 { icon: '🔒', label: 'Secured by Razorpay' },
@@ -135,30 +139,22 @@ export default function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · {plan.hero}</p>
+            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · From {p.essential.perMonth[0]}/month after trial</p>
           </div>
 
-          {/* Mockup */}
+          {/* Phone mockup */}
           <div className="flex-1 flex justify-center md:justify-end">
             <div className="relative">
-              {/* Phone frame */}
               <div className="w-56 bg-gray-900 rounded-[2.5rem] p-3 shadow-2xl shadow-gray-400">
                 <div className="bg-white rounded-[2rem] overflow-hidden h-[440px] flex flex-col">
-                  {/* Status bar */}
                   <div className="bg-brand-500 px-4 py-3 flex items-center justify-between">
-                    <span className="text-white font-bold text-sm">DineVerse</span>
-                    <span className="text-white/80 text-xs">9:41</span>
+                    <span className="text-white font-bold text-sm">The Brew House</span>
+                    <span className="text-white/80 text-xs">Table 5</span>
                   </div>
-                  {/* Cafe header */}
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="font-semibold text-gray-900 text-sm">The Brew House</p>
-                    <p className="text-xs text-gray-400">Table 5 · Dine In</p>
-                  </div>
-                  {/* Menu items */}
                   <div className="flex-1 px-3 py-2 space-y-2 overflow-hidden">
                     {[
                       { name: 'Cappuccino', price: '₹180', veg: true },
-                      { name: 'Croissant', price: '₹120', veg: true },
+                      { name: 'Croissant',  price: '₹120', veg: true },
                       { name: 'Club Sandwich', price: '₹220', veg: false },
                     ].map((item) => (
                       <div key={item.name} className="flex items-center justify-between bg-gray-50 rounded-xl px-3 py-2">
@@ -174,36 +170,45 @@ export default function LandingPage() {
                         </div>
                       </div>
                     ))}
+                    <div className="mt-3 px-1">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1.5">Kitchen Status</p>
+                      {[
+                        { name: 'Cappuccino', status: 'Ready ✅', cls: 'bg-green-50 text-green-700' },
+                        { name: 'Croissant',  status: 'Preparing 🔥', cls: 'bg-orange-50 text-orange-700' },
+                      ].map(item => (
+                        <div key={item.name} className={`flex justify-between text-[10px] font-medium rounded-lg px-2 py-1 mb-1 ${item.cls}`}>
+                          <span>{item.name}</span><span>{item.status}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  {/* Cart bar */}
                   <div className="bg-brand-500 mx-3 mb-3 rounded-xl px-4 py-2.5 flex items-center justify-between">
                     <span className="text-white text-xs font-medium">3 items · ₹520</span>
                     <span className="text-white text-xs font-bold">Place Order →</span>
                   </div>
                 </div>
               </div>
-              {/* Floating badge */}
               <div className="absolute -top-3 -right-6 bg-white border border-gray-200 shadow-lg rounded-2xl px-4 py-2.5">
                 <p className="text-xs font-bold text-gray-900">🔔 New Order!</p>
                 <p className="text-xs text-gray-500">Table 5 · ₹520</p>
               </div>
               <div className="absolute -bottom-3 -left-6 bg-white border border-gray-200 shadow-lg rounded-2xl px-4 py-2.5">
-                <p className="text-xs font-bold text-green-700">✅ Ready</p>
-                <p className="text-xs text-gray-500">Order #0042</p>
+                <p className="text-xs font-bold text-green-700">✅ Bill Printed</p>
+                <p className="text-xs text-gray-500">GST invoice · ₹520</p>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Social Proof Bar ────────────────────────────────────── */}
+      {/* ── Social Proof Bar ── */}
       <section className="bg-gray-50 border-y border-gray-100 py-8">
         <div className="max-w-4xl mx-auto px-6 flex flex-wrap justify-center gap-8 text-center">
           {[
             { value: '500+', label: 'Cafés & Restaurants' },
-            { value: '1L+', label: 'Orders Processed' },
+            { value: '1L+',  label: 'Orders Processed' },
             { value: '4.9★', label: 'Average Rating' },
-            { value: '30 days', label: 'Free Trial' },
+            { value: '30 days', label: 'Free Trial — No Card' },
           ].map((stat) => (
             <div key={stat.label}>
               <p className="text-2xl font-extrabold text-brand-600">{stat.value}</p>
@@ -213,21 +218,21 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Problem Section ─────────────────────────────────────── */}
+      {/* ── Problem Section ── */}
       <section className="py-20 px-6 bg-white">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-12">
             <span className="text-xs font-semibold text-red-500 uppercase tracking-wide">Sound familiar?</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Running a café is harder than it looks</h2>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Every café owner hits these walls</h2>
             <p className="text-gray-500 mt-3 max-w-xl mx-auto text-sm">
-              Every missed order, wrong bill, or angry customer is revenue walking out the door. These problems are all fixable.
+              Missed orders, manual billing, and zero visibility cost you money every single day.
             </p>
           </div>
           <div className="grid sm:grid-cols-3 gap-6 mb-12">
             {[
-              { icon: '😤', title: 'Wrong or missed orders', desc: 'Waiters mishear, kitchen misreads handwriting. Customers complain, food goes to waste.' },
-              { icon: '🧾', title: 'Billing takes forever', desc: 'Calculating GST by hand, writing receipts, chasing for payment — your staff\'s time is worth more.' },
-              { icon: '📉', title: 'No idea what\'s working', desc: 'You don\'t know your best-seller, your peak hour, or which item is losing you money.' },
+              { icon: '😤', title: 'Orders get lost or wrong', desc: 'Waiters mishear, kitchen misreads handwriting. Customers complain. Food gets remade. Revenue walks out.' },
+              { icon: '🧾', title: 'Billing eats up your evening', desc: 'Calculating GST by hand, writing receipts, chasing UPI confirmations — your staff\'s time has a cost.' },
+              { icon: '📉', title: 'You\'re flying blind', desc: 'You don\'t know your bestseller, your peak hour, or which table drives the most revenue. Decisions are guesswork.' },
             ].map(({ icon, title, desc }) => (
               <div key={title} className="bg-red-50 border border-red-100 rounded-2xl p-6">
                 <p className="text-3xl mb-3">{icon}</p>
@@ -237,32 +242,31 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="bg-brand-500 rounded-3xl px-8 py-6 text-center">
-            <p className="text-white font-bold text-lg">DineVerse solves all three — in one afternoon.</p>
-            <p className="text-orange-100 text-sm mt-1">QR ordering, auto-billing, live analytics. No hardware required.</p>
+            <p className="text-white font-bold text-lg">DineVerse fixes all three — and you're live in one afternoon.</p>
+            <p className="text-orange-100 text-sm mt-1">QR ordering, live kitchen display, one-tap GST billing. No hardware required.</p>
           </div>
         </div>
       </section>
 
-      {/* ── How It Works ────────────────────────────────────────── */}
+      {/* ── How It Works ── */}
       <section id="how-it-works" className="py-20 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Simple & Powerful</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">How DineVerse Works</h2>
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Zero Friction</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">From table to kitchen to bill — automated</h2>
           </div>
           <div className="grid md:grid-cols-2 gap-12">
-            {/* Customer flow */}
             <div className="bg-orange-50 rounded-3xl p-8">
               <h3 className="font-bold text-gray-900 text-lg mb-6 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-xl bg-orange-400 flex items-center justify-center text-white text-sm">👤</span>
-                For Customers
+                Customer experience
               </h3>
               <ol className="space-y-5">
                 {[
-                  ['📱', 'Scan QR code at table', 'No app download required'],
-                  ['🍽️', 'Browse menu & add to cart', 'Rich photos, veg/non-veg filters'],
-                  ['✅', 'Place order instantly', 'Name + table, that\'s all'],
-                  ['🔔', 'Track in real-time', 'Pending → Preparing → Ready → Served'],
+                  ['📱', 'Scan QR code at the table',   'No app download, no login, no friction'],
+                  ['🍽️', 'Browse & add to cart',        'Photos, veg/non-veg tags, dietary filters'],
+                  ['✅', 'Place order in seconds',       'Just their name — order fires to kitchen'],
+                  ['🔔', 'Watch it come to life',        'Pending → Preparing → Ready → Served'],
                 ].map(([icon, title, sub]) => (
                   <li key={title} className="flex items-start gap-4">
                     <span className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-lg flex-shrink-0">{icon}</span>
@@ -274,19 +278,17 @@ export default function LandingPage() {
                 ))}
               </ol>
             </div>
-
-            {/* Owner flow */}
             <div className="bg-brand-50 rounded-3xl p-8">
               <h3 className="font-bold text-gray-900 text-lg mb-6 flex items-center gap-2">
                 <span className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center text-white text-sm">🏪</span>
-                For Owners
+                Your team's experience
               </h3>
               <ol className="space-y-5">
                 {[
-                  ['🚀', 'Register & set up in minutes', 'Add menu, areas, tables'],
-                  ['📋', 'Live orders dashboard', 'New orders ping instantly'],
-                  ['🖨️', 'Print GST-ready bill', 'CGST + SGST breakdown, UPI QR'],
-                  ['📈', 'Analytics & insights', 'Revenue, top items, daily reports'],
+                  ['🚀', 'Set up in one afternoon',      'Add menu, tables, QR codes — done'],
+                  ['📋', 'Orders arrive instantly',       'Kitchen display shows every new ticket live'],
+                  ['🖨️', 'Print GST bill in one tap',    'CGST + SGST breakdown, UPI QR on receipt'],
+                  ['📈', 'Revenue insights every day',   'Bestsellers, peak hours, daily totals'],
                 ].map(([icon, title, sub]) => (
                   <li key={title} className="flex items-start gap-4">
                     <span className="w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-lg flex-shrink-0">{icon}</span>
@@ -302,58 +304,56 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Features ────────────────────────────────────────────── */}
+      {/* ── Features ── */}
       <section id="features" className="py-20 px-6 bg-gray-50">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-14">
-            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Everything You Need</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Built for Indian F&B</h2>
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Everything Included</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">One platform. No patchwork tools.</h2>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               {
                 icon: '⚡',
-                name: 'DineFlow™',
+                name: 'QR Ordering',
                 color: 'bg-yellow-50 border-yellow-200',
                 iconBg: 'bg-yellow-100 text-yellow-700',
-                desc: 'Instant QR ordering. Customers order from their phone — no waiter needed for taking orders.',
-                points: ['Zero app installs', 'Real-time kitchen updates', 'Multi-table support'],
+                desc: 'Customers scan, browse, and order from their own phone. No waiter needed for order taking.',
+                points: ['No app download for customers', 'Real-time kitchen notification', 'Multi-table, multi-order support'],
               },
               {
                 icon: '🧑‍🍳',
-                name: 'DineServe™',
+                name: 'Kitchen Display',
                 color: 'bg-green-50 border-green-200',
                 iconBg: 'bg-green-100 text-green-700',
-                desc: 'Staff & kitchen management that keeps your team in sync automatically.',
-                points: ['Staff roles & login', 'Kitchen display system', 'Area-wise table management'],
+                desc: 'Your kitchen sees every order the moment it\'s placed. Print KOTs, track status, stay in sync.',
+                points: ['Live order queue on any screen', 'KOT printing per ticket', 'Ready → Served workflow'],
               },
               {
                 icon: '📊',
-                name: 'DineInsights™',
+                name: 'Revenue Analytics',
                 color: 'bg-blue-50 border-blue-200',
                 iconBg: 'bg-blue-100 text-blue-700',
-                desc: 'Know your best-sellers, peak hours, and daily revenue at a glance.',
-                points: ['Revenue analytics', 'Top items report', 'Expense tracking'],
+                desc: 'Know exactly which items make you money, when your rush hits, and how revenue trends over time.',
+                points: ['Daily & weekly revenue totals', 'Bestseller & slowest-mover report', 'Email reports automatically'],
               },
               {
                 icon: '💰',
-                name: 'DinePay™',
+                name: 'GST Billing',
                 color: 'bg-purple-50 border-purple-200',
                 iconBg: 'bg-purple-100 text-purple-700',
-                desc: 'GST-compliant thermal bills with UPI QR. Accept cash, card, or UPI seamlessly.',
-                points: ['TAX INVOICE format', 'CGST + SGST split', 'UPI ID on bill'],
+                desc: 'Print legal Tax Invoices in one click. CGST + SGST split, UPI QR, and your branding on every bill.',
+                points: ['TAX INVOICE format', 'CGST + SGST auto-calculated', 'UPI ID & FSSAI on receipt'],
               },
             ].map((feat) => (
               <div key={feat.name} className={`rounded-2xl border p-6 ${feat.color}`}>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4 ${feat.iconBg}`}>
-                  {feat.icon}
-                </div>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4 ${feat.iconBg}`}>{feat.icon}</div>
                 <h3 className="font-bold text-gray-900 mb-2">{feat.name}</h3>
                 <p className="text-sm text-gray-600 mb-4">{feat.desc}</p>
                 <ul className="space-y-1.5">
                   {feat.points.map((pt) => (
                     <li key={pt} className="text-xs text-gray-600 flex items-center gap-1.5">
-                      <span className="text-green-500 font-bold">✓</span> {pt}
+                      <CheckIcon /> {pt}
                     </li>
                   ))}
                 </ul>
@@ -363,51 +363,39 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Testimonials ────────────────────────────────────────── */}
+      {/* ── Testimonials ── */}
       <section className="py-20 px-6 bg-white">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
             <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Real Owners, Real Results</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Trusted by restaurants across India</h2>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">They switched. Here's what happened.</h2>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                name: 'Priya Nair',
-                role: 'Owner · Spice Garden Café',
-                city: 'Kochi, Kerala',
-                text: 'We used to lose 2–3 orders daily to confusion at the counter. Since DineVerse, orders go straight to the kitchen screen. Rush hour is actually manageable now.',
-                avatar: 'PN',
-                color: 'bg-orange-100 text-orange-700',
+                name: 'Priya Nair', role: 'Owner · Spice Garden Café', city: 'Kochi, Kerala', avatar: 'PN', color: 'bg-orange-100 text-orange-700',
+                text: 'We used to lose 2–3 orders daily to kitchen confusion. Now every order hits the screen instantly. Rush hour is actually manageable.',
               },
               {
-                name: 'Rahul Sharma',
-                role: 'Manager · The Brew Bar',
-                city: 'Pune, Maharashtra',
-                text: 'QR ordering is a game-changer. Customers love it — no waiting for waiters, no wrong orders. The GST billing alone saves us 20 minutes every single day.',
-                avatar: 'RS',
-                color: 'bg-blue-100 text-blue-700',
+                name: 'Rahul Sharma', role: 'Manager · The Brew Bar', city: 'Pune, Maharashtra', avatar: 'RS', color: 'bg-blue-100 text-blue-700',
+                text: 'Customers love the QR ordering — no waiting, no wrong orders. The GST billing alone saves us 20 minutes every night. Genuinely worth it.',
               },
               {
-                name: 'Anita Mehta',
-                role: 'Owner · Chai & Chat',
-                city: 'Ahmedabad, Gujarat',
-                text: 'I was sceptical, but the free trial convinced me. Setup took one afternoon. Customers scan the QR and we never miss an order anymore. Worth every rupee.',
-                avatar: 'AM',
-                color: 'bg-green-100 text-green-700',
+                name: 'Anita Mehta', role: 'Owner · Chai & Chat', city: 'Ahmedabad, Gujarat', avatar: 'AM', color: 'bg-green-100 text-green-700',
+                text: 'Setup took one afternoon. We went live that evening. We haven\'t missed an order since. The analytics showed us our real bestseller — it wasn\'t what I expected.',
               },
             ].map((t) => (
               <div key={t.name} className="bg-gray-50 border border-gray-100 rounded-2xl p-6 flex flex-col">
                 <div className="flex gap-1 mb-4">
                   {[1,2,3,4,5].map((i) => (
-                    <svg key={i} className="w-4 h-4 text-amber-400 fill-amber-400" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                    <svg key={i} className="w-4 h-4 text-amber-400 fill-amber-400" viewBox="0 0 20 20">
+                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                    </svg>
                   ))}
                 </div>
                 <p className="text-sm text-gray-700 leading-relaxed flex-1">"{t.text}"</p>
                 <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-200">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${t.color}`}>
-                    {t.avatar}
-                  </div>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${t.color}`}>{t.avatar}</div>
                   <div>
                     <p className="text-sm font-semibold text-gray-900">{t.name}</p>
                     <p className="text-xs text-gray-400">{t.role}</p>
@@ -420,105 +408,185 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Pricing ─────────────────────────────────────────────── */}
-      <section id="pricing" className="py-20 px-6">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
+      {/* ── Pricing ── */}
+      <section id="pricing" className="py-20 px-6 bg-gray-50">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-10">
             <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Transparent Pricing</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Simple & Affordable</h2>
-            <p className="text-gray-500 mt-3 text-sm">Start free. Upgrade when you're ready. No hidden fees.</p>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Start free. Pay only when you're ready.</h2>
+            <p className="text-gray-500 mt-3 text-sm">30-day free trial on every plan. No card needed to start.</p>
           </div>
 
-          {/* Free Trial + Pro plans */}
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Billing period toggle */}
+          <div className="flex justify-center mb-10">
+            <div className="inline-flex bg-white border border-gray-200 rounded-xl p-1 gap-1">
+              {DURATION_LABELS.map((label, i) => (
+                <button
+                  key={label}
+                  onClick={() => setDurIdx(i)}
+                  className={`relative px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    durIdx === i ? 'bg-brand-500 text-white shadow' : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {label}
+                  {DURATION_BADGES[i] && (
+                    <span className={`absolute -top-2.5 -right-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                      i === 2 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
+                    }`}>
+                      {DURATION_BADGES[i]}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid sm:grid-cols-3 gap-6">
 
             {/* Free Trial */}
-            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
+            <div className="bg-white border-2 border-gray-200 rounded-2xl p-6 flex flex-col">
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Free Trial</p>
-              <p className="text-3xl font-extrabold text-gray-900">{plan.trial.price}</p>
-              <p className="text-sm text-gray-400 mt-1 mb-5">30 days · No card</p>
-              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
-                {['Full feature access', 'Unlimited orders', 'QR menu + billing', 'Analytics & reports'].map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    {f}
-                  </li>
+              <p className="text-4xl font-extrabold text-gray-900">₹0</p>
+              <p className="text-sm text-gray-400 mt-1 mb-6">30 days · No card required</p>
+              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-600">
+                {[
+                  'Full access to all features',
+                  'Unlimited orders during trial',
+                  'QR menu, KDS, GST billing',
+                  'Analytics & staff accounts',
+                ].map((f) => (
+                  <li key={f} className="flex items-center gap-2"><CheckIcon /> {f}</li>
                 ))}
               </ul>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors text-sm">
+              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors text-sm">
                 Start Free Trial
               </button>
             </div>
 
-            {/* 1 Year */}
-            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">1 Year</p>
-              <p className="text-3xl font-extrabold text-gray-900">{plan.year1.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-400 mt-1 mb-5">{plan.year1.total} {plan.year1.billed}</p>
-              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
-                {plan.year1features.map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    {f}
-                  </li>
+            {/* Essential */}
+            <div className="relative bg-white border-2 border-brand-500 rounded-2xl p-6 flex flex-col shadow-lg">
+              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
+                🔥 MOST POPULAR
+              </span>
+              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">Essential</p>
+              <div className="flex items-baseline gap-1 mb-1">
+                <p className="text-4xl font-extrabold text-gray-900">{p.essential.perMonth[durIdx]}</p>
+                <span className="text-base text-gray-400">/mo</span>
+              </div>
+              <p className="text-sm text-gray-400 mt-0.5">{p.essential.total[durIdx]} · {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              {p.essential.save[durIdx] && (
+                <p className="text-xs font-semibold text-green-600 mt-0.5 mb-4">{p.essential.save[durIdx]}</p>
+              )}
+              {!p.essential.save[durIdx] && <div className="mb-4" />}
+              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-700">
+                {[
+                  'Accept unlimited orders & menu items',
+                  'Real-time kitchen display (KDS)',
+                  'KOT printing for kitchen team',
+                  'GST invoices & thermal bill printing',
+                  'Full analytics — revenue, bestsellers',
+                  'Staff accounts with role-based access',
+                  'Multi-branch management',
+                  'Customer ratings & feedback',
+                ].map((f) => (
+                  <li key={f} className="flex items-center gap-2"><CheckIcon cls="text-brand-500" /> {f}</li>
                 ))}
               </ul>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:border-brand-400 hover:text-brand-600 transition-colors text-sm">
-                Get Started
+              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm shadow-md shadow-brand-200">
+                Get Essential →
               </button>
             </div>
 
-            {/* 2 Years */}
-            <div className="border-2 border-brand-500 rounded-2xl p-6 text-left flex flex-col relative bg-brand-50">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-900 text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">SAVE 10%</span>
-              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">2 Years</p>
-              <p className="text-3xl font-extrabold text-gray-900">{plan.year2.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-500 mt-1 mb-1">{plan.year2.total} {plan.year2.billed}</p>
-              <p className="text-xs text-green-600 font-semibold mb-4">{plan.year2.save}</p>
-              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-700">
-                {['Everything in 1 Year', 'Multi-outlet management', 'API access (coming soon)', 'Dedicated account manager'].map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    {f}
-                  </li>
+            {/* Kitchen Pro */}
+            <div className="relative bg-white border-2 border-purple-400 rounded-2xl p-6 flex flex-col">
+              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
+                👨‍🍳 KITCHEN TEAMS
+              </span>
+              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3">Kitchen Pro</p>
+              <div className="flex items-baseline gap-1 mb-1">
+                <p className="text-4xl font-extrabold text-gray-900">{p.pro.perMonth[durIdx]}</p>
+                <span className="text-base text-gray-400">/mo</span>
+              </div>
+              <p className="text-sm text-gray-400 mt-0.5">{p.pro.total[durIdx]} · {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              {p.pro.save[durIdx] && (
+                <p className="text-xs font-semibold text-green-600 mt-0.5 mb-4">{p.pro.save[durIdx]}</p>
+              )}
+              {!p.pro.save[durIdx] && <div className="mb-4" />}
+              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-700">
+                <li className="flex items-center gap-2 font-semibold text-gray-500 text-xs">Everything in Essential, plus:</li>
+                {[
+                  'Per-item status: Preparing → Ready → Served',
+                  'Course sequencing — starters before mains',
+                  'Cancel individual items, notify customer',
+                  'KOT auto-prints when items are ready',
+                  'Customer sees live item-level progress',
+                  'Full KOT reprint history',
+                ].map((f) => (
+                  <li key={f} className="flex items-center gap-2"><CheckIcon cls="text-purple-500" /> {f}</li>
                 ))}
               </ul>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm">
-                Get Started
-              </button>
-            </div>
-
-            {/* 3 Years */}
-            <div className="border-2 border-gray-200 rounded-2xl p-6 text-left flex flex-col relative">
-              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-green-500 text-white text-[10px] font-extrabold px-3 py-0.5 rounded-full whitespace-nowrap">BEST VALUE</span>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">3 Years</p>
-              <p className="text-3xl font-extrabold text-gray-900">{plan.year3.perMonth}<span className="text-base font-normal text-gray-500">/mo</span></p>
-              <p className="text-sm text-gray-400 mt-1 mb-1">{plan.year3.total} {plan.year3.billed}</p>
-              <p className="text-xs text-green-600 font-semibold mb-4">{plan.year3.save}</p>
-              <ul className="space-y-2 mb-6 flex-1 text-sm text-gray-600">
-                {['Everything in 2 Years', 'Lowest per-month cost', 'Price locked for 3 years', 'Early access to new features'].map((f) => (
-                  <li key={f} className="flex items-center gap-2">
-                    <svg className="w-3.5 h-3.5 text-green-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                    {f}
-                  </li>
-                ))}
-              </ul>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-2.5 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:border-brand-400 hover:text-brand-600 transition-colors text-sm">
-                Get Started
+              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors text-sm">
+                Get Kitchen Pro →
               </button>
             </div>
 
           </div>
-          <p className="text-center text-xs text-gray-400 mt-6">{plan.footer}</p>
+          <p className="text-center text-xs text-gray-400 mt-6">{p.footer}</p>
+
+          {/* Quick compare */}
+          <div className="mt-10 bg-white border border-gray-200 rounded-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <p className="font-semibold text-gray-900 text-sm">Quick comparison</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase">Feature</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Free Trial</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Essential</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Kitchen Pro</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {[
+                    { label: 'Unlimited orders',             trial: true,  ess: true,  pro: true  },
+                    { label: 'QR menu & ordering',           trial: true,  ess: true,  pro: true  },
+                    { label: 'Kitchen display (KDS)',        trial: true,  ess: true,  pro: true  },
+                    { label: 'KOT printing',                 trial: true,  ess: true,  pro: true  },
+                    { label: 'GST invoices & billing',       trial: true,  ess: true,  pro: true  },
+                    { label: 'Analytics & reports',          trial: true,  ess: true,  pro: true  },
+                    { label: 'Staff accounts',               trial: true,  ess: true,  pro: true  },
+                    { label: 'Multi-branch',                 trial: true,  ess: true,  pro: true  },
+                    { label: 'Per-item kitchen tracking',    trial: false, ess: false, pro: true  },
+                    { label: 'Course sequencing',            trial: false, ess: false, pro: true  },
+                    { label: 'Customer live item status',    trial: false, ess: false, pro: true  },
+                  ].map((row) => (
+                    <tr key={row.label} className="hover:bg-gray-50">
+                      <td className="px-6 py-2.5 text-gray-700">{row.label}</td>
+                      {[row.trial, row.ess, row.pro].map((val, i) => (
+                        <td key={i} className="px-4 py-2.5 text-center">
+                          {val
+                            ? <span className={`font-bold ${i === 1 ? 'text-brand-500' : i === 2 ? 'text-purple-500' : 'text-green-500'}`}>✓</span>
+                            : <span className="text-gray-200 font-bold">—</span>}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* ── Final CTA ───────────────────────────────────────────── */}
+      {/* ── Final CTA ── */}
       <section className="py-20 px-6 bg-gradient-to-br from-brand-500 to-orange-500">
         <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-3xl font-extrabold text-white mb-4">Ready to Transform Your Café?</h2>
+          <h2 className="text-3xl font-extrabold text-white mb-4">Your café is losing orders right now.</h2>
           <p className="text-white/80 mb-8">
-            Join 500+ restaurants already using DineVerse. Get started in under 5 minutes.
+            Every wrong order, every missed ticket, every manual bill — it adds up.
+            Join 500+ restaurants who fixed it in an afternoon.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
@@ -534,58 +602,48 @@ export default function LandingPage() {
               Book a Demo
             </a>
           </div>
+          <p className="text-white/60 text-xs mt-4">30-day free trial · Full access · No credit card · Cancel anytime</p>
         </div>
       </section>
 
-      {/* ── Footer ──────────────────────────────────────────────── */}
+      {/* ── Footer ── */}
       <footer className="bg-gray-900 text-gray-400 py-12 px-6">
         <div className="max-w-6xl mx-auto">
           <div className="grid sm:grid-cols-4 gap-8 mb-8">
             <div>
-              <div className="mb-3">
-                <DineLogo size="sm" white />
-              </div>
-              <p className="text-xs leading-relaxed">
-                Smart café management platform built for India. QR ordering, real-time kitchen, GST billing.
-              </p>
+              <div className="mb-3"><DineLogo size="sm" white /></div>
+              <p className="text-xs leading-relaxed">Restaurant management platform built for India. QR ordering, live kitchen, GST billing — all in one.</p>
             </div>
             <div>
               <p className="font-semibold text-white text-sm mb-3">Product</p>
               <ul className="space-y-2 text-sm">
-                <li><a href="#features" className="hover:text-white transition-colors">Features</a></li>
-                <li><a href="#pricing" className="hover:text-white transition-colors">Pricing</a></li>
+                <li><a href="#features"     className="hover:text-white transition-colors">Features</a></li>
+                <li><a href="#pricing"      className="hover:text-white transition-colors">Pricing</a></li>
                 <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
               </ul>
             </div>
             <div>
               <p className="font-semibold text-white text-sm mb-3">For Customers</p>
               <ul className="space-y-2 text-sm">
-                <li>
-                  <button onClick={() => navigate('/explore')} className="hover:text-white transition-colors">
-                    Explore Cafés
-                  </button>
-                </li>
+                <li><button onClick={() => navigate('/explore')} className="hover:text-white transition-colors">Explore Cafés</button></li>
+                <li><Link to="/scan" className="hover:text-white transition-colors">Scan & Order</Link></li>
               </ul>
             </div>
             <div>
               <p className="font-semibold text-white text-sm mb-3">Contact</p>
               <ul className="space-y-2 text-sm">
                 <li><a href="mailto:hello@dine-verse.com" className="hover:text-white transition-colors">hello@dine-verse.com</a></li>
-                <li>
-                  <button onClick={() => navigate('/owner/login')} className="hover:text-white transition-colors">
-                    Owner Login
-                  </button>
-                </li>
+                <li><button onClick={() => navigate('/owner/login')} className="hover:text-white transition-colors">Owner Login</button></li>
               </ul>
             </div>
           </div>
           <div className="border-t border-gray-800 pt-6 flex flex-col sm:flex-row justify-between items-center gap-2">
             <p className="text-xs">© 2025 DineVerse. All rights reserved.</p>
             <div className="flex items-center gap-4 text-xs">
-              <Link to="/terms"   className="hover:text-white transition-colors">Terms & Conditions</Link>
-              <Link to="/privacy" className="hover:text-white transition-colors">Privacy Policy</Link>
+              <Link to="/terms"   className="hover:text-white transition-colors">Terms</Link>
+              <Link to="/privacy" className="hover:text-white transition-colors">Privacy</Link>
               <Link to="/refund"  className="hover:text-white transition-colors">Refund Policy</Link>
-              <Link to="/contact" className="hover:text-white transition-colors">Contact Us</Link>
+              <Link to="/contact" className="hover:text-white transition-colors">Contact</Link>
             </div>
           </div>
         </div>
