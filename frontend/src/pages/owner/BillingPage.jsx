@@ -9,8 +9,10 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // ─── Pricing config ───────────────────────────────────────────
 const TIERS = {
   basic: {
-    name: 'Basic',
-    tagline: 'Everything you need to run your café',
+    name: 'Essential',
+    badge: '🔥 Most Popular',
+    badgeCls: 'bg-brand-500 text-white',
+    tagline: 'Run your entire café from one screen',
     color: 'brand',
     perMonth:   [499, 449, 444],
     totals:     [5988, 10788, 15999],
@@ -18,22 +20,22 @@ const TIERS = {
     savings:    [0, 1188, 1965],
     savingsPct: [0, 10, 11],
     planKeys:   ['basic_1year', 'basic_2year', 'basic_3year'],
-    features: [
-      'Unlimited orders & menu items',
-      'Real-time order notifications',
-      'Kitchen Display Screen (KDS)',
-      'Kitchen Order Ticket (KOT) printing',
-      'Full analytics & reports',
-      'GST-compliant bill printing',
-      'Staff accounts',
-      'Multi-outlet management',
-      'Customer ratings & feedback',
-      'Priority support',
+    outcomes: [
+      { icon: '📋', text: 'Accept unlimited orders — no caps, ever' },
+      { icon: '🔔', text: 'Never miss an order with instant real-time alerts' },
+      { icon: '🖥️', text: 'Kitchen display keeps your team in sync' },
+      { icon: '🧾', text: 'Print KOTs & legal GST invoices in one click' },
+      { icon: '📊', text: 'Track daily revenue & spot your bestsellers' },
+      { icon: '👥', text: 'Separate logins for cashier, kitchen & manager' },
+      { icon: '🏪', text: 'Manage multiple branches from one account' },
+      { icon: '⭐', text: 'Collect customer ratings to improve & grow' },
     ],
   },
   premium: {
-    name: 'Premium',
-    tagline: 'For hotels & restaurants with kitchen teams',
+    name: 'Kitchen Pro',
+    badge: '👨‍🍳 For Restaurant Teams',
+    badgeCls: 'bg-purple-600 text-white',
+    tagline: 'Full kitchen management for serious restaurants',
     color: 'purple',
     perMonth:   [999, 899, 888],
     totals:     [11988, 21576, 31968],
@@ -41,17 +43,33 @@ const TIERS = {
     savings:    [0, 2400, 3996],
     savingsPct: [0, 10, 11],
     planKeys:   ['premium_1year', 'premium_2year', 'premium_3year'],
-    features: [
-      'Everything in Basic',
-      'Per-item status: Preparing → Ready → Served',
-      'Course sequencing (starters before mains)',
-      'Item-level cancellation with customer notification',
-      'KOT auto-print when items are ready',
-      'Customer sees live item-level progress',
-      'KOT reprint history',
+    outcomes: [
+      { icon: '✅', text: 'Everything in Essential, plus:' },
+      { icon: '🔄', text: 'Live per-item progress: Preparing → Ready → Served' },
+      { icon: '🍽️', text: 'Course sequencing — starters fire before mains' },
+      { icon: '❌', text: 'Cancel individual items & notify the customer' },
+      { icon: '🖨️', text: 'KOT auto-prints the moment items are ready' },
+      { icon: '📱', text: 'Customer sees exact item status on their phone' },
+      { icon: '📜', text: 'Full KOT reprint history for every order' },
     ],
   },
 };
+
+// Feature comparison rows for the table
+const COMPARE_ROWS = [
+  { label: 'Orders & menu items',         basic: 'Unlimited',    premium: 'Unlimited' },
+  { label: 'Real-time order alerts',      basic: true,           premium: true },
+  { label: 'GST invoices & KOT printing', basic: true,           premium: true },
+  { label: 'Analytics & revenue reports', basic: true,           premium: true },
+  { label: 'Staff accounts & roles',      basic: true,           premium: true },
+  { label: 'Multi-branch management',     basic: true,           premium: true },
+  { label: 'Customer ratings',            basic: true,           premium: true },
+  { label: 'Per-item kitchen status',     basic: false,          premium: true },
+  { label: 'Course sequencing',           basic: false,          premium: true },
+  { label: 'Item-level cancellation',     basic: false,          premium: true },
+  { label: 'KOT auto-print on ready',     basic: false,          premium: true },
+  { label: 'Customer live item tracking', basic: false,          premium: true },
+];
 
 const DURATIONS = [
   { idx: 0, label: '1 Year',  years: 1, badge: null },
@@ -66,18 +84,18 @@ function fmt(n) {
 function planLabel(plan_type) {
   const map = {
     free_trial:    'Free Trial',
-    yearly:        'Basic · 1 Year',
-    two_year:      'Basic · 2 Years',
-    three_year:    'Basic · 3 Years',
-    '1year':       'Basic · 1 Year',
-    '2year':       'Basic · 2 Years',
-    '3year':       'Basic · 3 Years',
-    basic_1year:   'Basic · 1 Year',
-    basic_2year:   'Basic · 2 Years',
-    basic_3year:   'Basic · 3 Years',
-    premium_1year: 'Premium · 1 Year',
-    premium_2year: 'Premium · 2 Years',
-    premium_3year: 'Premium · 3 Years',
+    yearly:        'Essential · 1 Year',
+    two_year:      'Essential · 2 Years',
+    three_year:    'Essential · 3 Years',
+    '1year':       'Essential · 1 Year',
+    '2year':       'Essential · 2 Years',
+    '3year':       'Essential · 3 Years',
+    basic_1year:   'Essential · 1 Year',
+    basic_2year:   'Essential · 2 Years',
+    basic_3year:   'Essential · 3 Years',
+    premium_1year: 'Kitchen Pro · 1 Year',
+    premium_2year: 'Kitchen Pro · 2 Years',
+    premium_3year: 'Kitchen Pro · 3 Years',
   };
   return map[plan_type] || plan_type;
 }
@@ -220,9 +238,15 @@ export default function BillingPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
+
+      {/* ── Header ── */}
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Billing & Subscription</h1>
-        <p className="text-gray-500 text-sm mt-1">Manage your DineVerse plan.</p>
+        <h1 className="text-2xl font-bold text-gray-900">Plans & Pricing</h1>
+        <p className="text-gray-500 text-sm mt-1">
+          {!isPaid
+            ? 'Your 30-day free trial is active. Subscribe before it expires to keep your café running.'
+            : 'Manage your subscription below.'}
+        </p>
       </div>
 
       {/* Payment success banner */}
@@ -230,115 +254,186 @@ export default function BillingPage() {
         <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-start gap-4">
           <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xl">✓</div>
           <div className="flex-1">
-            <p className="font-bold text-green-800 text-base">Subscription activated!</p>
+            <p className="font-bold text-green-800 text-base">You're all set!</p>
             <p className="text-sm text-green-700 mt-0.5">
               {planLabel(activated.plan_type)} is now active.
               {activated.plan_expiry_date && (
                 <> Valid until <strong>{new Date(activated.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>.</>
               )}
             </p>
-            {activated.plan_tier === 'premium' && (
-              <p className="text-xs text-green-600 mt-1">Kitchen Display & KOT printing are now unlocked.</p>
-            )}
           </div>
           <button onClick={() => setActivated(null)} className="text-green-500 hover:text-green-700 font-bold text-lg leading-none flex-shrink-0">×</button>
         </div>
       )}
 
-      {/* Current Plan */}
+      {/* Current Plan Status */}
       <div className="card">
-        <div className="flex items-start justify-between flex-wrap gap-3">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Current Plan</p>
+        <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <p className="text-sm text-gray-500 font-medium mb-1">Current Plan</p>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-gray-900">{planLabel(current?.plan_type)}</h2>
+              <h2 className="text-lg font-bold text-gray-900">{planLabel(current?.plan_type)}</h2>
               <PlanBadge plan_type={current?.plan_type} plan_tier={current?.plan_tier} expiry={current?.plan_expiry_date} />
             </div>
             {expiryDate && (
               <p className={`text-sm mt-1 ${isExpired ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                {isExpired ? '⚠️ Expired on ' : 'Valid until '}{expiryDate}
+                {isExpired ? '⚠️ Expired on ' : 'Active until '}{expiryDate}
               </p>
             )}
             {!isExpired && current?.days_left > 0 && current.days_left <= 30 && (
               <p className="text-xs text-amber-600 font-medium mt-1">
-                {current.days_left} day{current.days_left !== 1 ? 's' : ''} remaining
+                ⏳ {current.days_left} day{current.days_left !== 1 ? 's' : ''} remaining — renew now to avoid interruption
               </p>
             )}
           </div>
+          {isExpired && (
+            <span className="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
+              Service paused — renew below
+            </span>
+          )}
         </div>
       </div>
 
-      {/* ── Upgrade Card ── */}
-      <div className={`card border-2 ${accentBase.card} space-y-5`}>
-
-        {/* Tier selector */}
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Select Plan Tier</p>
-          <div className="grid grid-cols-2 gap-3">
-            {Object.entries(TIERS).map(([key, t]) => (
+      {/* ── Plan cards (side-by-side) ── */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Choose your plan</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {Object.entries(TIERS).map(([key, t]) => {
+            const isPrem = key === 'premium';
+            const isSelected = selectedTier === key;
+            const basePerMonth = t.perMonth[0];
+            return (
               <button
                 key={key}
                 onClick={() => setTier(key)}
-                className={`relative rounded-xl border-2 py-4 px-3 text-left transition-all ${
-                  selectedTier === key
-                    ? key === 'premium'
-                      ? 'border-purple-500 bg-white shadow-md'
-                      : 'border-brand-500 bg-white shadow-md'
-                    : 'border-gray-200 bg-white/60 hover:border-gray-300'
+                className={`relative rounded-2xl border-2 p-5 text-left transition-all ${
+                  isSelected
+                    ? isPrem
+                      ? 'border-purple-500 bg-white shadow-lg'
+                      : 'border-brand-500 bg-white shadow-lg'
+                    : 'border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 hover:shadow-sm'
                 }`}
               >
-                {key === 'premium' && (
-                  <span className="absolute -top-2.5 right-3 text-[10px] font-bold bg-purple-500 text-white px-2 py-0.5 rounded-full whitespace-nowrap">
-                    Kitchen & KOT
-                  </span>
-                )}
-                <p className="font-bold text-gray-900">{t.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">₹{fmt(t.perMonth[0])}/mo base</p>
-                <p className="text-xs text-gray-400 mt-1 leading-snug">{t.tagline}</p>
+                {/* Badge */}
+                <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full mb-3 ${t.badgeCls}`}>
+                  {t.badge}
+                </span>
+
+                <p className="text-lg font-bold text-gray-900">{t.name}</p>
+                <p className="text-xs text-gray-500 mt-0.5 mb-3 leading-snug">{t.tagline}</p>
+
+                <div className="flex items-baseline gap-1 mb-1">
+                  <span className="text-2xl font-black text-gray-900">₹{fmt(basePerMonth)}</span>
+                  <span className="text-sm text-gray-400">/mo</span>
+                </div>
+                <p className="text-xs text-gray-400">billed annually · save more on 2–3 year plans</p>
+
+                {/* Selected indicator */}
+                <div className={`absolute top-4 right-4 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                  isSelected
+                    ? isPrem ? 'border-purple-500 bg-purple-500' : 'border-brand-500 bg-brand-500'
+                    : 'border-gray-300'
+                }`}>
+                  {isSelected && <span className="text-white text-[10px] font-bold">✓</span>}
+                </div>
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── What you get with selected plan ── */}
+      <div className={`rounded-2xl border-2 p-5 space-y-4 ${accentBase.card}`}>
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-gray-900">{tier.name}</span>
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${tier.badgeCls}`}>{tier.badge}</span>
+        </div>
+        <ul className="space-y-2">
+          {tier.outcomes.map((o) => (
+            <li key={o.text} className="flex items-start gap-3 text-sm text-gray-700">
+              <span className="flex-shrink-0 text-base">{o.icon}</span>
+              <span>{o.text}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* ── Feature comparison table ── */}
+      <details className="group">
+        <summary className="cursor-pointer text-sm font-semibold text-brand-600 hover:text-brand-700 list-none flex items-center gap-1.5 select-none">
+          <span className="group-open:hidden">▶</span>
+          <span className="hidden group-open:inline">▼</span>
+          Compare all features
+        </summary>
+        <div className="mt-3 rounded-2xl border border-gray-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Feature</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Essential</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Kitchen Pro</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {COMPARE_ROWS.map((row) => (
+                <tr key={row.label} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-2.5 text-gray-700">{row.label}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    {row.basic === true
+                      ? <span className="text-green-500 font-bold">✓</span>
+                      : row.basic === false
+                        ? <span className="text-gray-300 font-bold">—</span>
+                        : <span className="text-xs font-semibold text-brand-600">{row.basic}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-center">
+                    {row.premium === true
+                      ? <span className="text-purple-500 font-bold">✓</span>
+                      : row.premium === false
+                        ? <span className="text-gray-300 font-bold">—</span>
+                        : <span className="text-xs font-semibold text-purple-600">{row.premium}</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
+
+      {/* ── Duration selector + pricing ── */}
+      <div className={`card border-2 space-y-4 ${accentBase.card}`}>
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Billing period</p>
+        <div className="grid grid-cols-3 gap-2">
+          {DURATIONS.map((d) => (
+            <button
+              key={d.idx}
+              onClick={() => setDur(d.idx)}
+              className={`relative rounded-xl border-2 py-3 px-2 text-center transition-all ${
+                selectedDur === d.idx ? accentBase.ring : 'border-gray-200 bg-white/70 hover:border-gray-300'
+              }`}
+            >
+              {d.badge && (
+                <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  d.idx === 2 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
+                }`}>
+                  {d.badge}
+                </span>
+              )}
+              <p className="font-bold text-gray-900 text-sm mt-1">{d.label}</p>
+              <p className="text-xs text-gray-500 mt-0.5">₹{fmt(tier.perMonth[d.idx])}/mo</p>
+            </button>
+          ))}
         </div>
 
-        {/* Duration selector */}
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Select Duration</p>
-          <div className="grid grid-cols-3 gap-2">
-            {DURATIONS.map((d) => (
-              <button
-                key={d.idx}
-                onClick={() => setDur(d.idx)}
-                className={`relative rounded-xl border-2 py-3 px-2 text-center transition-all ${
-                  selectedDur === d.idx ? accentBase.ring : 'border-gray-200 bg-white/60 hover:border-gray-300'
-                }`}
-              >
-                {d.badge && (
-                  <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    d.idx === 2 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
-                  }`}>
-                    {d.badge}
-                  </span>
-                )}
-                <p className="font-bold text-gray-900 text-sm mt-1">{d.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">₹{fmt(perMonth)}/mo</p>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Price breakdown */}
-        <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-2">
-          <div className="flex items-end gap-3">
-            <p className="text-4xl font-black text-gray-900">
-              ₹{fmt(perMonth)}<span className="text-base font-normal text-gray-500">/month</span>
-            </p>
+        {/* Price summary */}
+        <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-1.5">
+          <div className="flex items-baseline gap-2">
+            <span className="text-4xl font-black text-gray-900">₹{fmt(perMonth)}</span>
+            <span className="text-base text-gray-500">/month</span>
             {savingPct > 0 && (
-              <span className="mb-1 text-xs font-bold bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                {savingPct}% off
-              </span>
+              <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{savingPct}% off</span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm flex-wrap">
             <span className="text-gray-700 font-semibold">₹{fmt(total)} billed for {dur.label.toLowerCase()}</span>
             {savings > 0 && (
               <>
@@ -348,33 +443,25 @@ export default function BillingPage() {
             )}
           </div>
           {selectedDur === 0 && (
-            <p className="text-xs text-gray-400">Choose 2 or 3 years to get a discount</p>
+            <p className="text-xs text-gray-400">Switch to 2 or 3 years to unlock a discount</p>
           )}
         </div>
 
-        {/* Features */}
-        <ul className="grid grid-cols-1 sm:grid-cols-2 gap-y-1.5 gap-x-4 text-sm text-gray-700">
-          {tier.features.map((f) => (
-            <li key={f} className="flex items-start gap-2">
-              <span className={`font-bold flex-shrink-0 mt-0.5 ${selectedTier === 'premium' ? 'text-purple-500' : 'text-green-500'}`}>✓</span>
-              {f}
-            </li>
-          ))}
-        </ul>
-
         {/* CTA */}
-        <div className="space-y-2">
-          <button
-            onClick={handleUpgrade}
-            disabled={paying}
-            className={`w-full py-3.5 text-base font-bold rounded-xl disabled:opacity-60 transition-colors ${accentBase.btn}`}
-          >
-            {btnLabel}
-          </button>
-          <p className="text-center text-xs text-gray-400">
-            Secure payment via Razorpay &nbsp;·&nbsp; Instant activation &nbsp;·&nbsp; No hidden fees
-          </p>
-        </div>
+        <button
+          onClick={handleUpgrade}
+          disabled={paying}
+          className={`w-full py-4 text-base font-bold rounded-xl disabled:opacity-60 transition-colors ${accentBase.btn}`}
+        >
+          {paying ? 'Opening payment…' : isExpired
+            ? `Renew ${tier.name} — ₹${fmt(total)}`
+            : isPaid
+              ? `Upgrade to ${tier.name} — ₹${fmt(total)}`
+              : `Get ${tier.name} — ₹${fmt(total)}`}
+        </button>
+        <p className="text-center text-xs text-gray-400">
+          🔒 Secure payment via Razorpay &nbsp;·&nbsp; Instant activation &nbsp;·&nbsp; No hidden fees
+        </p>
       </div>
 
       {/* Payment History */}
