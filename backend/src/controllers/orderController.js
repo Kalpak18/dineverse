@@ -329,6 +329,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
     // Notify owner — persists in DB so they see it even after reconnect
     const orderLabel = order_type === 'delivery' ? 'Delivery' : order_type === 'takeaway' ? 'Takeaway' : `Table ${tableNum}`;
     const itemCount  = items.reduce((s, i) => s + i.quantity, 0);
+    // Real-time: push full order to kitchen display and orders page
+    if (req.io) {
+      req.io.to(`cafe:${cafeId}`).emit('new_order', fullOrder);
+    }
+
     notify(req.io, cafeId, cafeEmail, {
       type:  'new_order',
       title: `New order from ${customer_name}`,

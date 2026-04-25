@@ -151,6 +151,9 @@ export default function RegisterPage() {
   const autoSlugRef     = useRef('');
   const registeredRef   = useRef(false); // set true after success so the draft effect doesn't re-write
   const pincodeAbort    = useRef(null);
+  const sendingRef      = useRef(false); // guard for handleSendOtp (resend)
+  const step1Ref        = useRef(false); // guard for handleStep1Continue
+  const submittingRef   = useRef(false); // guard for handleSubmit
 
   // ── Restore draft from localStorage on mount ─────────────────
   useEffect(() => {
@@ -311,11 +314,13 @@ export default function RegisterPage() {
 
   // ── OTP send ─────────────────────────────────────────────────
   const handleSendOtp = async () => {
+    if (sendingRef.current) return;
     const trimmed = email.trim().toLowerCase();
     if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
       toast.error('Enter a valid email first');
       return;
     }
+    sendingRef.current = true;
     setOtpLoading(true);
     try {
       const res = await sendVerificationOtp(trimmed);
@@ -336,6 +341,7 @@ export default function RegisterPage() {
       }
       toast.error(getApiError(err));
     } finally {
+      sendingRef.current = false;
       setOtpLoading(false);
     }
   };
@@ -353,6 +359,7 @@ export default function RegisterPage() {
   // Stage 2: verify OTP → create account → proceed to Step 2
   const handleStep1Continue = async (e) => {
     e.preventDefault();
+    if (step1Ref.current) return;
 
     if (!otpSent) {
       // ── Stage 1: send OTP ──────────────────────────────────────
@@ -363,6 +370,7 @@ export default function RegisterPage() {
       if (password.length < 8) {
         toast.error('Password must be at least 8 characters'); return;
       }
+      step1Ref.current = true;
       setStep1Loading(true);
       try {
         const res = await sendVerificationOtp(trimmed);
@@ -383,6 +391,7 @@ export default function RegisterPage() {
         }
         toast.error(getApiError(err));
       } finally {
+        step1Ref.current = false;
         setStep1Loading(false);
       }
       return;
@@ -391,6 +400,7 @@ export default function RegisterPage() {
     // ── Stage 2: verify OTP + create account ──────────────────
     if (otp.length < 6) { toast.error('Enter the 6-digit code sent to your email'); return; }
 
+    step1Ref.current = true;
     setStep1Loading(true);
     try {
       const token = emailVerifiedToken || (await preVerifyEmail(verifiedEmail, otp)).data.emailVerifiedToken;
@@ -414,6 +424,7 @@ export default function RegisterPage() {
         setOtp('');
       }
     } finally {
+      step1Ref.current = false;
       setStep1Loading(false);
     }
   };
@@ -421,6 +432,7 @@ export default function RegisterPage() {
   // ── Final submit ─────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return;
     if (!form.phone.trim())   { toast.error('Phone number is required'); return; }
     if (!form.address.trim()) { toast.error('Address line 1 is required'); return; }
     if (!form.city.trim())    { toast.error('City is required'); return; }
@@ -429,6 +441,7 @@ export default function RegisterPage() {
     if (slugStatus === 'checking') { toast.error('Please wait while slug is being checked'); return; }
     if (!agreedToTerms) { toast.error('Please accept the Terms & Conditions to continue'); return; }
 
+    submittingRef.current = true;
     setLoading(true);
     try {
       await completeSetup(form);
@@ -444,6 +457,7 @@ export default function RegisterPage() {
         toast.error(getApiError(err));
       }
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };

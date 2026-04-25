@@ -12,62 +12,117 @@ function printKot(kot, cafeName) {
   const isTakeaway = !kot.table_number;
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
-  const itemRows = items.map((i) => `
-    <tr>
+  const itemRows = items.map((i, idx) => `
+    <tr class="${idx % 2 === 1 ? 'alt' : ''}">
+      <td class="sno">${idx + 1}</td>
       <td class="qty">${i.quantity}</td>
-      <td class="item">${i.item_name}</td>
+      <td class="item">${esc(i.item_name)}</td>
     </tr>`).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <title>KOT #${kot.slip_number}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Courier New',monospace; width:80mm; margin:0 auto; padding:6mm 4mm 10mm; background:#fff; color:#000; }
-    .cafe { text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:1px; color:#555; margin-bottom:4px; }
-    .kot-header { border:3px solid #000; border-radius:6px; text-align:center; padding:8px 4px 6px; margin:0 0 6px; }
-    .kot-label { font-size:9px; font-weight:bold; letter-spacing:3px; text-transform:uppercase; color:#777; margin-bottom:2px; }
-    .kot-num { font-size:32px; font-weight:900; letter-spacing:2px; line-height:1; }
-    .table-tag { display:inline-block; margin-top:4px; font-size:13px; font-weight:bold; letter-spacing:1px; border:1.5px solid #000; border-radius:20px; padding:2px 10px; }
-    .sep { border:none; border-top:1px dashed #aaa; margin:5px 0; }
-    .sep-solid { border:none; border-top:1.5px solid #000; margin:5px 0; }
-    .meta { font-size:10px; color:#444; margin-bottom:4px; }
-    table { width:100%; border-collapse:collapse; margin:4px 0; }
-    .qty { width:28px; font-size:16px; font-weight:900; vertical-align:middle; padding:3px 4px 3px 0; }
-    .item { font-size:14px; font-weight:bold; vertical-align:middle; padding:3px 0; }
-    .footer { text-align:center; font-size:10px; color:#888; margin-top:6px; }
-    @media print { @page { size:80mm auto; margin:0; } body { padding:4mm 3mm 10mm; } }
+    body { font-family:'Courier New',Courier,monospace; font-size:12px; width:80mm; margin:0 auto;
+           padding:4mm 3mm 12mm; background:#fff; color:#000; }
+
+    /* ── Header ── */
+    .cafe-name { text-align:center; font-size:13px; font-weight:900; text-transform:uppercase;
+                 letter-spacing:2px; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:4px; }
+    .cafe-sub  { text-align:center; font-size:9px; color:#555; letter-spacing:1px;
+                 text-transform:uppercase; margin-bottom:6px; }
+
+    /* ── KOT title bar ── */
+    .kot-title { background:#000; color:#fff; text-align:center; font-size:11px; font-weight:900;
+                 letter-spacing:3px; text-transform:uppercase; padding:3px 0; margin-bottom:6px; }
+
+    /* ── Table / order info ── */
+    .info-row  { display:flex; justify-content:space-between; font-size:10px; margin-bottom:2px; }
+    .info-row .label { color:#555; }
+    .info-row .value { font-weight:700; }
+    .order-id  { font-size:28px; font-weight:900; text-align:center; letter-spacing:2px;
+                 border:2px solid #000; border-radius:4px; padding:4px 0; margin:6px 0; }
+    .order-type { text-align:center; font-size:10px; font-weight:700; text-transform:uppercase;
+                  letter-spacing:2px; margin-bottom:4px; }
+
+    /* ── Separator ── */
+    .sep  { border:none; border-top:1px dashed #888; margin:5px 0; }
+    .sep2 { border:none; border-top:2px solid #000; margin:5px 0; }
+
+    /* ── Items ── */
+    table { width:100%; border-collapse:collapse; }
+    thead th { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+               border-bottom:1px solid #000; padding:2px 2px 3px; }
+    th.sno, td.sno { text-align:center; width:10%; }
+    th.qty, td.qty { text-align:center; width:12%; font-weight:900; font-size:13px; }
+    th.item        { text-align:left; }
+    td.item        { font-size:13px; font-weight:700; padding:4px 2px; line-height:1.3; }
+    tr.alt td      { background:#f8f8f8; }
+
+    /* ── Footer ── */
+    .footer { text-align:center; font-size:10px; color:#444; border-top:1px dashed #888;
+              padding-top:5px; margin-top:6px; letter-spacing:1px; }
+    .print-btn { text-align:center; margin-top:10px; }
+
+    @media print {
+      @page { size:80mm auto; margin:0; }
+      body  { padding:3mm 2mm 10mm; }
+      .print-btn { display:none; }
+    }
   </style>
 </head>
 <body>
-  <div class="cafe">${cafeName || 'Kitchen'}</div>
-  <div class="kot-header">
-    <div class="kot-label">KOT — Slip #${kot.slip_number}</div>
-    <div class="kot-num">${isTakeaway ? 'TAKEAWAY' : `TABLE ${kot.table_number}`}</div>
-    ${kot.customer_name ? `<div class="table-tag">${kot.customer_name}</div>` : ''}
+  <div class="cafe-name">${esc(cafeName || 'KITCHEN')}</div>
+  <div class="cafe-sub">Kitchen Order Ticket</div>
+
+  <div class="kot-title">KOT — SLIP #${kot.slip_number}</div>
+
+  <div class="order-id">${isTakeaway ? 'TAKEAWAY' : `TABLE ${esc(String(kot.table_number))}`}</div>
+  ${kot.customer_name ? `<div class="order-type">${esc(kot.customer_name)}</div>` : ''}
+
+  <div class="info-row">
+    <span class="label">Date</span><span class="value">${dateStr}</span>
   </div>
-  <div class="meta">${dateStr} ${timeStr}</div>
-  <hr class="sep-solid"/>
-  <table><tbody>${itemRows}</tbody></table>
-  <hr class="sep"/>
-  <div class="footer">— Serve these items —</div>
-  <script>
-    window.onload = function() { window.focus(); };
-    function doPrint() { window.print(); window.onafterprint = function() { window.close(); }; }
-  <\/script>
-  <div style="text-align:center;margin-top:10px;">
-    <button onclick="doPrint()" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;">🖨 PRINT KOT</button>
+  <div class="info-row">
+    <span class="label">Time</span><span class="value">${timeStr}</span>
   </div>
+
+  <hr class="sep2"/>
+
+  <table>
+    <thead>
+      <tr><th class="sno">#</th><th class="qty">Qty</th><th class="item">Item</th></tr>
+    </thead>
+    <tbody>${itemRows}</tbody>
+  </table>
+
+  <div class="footer">
+    ${items.length} item${items.length !== 1 ? 's' : ''} — Kitchen Copy
+  </div>
+
+  <div class="print-btn">
+    <button onclick="window.print();window.onafterprint=function(){window.close()};"
+      style="font-family:'Courier New',monospace;font-size:12px;font-weight:700;
+             padding:7px 24px;border:2px solid #000;border-radius:4px;
+             background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
+      PRINT KOT
+    </button>
+  </div>
+  <script>window.onload=function(){window.focus();};<\/script>
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width=380,height=500,toolbar=0,menubar=0,scrollbars=0');
+  const w = window.open('', '_blank', 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1');
   if (w) { w.document.write(html); w.document.close(); }
   else alert('Pop-up blocked. Allow pop-ups to print KOT.');
 }
+
+function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 function printKitchenToken(order, cafeName, servedItems = null) {
   const num = String(order.daily_order_number).padStart(2, '0');
@@ -161,6 +216,19 @@ const ITEM_STATUS_LABEL = {
 };
 
 const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
+const TAB_LABELS = { pending: 'Pending', confirmed: 'Confirmed', preparing: 'Preparing', ready: 'Ready' };
+const TAB_COLORS = {
+  pending:   'border-yellow-400 text-yellow-300',
+  confirmed: 'border-blue-400  text-blue-300',
+  preparing: 'border-orange-400 text-orange-300',
+  ready:     'border-teal-400  text-teal-300',
+};
+const TAB_BADGE_BG = {
+  pending:   'bg-yellow-500',
+  confirmed: 'bg-blue-500',
+  preparing: 'bg-orange-500',
+  ready:     'bg-teal-500',
+};
 
 const STATUS_COLORS = {
   pending:   'border-yellow-400 bg-yellow-950/30',
@@ -200,6 +268,7 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [activeTab, setActiveTab]   = useState('pending');
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
@@ -243,7 +312,12 @@ export default function KitchenPage() {
     cafe?.id,
     (order) => {
       if (KITCHEN_STATUSES.includes(order.status)) {
-        setOrders((prev) => [order, ...prev]);
+        setOrders((prev) => {
+          // deduplicate: replace if exists, prepend if new
+          const exists = prev.find((o) => o.id === order.id);
+          return exists ? prev.map((o) => o.id === order.id ? { ...o, ...order } : o) : [order, ...prev];
+        });
+        setActiveTab('pending');
         playChime();
         toast('New order!', { icon: '🔔', style: { background: '#1f2937', color: '#fff' } });
       }
@@ -467,179 +541,178 @@ export default function KitchenPage() {
 
       <KitchenHint />
 
-      {/* Columns */}
-      <div className="flex-1 grid grid-cols-4 gap-0 divide-x divide-gray-800 overflow-hidden">
-        {KITCHEN_STATUSES.map((status) => {
-          const cfg = STATUS_CONFIG[status];
-          const col = byStatus[status];
-          return (
-            <div key={status} className="flex flex-col overflow-hidden">
-              <div className="px-4 py-3 bg-gray-900 border-b border-gray-800 flex items-center justify-between flex-shrink-0">
-                <span className="font-bold text-sm uppercase tracking-wide text-gray-300">{cfg.label}</span>
-                {col.length > 0 && <span className="w-6 h-6 rounded-full bg-gray-700 text-xs font-bold flex items-center justify-center text-white">{col.length}</span>}
-              </div>
+      {/* Tab Bar */}
+      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 overflow-x-auto">
+        <div className="flex gap-1 min-w-max py-2">
+          {KITCHEN_STATUSES.map((status) => {
+            const count = byStatus[status].length;
+            const isActive = activeTab === status;
+            return (
+              <button
+                key={status}
+                onClick={() => setActiveTab(status)}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap border-2 ${
+                  isActive
+                    ? `${TAB_COLORS[status]} bg-gray-800 border-current`
+                    : 'text-gray-500 border-transparent hover:text-gray-300 hover:bg-gray-800/50'
+                }`}
+              >
+                {TAB_LABELS[status]}
+                {count > 0 && (
+                  <span className={`min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center text-white ${isActive ? TAB_BADGE_BG[status] : 'bg-gray-700'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {col.length === 0 ? (
-                  <div className="text-center py-12 text-gray-700 text-sm">No orders</div>
-                ) : (
-                  col.map((order) => {
-                    const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-                    const nextStatus = getNextStatus(order.status, order.order_type);
-                    const actionLabel = getActionLabel(order.status, order.order_type);
-                    const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-                    const activeItems = sortedItems.filter((i) => i.item_status !== 'cancelled');
+      {/* Orders for active tab */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {byStatus[activeTab].length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-24 text-gray-700">
+            <span className="text-5xl mb-4 opacity-30">
+              {activeTab === 'pending' ? '🕐' : activeTab === 'confirmed' ? '✅' : activeTab === 'preparing' ? '🍳' : '🛎️'}
+            </span>
+            <p className="text-sm">No {TAB_LABELS[activeTab].toLowerCase()} orders</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
+            {byStatus[activeTab].map((order) => {
+              const status = order.status;
+              const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+              const nextStatus = getNextStatus(status, order.order_type);
+              const actionLabel = getActionLabel(status, order.order_type);
+              const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
-                    return (
-                      <div key={order.id} className={`rounded-xl border-l-4 p-4 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
-                        {/* Top row */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-bold text-white text-xl">{fmtToken(order.daily_order_number, order.order_type)}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                            {elapsed(order.created_at, now)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-300 mb-1">
-                          {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
-                        </p>
-                        <p className="text-xs text-gray-500 mb-3">{order.customer_name} · {fmtTime(order.created_at)}</p>
+              return (
+                <div key={order.id} className={`rounded-xl border-l-4 p-4 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
+                  {/* Top row */}
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-bold text-white text-xl">{fmtToken(order.daily_order_number, order.order_type)}</span>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                      {elapsed(order.created_at, now)}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300 mb-1">
+                    {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
+                  </p>
+                  <p className="text-xs text-gray-500 mb-3">{order.customer_name} · {fmtTime(order.created_at)}</p>
 
-                        {/* Accept/reject whole order (pre-acceptance) */}
-                        {order.kitchen_mode === 'individual' && !order.accepted && order.status === 'pending' && (
-                          <div className="flex gap-2 mb-3">
-                            <button onClick={() => handleAcceptOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
-                            <button onClick={() => handleRejectOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
-                          </div>
-                        )}
+                  {/* Accept/reject (premium individual mode) */}
+                  {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
+                    <div className="flex gap-2 mb-3">
+                      <button onClick={() => handleAcceptOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
+                      <button onClick={() => handleRejectOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
+                    </div>
+                  )}
 
-                        {/* Items */}
-                        {order.kitchen_mode === 'individual' ? (
-                          <div className="space-y-2 mb-4">
-                            {sortedItems.map((item, idx) => {
-                              const isCancelled = item.item_status === 'cancelled';
-                              const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
-                              return (
-                                <div key={item.id} className={`rounded-2xl border p-3 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
-                                  <div className="flex items-start justify-between gap-2">
-                                    {/* Left: sequence + name + status */}
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-2 mb-1">
-                                        {item.item_status === 'ready' && !isCancelled && (
-                                          <input type="checkbox" checked={isSelected} onChange={() => toggleItemSelection(order.id, item.id)} className="w-4 h-4 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
-                                        )}
-                                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-gray-800 text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
-                                        <span className={`text-sm font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5">
-                                        <span className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
-                                          {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
-                                        </span>
-                                        {isCancelled && item.cancellation_reason && (
-                                          <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
-                                        )}
-                                      </div>
-                                    </div>
+                  {/* Items */}
+                  {order.kitchen_mode === 'individual' ? (
+                    <div className="space-y-2 mb-4">
+                      {sortedItems.map((item, idx) => {
+                        const isCancelled = item.item_status === 'cancelled';
+                        const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
+                        return (
+                          <div key={item.id} className={`rounded-xl border p-3 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  {item.item_status === 'ready' && !isCancelled && (
+                                    <input type="checkbox" checked={isSelected} onChange={() => toggleItemSelection(order.id, item.id)} className="w-4 h-4 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
+                                  )}
+                                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-800 text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
+                                  <span className={`text-sm font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
+                                    {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
+                                  </span>
+                                  {isCancelled && item.cancellation_reason && (
+                                    <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
+                                  )}
+                                </div>
+                              </div>
 
-                                    {/* Right: sequence arrows + action buttons */}
-                                    {!isCancelled && (
-                                      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                                        {/* Course sequence arrows */}
-                                        <div className="flex gap-1">
-                                          <button
-                                            onClick={() => handleMoveItem(order.id, item.id, 'up')}
-                                            disabled={idx === 0}
-                                            className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30"
-                                            title="Move up (serve earlier)"
-                                          >↑</button>
-                                          <button
-                                            onClick={() => handleMoveItem(order.id, item.id, 'down')}
-                                            disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
-                                            className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30"
-                                            title="Move down (serve later)"
-                                          >↓</button>
-                                        </div>
-
-                                        {/* Status actions */}
-                                        <div className="flex flex-wrap gap-1 justify-end">
-                                          {!item.accepted && order.accepted && (
-                                            <button onClick={() => handleAcceptItem(order.id, item.id)} className="text-[11px] px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-500">Accept</button>
-                                          )}
-                                          {item.item_status === 'pending' && item.accepted && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'preparing')} className="text-[11px] px-2 py-1 rounded-xl bg-orange-600 text-white hover:bg-orange-500">Start</button>
-                                          )}
-                                          {item.item_status === 'preparing' && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'ready')} className="text-[11px] px-2 py-1 rounded-xl bg-teal-600 text-white hover:bg-teal-500">Ready</button>
-                                          )}
-                                          {item.item_status === 'ready' && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'served')} className="text-[11px] px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
-                                          )}
-                                          {/* Cancel item button */}
-                                          {['pending', 'preparing'].includes(item.item_status) && (
-                                            <button
-                                              onClick={() => { setCancelModal({ orderId: order.id, itemId: item.id, itemName: item.item_name }); setCancelReason(''); }}
-                                              className="text-[11px] px-2 py-1 rounded-xl bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800"
-                                              title="Mark item unavailable"
-                                            >✕</button>
-                                          )}
-                                        </div>
-                                      </div>
+                              {!isCancelled && (
+                                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                                  <div className="flex gap-1">
+                                    <button onClick={() => handleMoveItem(order.id, item.id, 'up')} disabled={idx === 0}
+                                      className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↑</button>
+                                    <button onClick={() => handleMoveItem(order.id, item.id, 'down')} disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
+                                      className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1 justify-end">
+                                    {!item.accepted && order.accepted && (
+                                      <button onClick={() => handleAcceptItem(order.id, item.id)} className="text-[11px] px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-500">Accept</button>
+                                    )}
+                                    {item.item_status === 'pending' && item.accepted && (
+                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'preparing')} className="text-[11px] px-2 py-1 rounded-xl bg-orange-600 text-white hover:bg-orange-500">Start</button>
+                                    )}
+                                    {item.item_status === 'preparing' && (
+                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'ready')} className="text-[11px] px-2 py-1 rounded-xl bg-teal-600 text-white hover:bg-teal-500">Ready</button>
+                                    )}
+                                    {item.item_status === 'ready' && (
+                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'served')} className="text-[11px] px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
+                                    )}
+                                    {['pending', 'preparing'].includes(item.item_status) && (
+                                      <button onClick={() => { setCancelModal({ orderId: order.id, itemId: item.id, itemName: item.item_name }); setCancelReason(''); }}
+                                        className="text-[11px] px-2 py-1 rounded-xl bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800">✕</button>
                                     )}
                                   </div>
                                 </div>
-                              );
-                            })}
-
-                            {/* Serve Selected */}
-                            {(selectedItems[order.id]?.size > 0) && (
-                              <button onClick={() => handleServeSelected(order.id)} className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors">
-                                🍽️ Serve {selectedItems[order.id].size} Selected Item{selectedItems[order.id].size > 1 ? 's' : ''}
-                              </button>
-                            )}
+                              )}
+                            </div>
                           </div>
-                        ) : (
-                          <div className="space-y-1.5 mb-4">
-                            {(order.items || []).map((item) => (
-                              <div key={item.id} className="flex items-center gap-2">
-                                <span className="w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
-                                <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {order.notes && (
-                          <p className="text-xs text-amber-400 mb-3 bg-amber-950/30 rounded-lg px-2 py-1">📝 {order.notes}</p>
-                        )}
-
-                        {/* Advance + print buttons */}
-                        {nextStatus && !(order.kitchen_mode === 'individual' && order.status === 'preparing') && (
-                          <button onClick={() => handleAdvance(order)} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-colors ${ACTION_COLORS[status]}`}>
-                            {actionLabel} →
-                          </button>
-                        )}
-
-                        <div className="flex gap-2 mt-1.5">
-                          <button onClick={() => printKitchenToken(order, cafe?.name)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 transition-colors">
-                            🖨 Print Slip
-                          </button>
-                          {order.kitchen_mode === 'individual' ? (
-                            <button onClick={() => handleKotReprint(order.id)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
-                              📋 Reprint KOT
-                            </button>
-                          ) : (
-                            <button onClick={() => handleKotPrint(order.id)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
-                              📋 Print KOT
-                            </button>
-                          )}
+                        );
+                      })}
+                      {(selectedItems[order.id]?.size > 0) && (
+                        <button onClick={() => handleServeSelected(order.id)} className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors">
+                          🍽️ Serve {selectedItems[order.id].size} Selected Item{selectedItems[order.id].size > 1 ? 's' : ''}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 mb-4">
+                      {(order.items || []).map((item) => (
+                        <div key={item.id} className="flex items-center gap-2">
+                          <span className="w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
+                          <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
                         </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          );
-        })}
+                      ))}
+                    </div>
+                  )}
+
+                  {order.notes && (
+                    <p className="text-xs text-amber-400 mb-3 bg-amber-950/30 rounded-lg px-2 py-1">📝 {order.notes}</p>
+                  )}
+
+                  {/* Advance button */}
+                  {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
+                    <button onClick={() => handleAdvance(order)} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-colors ${ACTION_COLORS[status]}`}>
+                      {actionLabel} →
+                    </button>
+                  )}
+
+                  {/* KOT only — no payment slip in KDS */}
+                  <div className="mt-1.5">
+                    {order.kitchen_mode === 'individual' ? (
+                      <button onClick={() => handleKotReprint(order.id)} className="w-full py-2 rounded-xl text-xs font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
+                        📋 Reprint KOT
+                      </button>
+                    ) : (
+                      <button onClick={() => handleKotPrint(order.id)} className="w-full py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+                        📋 Print KOT
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Cancel Item Modal */}

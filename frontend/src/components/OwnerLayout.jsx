@@ -2,7 +2,7 @@ import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-route
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
 import { getOutlets, switchOutlet } from '../services/api';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
 import NavIcon from './NavIcon';
@@ -65,6 +65,17 @@ function OwnerLayoutInner() {
   const [outlets, setOutlets]       = useState([]);
   const [outletOpen, setOutletOpen] = useState(false);
   const [switching, setSwitching]   = useState(false);
+  const [collapsed, setCollapsed]   = useState(
+    () => localStorage.getItem('dv_sidebar_collapsed') === 'true'
+  );
+
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      const next = !v;
+      localStorage.setItem('dv_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   const isStaff    = role === 'STAFF';
   const effectiveRole = isStaff ? (staffRole || 'cashier') : 'owner';
@@ -113,6 +124,8 @@ function OwnerLayoutInner() {
   const Avatar = ({ size = 'md' }) => {
     const cls = size === 'lg'
       ? 'w-14 h-14 rounded-xl text-2xl'
+      : size === 'sm'
+      ? 'w-9 h-9 rounded-lg text-base'
       : 'w-10 h-10 rounded-lg text-lg';
     return cafe?.logo_url ? (
       <img
@@ -134,86 +147,104 @@ function OwnerLayoutInner() {
       <aside
         className={`${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
           md:translate-x-0 fixed md:static inset-y-0 left-0 z-40
-          w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-200`}
+          ${collapsed ? 'md:w-16' : 'w-64'}
+          bg-white border-r border-gray-200 flex flex-col transition-all duration-200 overflow-hidden`}
       >
         {/* Brand + profile header */}
-        <div className="px-4 pt-4 pb-3 border-b border-gray-100 flex-shrink-0 space-y-3">
-          {/* Owner: café profile link. Staff: their name + role badge */}
-          {isStaff ? (
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-600">
-                <NavIcon name={effectiveRole === 'kitchen' ? 'chef' : effectiveRole === 'cashier' ? 'cashier' : 'manager'} className="w-5 h-5" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate text-sm">
-                  {staffInfo?.name || 'Staff'}
-                </p>
-                <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_BADGE[effectiveRole]?.cls || 'bg-gray-100 text-gray-600'}`}>
-                  {ROLE_BADGE[effectiveRole]?.label || effectiveRole}
-                </span>
-                <span className="text-[11px] text-gray-400 ml-1">· {cafe?.name}</span>
-              </div>
-            </div>
-          ) : (
-            <NavLink
-              to="/owner/profile"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 min-w-0 group"
-            >
-              <Avatar />
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
-                  {cafe?.name}
-                </p>
-                <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
-              </div>
-              <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
-            </NavLink>
-          )}
-
-          {/* Outlet dropdown (owner only) */}
-          {!isStaff && outlets.length > 1 && (
-            <div className="relative mt-2">
-              <button
-                onClick={() => setOutletOpen((v) => !v)}
-                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs text-gray-600 font-medium transition-colors"
-              >
-                <span>{outlets.find((o) => o.id === cafe?.id)?.parent_cafe_id ? 'Outlet' : 'Main branch'}</span>
-                <span className="text-gray-400">{outletOpen ? '▲' : '▼'}</span>
-              </button>
-              {outletOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
-                  {outlets.map((o) => {
-                    const isCurrent = o.id === cafe?.id;
-                    return (
-                      <button
-                        key={o.id}
-                        onClick={() => handleSwitchOutlet(o.id)}
-                        disabled={isCurrent || switching}
-                        className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors ${
-                          isCurrent
-                            ? 'bg-brand-50 text-brand-700 font-semibold cursor-default'
-                            : 'hover:bg-gray-50 text-gray-700'
-                        }`}
-                      >
-                        <span>{o.name}</span>
-                        {isCurrent
-                          ? <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full">Active</span>
-                          : !o.parent_cafe_id
-                            ? <span className="text-[10px] text-gray-400">Main</span>
-                            : null
-                        }
-                      </button>
-                    );
-                  })}
+        <div className={`pt-4 pb-3 border-b border-gray-100 flex-shrink-0 ${collapsed ? 'px-2' : 'px-4 space-y-3'}`}>
+          {collapsed ? (
+            /* Collapsed: show avatar/icon only */
+            <div className="flex flex-col items-center gap-2">
+              {isStaff ? (
+                <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
+                  <NavIcon name={effectiveRole === 'kitchen' ? 'chef' : effectiveRole === 'cashier' ? 'cashier' : 'manager'} className="w-5 h-5" />
                 </div>
+              ) : (
+                <NavLink to="/owner/profile" onClick={() => setMobileOpen(false)} title={cafe?.name}>
+                  <Avatar size="sm" />
+                </NavLink>
               )}
             </div>
+          ) : (
+            /* Expanded: full header */
+            <>
+              {isStaff ? (
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0 text-gray-600">
+                    <NavIcon name={effectiveRole === 'kitchen' ? 'chef' : effectiveRole === 'cashier' ? 'cashier' : 'manager'} className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate text-sm">
+                      {staffInfo?.name || 'Staff'}
+                    </p>
+                    <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${ROLE_BADGE[effectiveRole]?.cls || 'bg-gray-100 text-gray-600'}`}>
+                      {ROLE_BADGE[effectiveRole]?.label || effectiveRole}
+                    </span>
+                    <span className="text-[11px] text-gray-400 ml-1">· {cafe?.name}</span>
+                  </div>
+                </div>
+              ) : (
+                <NavLink
+                  to="/owner/profile"
+                  onClick={() => setMobileOpen(false)}
+                  className="flex items-center gap-3 min-w-0 group"
+                >
+                  <Avatar />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
+                      {cafe?.name}
+                    </p>
+                    <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
+                  </div>
+                  <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
+                </NavLink>
+              )}
+
+              {/* Outlet dropdown (owner only) */}
+              {!isStaff && outlets.length > 1 && (
+                <div className="relative mt-2">
+                  <button
+                    onClick={() => setOutletOpen((v) => !v)}
+                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-xs text-gray-600 font-medium transition-colors"
+                  >
+                    <span>{outlets.find((o) => o.id === cafe?.id)?.parent_cafe_id ? 'Outlet' : 'Main branch'}</span>
+                    <span className="text-gray-400">{outletOpen ? '▲' : '▼'}</span>
+                  </button>
+                  {outletOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                      {outlets.map((o) => {
+                        const isCurrent = o.id === cafe?.id;
+                        return (
+                          <button
+                            key={o.id}
+                            onClick={() => handleSwitchOutlet(o.id)}
+                            disabled={isCurrent || switching}
+                            className={`w-full px-3 py-2 text-left text-xs flex items-center justify-between transition-colors ${
+                              isCurrent
+                                ? 'bg-brand-50 text-brand-700 font-semibold cursor-default'
+                                : 'hover:bg-gray-50 text-gray-700'
+                            }`}
+                          >
+                            <span>{o.name}</span>
+                            {isCurrent
+                              ? <span className="text-[10px] bg-brand-100 text-brand-700 px-1.5 py-0.5 rounded-full">Active</span>
+                              : !o.parent_cafe_id
+                                ? <span className="text-[10px] text-gray-400">Main</span>
+                                : null
+                            }
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 
         {/* Nav — scrollable */}
-        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
+        <nav className={`flex-1 overflow-y-auto py-3 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
           {visibleNav.map((item) => {
             const badgeCount = badges[item.to] || 0;
             return (
@@ -221,48 +252,84 @@ function OwnerLayoutInner() {
                 key={item.to}
                 to={item.to}
                 onClick={() => setMobileOpen(false)}
+                title={collapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                  `flex items-center rounded-lg text-sm font-medium transition-colors ${
+                    collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+                  } ${
                     isActive
                       ? 'bg-brand-50 text-brand-700'
                       : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                   }`
                 }
               >
-                <NavIcon name={item.icon} />
-                <span className="flex-1">{item.label}</span>
-                {badgeCount > 0 && (
-                  <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
-                    {badgeCount > 99 ? '99+' : badgeCount}
-                  </span>
+                <div className="relative flex-shrink-0">
+                  <NavIcon name={item.icon} />
+                  {collapsed && badgeCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                      {badgeCount > 9 ? '9+' : badgeCount}
+                    </span>
+                  )}
+                </div>
+                {!collapsed && (
+                  <>
+                    <span className="flex-1">{item.label}</span>
+                    {badgeCount > 0 && (
+                      <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                        {badgeCount > 99 ? '99+' : badgeCount}
+                      </span>
+                    )}
+                  </>
                 )}
               </NavLink>
             );
           })}
         </nav>
 
-        {/* Bottom: Profile (owner only) + Logout */}
-        <div className="px-3 pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5">
+        {/* Bottom: Profile (owner only) + Logout + Collapse toggle */}
+        <div className={`pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
           {!isStaff && (
             <NavLink
               to="/owner/profile"
               onClick={() => setMobileOpen(false)}
+              title={collapsed ? 'Profile' : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                `flex items-center rounded-lg text-sm font-medium transition-colors ${
+                  collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+                } ${
                   isActive
                     ? 'bg-brand-50 text-brand-700'
                     : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
                 }`
               }
             >
-              <NavIcon name="profile" /> Profile
+              <NavIcon name="profile" />
+              {!collapsed && <span>Profile</span>}
             </NavLink>
           )}
           <button
             onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+            title={collapsed ? 'Logout' : undefined}
+            className={`w-full flex items-center rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 transition-colors ${
+              collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+            }`}
           >
-            <NavIcon name="logout" /> Logout
+            <NavIcon name="logout" />
+            {!collapsed && <span>Logout</span>}
+          </button>
+
+          {/* Collapse toggle — desktop only */}
+          <button
+            onClick={toggleCollapsed}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className={`hidden md:flex w-full items-center rounded-lg text-sm font-medium text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors ${
+              collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+            }`}
+          >
+            <svg className={`w-4 h-4 transition-transform ${collapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M19 19l-7-7 7-7" />
+            </svg>
+            {!collapsed && <span>Collapse</span>}
           </button>
         </div>
       </aside>
