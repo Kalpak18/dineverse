@@ -268,7 +268,6 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
-  const [activeTab, setActiveTab]   = useState('pending');
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
@@ -317,7 +316,6 @@ export default function KitchenPage() {
           const exists = prev.find((o) => o.id === order.id);
           return exists ? prev.map((o) => o.id === order.id ? { ...o, ...order } : o) : [order, ...prev];
         });
-        setActiveTab('pending');
         playChime();
         toast('New order!', { icon: '🔔', style: { background: '#1f2937', color: '#fff' } });
       }
@@ -541,178 +539,186 @@ export default function KitchenPage() {
 
       <KitchenHint />
 
-      {/* Tab Bar */}
-      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 overflow-x-auto">
-        <div className="flex gap-1 min-w-max py-2">
-          {KITCHEN_STATUSES.map((status) => {
-            const count = byStatus[status].length;
-            const isActive = activeTab === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setActiveTab(status)}
-                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap border-2 ${
-                  isActive
-                    ? `${TAB_COLORS[status]} bg-gray-800 border-current`
-                    : 'text-gray-500 border-transparent hover:text-gray-300 hover:bg-gray-800/50'
-                }`}
-              >
-                {TAB_LABELS[status]}
-                {count > 0 && (
-                  <span className={`min-w-[20px] h-5 px-1 rounded-full text-[11px] font-bold flex items-center justify-center text-white ${isActive ? TAB_BADGE_BG[status] : 'bg-gray-700'}`}>
-                    {count}
+      {/* 4-column KDS board */}
+      <div className="flex-1 flex gap-0 overflow-hidden min-h-0">
+        {KITCHEN_STATUSES.map((status) => {
+          const colOrders = byStatus[status];
+          const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
+          const colHeaderBg = {
+            pending:   'bg-yellow-950/60 border-yellow-800/50',
+            confirmed: 'bg-blue-950/60 border-blue-800/50',
+            preparing: 'bg-orange-950/60 border-orange-800/50',
+            ready:     'bg-teal-950/60 border-teal-800/50',
+          };
+          const colCountBg = {
+            pending:   'bg-yellow-500',
+            confirmed: 'bg-blue-500',
+            preparing: 'bg-orange-500',
+            ready:     'bg-teal-500',
+          };
+          const colTitleColor = {
+            pending:   'text-yellow-300',
+            confirmed: 'text-blue-300',
+            preparing: 'text-orange-300',
+            ready:     'text-teal-300',
+          };
+
+          return (
+            <div key={status} className="flex-1 min-w-0 flex flex-col border-r border-gray-800 last:border-r-0">
+              {/* Column header */}
+              <div className={`flex-shrink-0 flex items-center gap-2 px-3 py-2.5 border-b ${colHeaderBg[status]}`}>
+                <span className="text-base">{colIcons[status]}</span>
+                <span className={`text-sm font-bold uppercase tracking-wide ${colTitleColor[status]}`}>{TAB_LABELS[status]}</span>
+                {colOrders.length > 0 && (
+                  <span className={`ml-auto min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-white ${colCountBg[status]}`}>
+                    {colOrders.length}
                   </span>
                 )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+              </div>
 
-      {/* Orders for active tab */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {byStatus[activeTab].length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 text-gray-700">
-            <span className="text-5xl mb-4 opacity-30">
-              {activeTab === 'pending' ? '🕐' : activeTab === 'confirmed' ? '✅' : activeTab === 'preparing' ? '🍳' : '🛎️'}
-            </span>
-            <p className="text-sm">No {TAB_LABELS[activeTab].toLowerCase()} orders</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 items-start">
-            {byStatus[activeTab].map((order) => {
-              const status = order.status;
-              const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-              const nextStatus = getNextStatus(status, order.order_type);
-              const actionLabel = getActionLabel(status, order.order_type);
-              const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-
-              return (
-                <div key={order.id} className={`rounded-xl border-l-4 p-4 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
-                  {/* Top row */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-white text-xl">{fmtToken(order.daily_order_number, order.order_type)}</span>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                      {elapsed(order.created_at, now)}
-                    </span>
+              {/* Column body — independently scrollable */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-3">
+                {colOrders.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-gray-700">
+                    <span className="text-4xl mb-3 opacity-20">{colIcons[status]}</span>
+                    <p className="text-xs text-gray-600">No {TAB_LABELS[status].toLowerCase()} orders</p>
                   </div>
-                  <p className="text-sm text-gray-300 mb-1">
-                    {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
-                  </p>
-                  <p className="text-xs text-gray-500 mb-3">{order.customer_name} · {fmtTime(order.created_at)}</p>
+                ) : (
+                  colOrders.map((order) => {
+                    const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+                    const nextStatus = getNextStatus(status, order.order_type);
+                    const actionLabel = getActionLabel(status, order.order_type);
+                    const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 
-                  {/* Accept/reject (premium individual mode) */}
-                  {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
-                    <div className="flex gap-2 mb-3">
-                      <button onClick={() => handleAcceptOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
-                      <button onClick={() => handleRejectOrder(order.id)} className="flex-1 py-2 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
-                    </div>
-                  )}
-
-                  {/* Items */}
-                  {order.kitchen_mode === 'individual' ? (
-                    <div className="space-y-2 mb-4">
-                      {sortedItems.map((item, idx) => {
-                        const isCancelled = item.item_status === 'cancelled';
-                        const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
-                        return (
-                          <div key={item.id} className={`rounded-xl border p-3 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  {item.item_status === 'ready' && !isCancelled && (
-                                    <input type="checkbox" checked={isSelected} onChange={() => toggleItemSelection(order.id, item.id)} className="w-4 h-4 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
-                                  )}
-                                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-gray-800 text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
-                                  <span className={`text-sm font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className={`inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
-                                    {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
-                                  </span>
-                                  {isCancelled && item.cancellation_reason && (
-                                    <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {!isCancelled && (
-                                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                                  <div className="flex gap-1">
-                                    <button onClick={() => handleMoveItem(order.id, item.id, 'up')} disabled={idx === 0}
-                                      className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↑</button>
-                                    <button onClick={() => handleMoveItem(order.id, item.id, 'down')} disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
-                                      className="w-6 h-6 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1 justify-end">
-                                    {!item.accepted && order.accepted && (
-                                      <button onClick={() => handleAcceptItem(order.id, item.id)} className="text-[11px] px-2 py-1 rounded-lg bg-green-600 text-white hover:bg-green-500">Accept</button>
-                                    )}
-                                    {item.item_status === 'pending' && item.accepted && (
-                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'preparing')} className="text-[11px] px-2 py-1 rounded-xl bg-orange-600 text-white hover:bg-orange-500">Start</button>
-                                    )}
-                                    {item.item_status === 'preparing' && (
-                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'ready')} className="text-[11px] px-2 py-1 rounded-xl bg-teal-600 text-white hover:bg-teal-500">Ready</button>
-                                    )}
-                                    {item.item_status === 'ready' && (
-                                      <button onClick={() => handleItemUpdate(order.id, item.id, 'served')} className="text-[11px] px-2 py-1 rounded-xl bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
-                                    )}
-                                    {['pending', 'preparing'].includes(item.item_status) && (
-                                      <button onClick={() => { setCancelModal({ orderId: order.id, itemId: item.id, itemName: item.item_name }); setCancelReason(''); }}
-                                        className="text-[11px] px-2 py-1 rounded-xl bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800">✕</button>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {(selectedItems[order.id]?.size > 0) && (
-                        <button onClick={() => handleServeSelected(order.id)} className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm transition-colors">
-                          🍽️ Serve {selectedItems[order.id].size} Selected Item{selectedItems[order.id].size > 1 ? 's' : ''}
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5 mb-4">
-                      {(order.items || []).map((item) => (
-                        <div key={item.id} className="flex items-center gap-2">
-                          <span className="w-7 h-7 rounded-lg bg-gray-800 flex items-center justify-center text-sm font-bold text-white flex-shrink-0">{item.quantity}</span>
-                          <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
+                    return (
+                      <div key={order.id} className={`rounded-xl border-l-4 p-3 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
+                        {/* Top row */}
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="font-bold text-white text-lg">{fmtToken(order.daily_order_number, order.order_type)}</span>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+                            {elapsed(order.created_at, now)}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        <p className="text-sm text-gray-300 mb-0.5">
+                          {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
+                        </p>
+                        <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
 
-                  {order.notes && (
-                    <p className="text-xs text-amber-400 mb-3 bg-amber-950/30 rounded-lg px-2 py-1">📝 {order.notes}</p>
-                  )}
+                        {/* Accept/reject (premium individual mode) */}
+                        {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
+                          <div className="flex gap-2 mb-2">
+                            <button onClick={() => handleAcceptOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
+                            <button onClick={() => handleRejectOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
+                          </div>
+                        )}
 
-                  {/* Advance button */}
-                  {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
-                    <button onClick={() => handleAdvance(order)} className={`w-full py-2.5 rounded-xl text-sm font-bold transition-colors ${ACTION_COLORS[status]}`}>
-                      {actionLabel} →
-                    </button>
-                  )}
+                        {/* Items */}
+                        {order.kitchen_mode === 'individual' ? (
+                          <div className="space-y-1.5 mb-3">
+                            {sortedItems.map((item, idx) => {
+                              const isCancelled = item.item_status === 'cancelled';
+                              const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
+                              return (
+                                <div key={item.id} className={`rounded-lg border p-2 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
+                                  <div className="flex items-start justify-between gap-1.5">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 mb-1">
+                                        {item.item_status === 'ready' && !isCancelled && (
+                                          <input type="checkbox" checked={isSelected} onChange={() => toggleItemSelection(order.id, item.id)} className="w-3.5 h-3.5 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
+                                        )}
+                                        <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-800 text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                                        <span className={`text-xs font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
+                                      </div>
+                                      <div className="flex items-center gap-1">
+                                        <span className={`inline-flex text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
+                                          {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
+                                        </span>
+                                        {isCancelled && item.cancellation_reason && (
+                                          <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
+                                        )}
+                                      </div>
+                                    </div>
 
-                  {/* KOT only — no payment slip in KDS */}
-                  <div className="mt-1.5">
-                    {order.kitchen_mode === 'individual' ? (
-                      <button onClick={() => handleKotReprint(order.id)} className="w-full py-2 rounded-xl text-xs font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
-                        📋 Reprint KOT
-                      </button>
-                    ) : (
-                      <button onClick={() => handleKotPrint(order.id)} className="w-full py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
-                        📋 Print KOT
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                                    {!isCancelled && (
+                                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                        <div className="flex gap-0.5">
+                                          <button onClick={() => handleMoveItem(order.id, item.id, 'up')} disabled={idx === 0}
+                                            className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↑</button>
+                                          <button onClick={() => handleMoveItem(order.id, item.id, 'down')} disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
+                                            className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-0.5 justify-end">
+                                          {!item.accepted && order.accepted && (
+                                            <button onClick={() => handleAcceptItem(order.id, item.id)} className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-500">Accept</button>
+                                          )}
+                                          {item.item_status === 'pending' && item.accepted && (
+                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'preparing')} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-500">Start</button>
+                                          )}
+                                          {item.item_status === 'preparing' && (
+                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'ready')} className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-white hover:bg-teal-500">Ready</button>
+                                          )}
+                                          {item.item_status === 'ready' && (
+                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'served')} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
+                                          )}
+                                          {['pending', 'preparing'].includes(item.item_status) && (
+                                            <button onClick={() => { setCancelModal({ orderId: order.id, itemId: item.id, itemName: item.item_name }); setCancelReason(''); }}
+                                              className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800">✕</button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            {(selectedItems[order.id]?.size > 0) && (
+                              <button onClick={() => handleServeSelected(order.id)} className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors">
+                                🍽️ Serve {selectedItems[order.id].size} Item{selectedItems[order.id].size > 1 ? 's' : ''}
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="space-y-1 mb-3">
+                            {(order.items || []).map((item) => (
+                              <div key={item.id} className="flex items-center gap-1.5">
+                                <span className="w-6 h-6 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                                <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {order.notes && (
+                          <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
+                        )}
+
+                        {/* Advance button */}
+                        {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
+                          <button onClick={() => handleAdvance(order)} className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}>
+                            {actionLabel} →
+                          </button>
+                        )}
+
+                        {/* KOT only */}
+                        <div className="mt-1">
+                          {order.kitchen_mode === 'individual' ? (
+                            <button onClick={() => handleKotReprint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
+                              📋 Reprint KOT
+                            </button>
+                          ) : (
+                            <button onClick={() => handleKotPrint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+                              📋 Print KOT
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Cancel Item Modal */}

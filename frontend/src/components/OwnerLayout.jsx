@@ -353,7 +353,7 @@ function OwnerLayoutInner() {
       )}
 
       {/* ── Main area ── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Top bar (mobile) — fixed so it never scrolls away on iOS Safari */}
         <header className="md:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
 
