@@ -64,11 +64,13 @@ exports.apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Public order creation limiter
+// Public order creation limiter — keyed by IP + café slug so limits are
+// per-café, preventing one busy café from exhausting quota for others.
 exports.orderLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 30,
   store,
+  keyGenerator: (req) => `order:${ipKeyGenerator(req.ip)}:${req.params.slug || ''}`,
   message: { success: false, message: 'Too many orders placed. Please wait a moment.' },
   standardHeaders: true,
   legacyHeaders: false,
