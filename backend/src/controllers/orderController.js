@@ -334,7 +334,6 @@ exports.createOrder = asyncHandler(async (req, res) => {
       title: `New order from ${customer_name}`,
       body:  `${orderLabel} · ${itemCount} item${itemCount !== 1 ? 's' : ''} · ₹${fullOrder.final_amount}`,
       refId: fullOrder.id,
-      email: true,
     }).catch(() => {});
 
     logger.info('Order #%s placed at café %s table %s', order.order_number, slug, table_number);

@@ -19,7 +19,11 @@
       "Bash(kill %1)",
       "Bash(node scripts/migrate.js)",
       "Bash(npm run:*)",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
