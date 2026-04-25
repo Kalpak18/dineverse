@@ -19,7 +19,8 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
             COALESCE(country, 'India') AS country,
             COALESCE(currency, 'INR') AS currency,
             opening_hours,
-            COALESCE(timezone, 'Asia/Kolkata') AS timezone
+            COALESCE(timezone, 'Asia/Kolkata') AS timezone,
+            COALESCE(razorpay_route_enabled, false) AS razorpay_route_enabled
      FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true`,
     [slug]
   );

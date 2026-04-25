@@ -4,6 +4,7 @@ const db = require('../config/database');
 const logger = require('../utils/logger');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const cache = require('../utils/cache');
 
 // ─── Pricing config ───────────────────────────────────────────
 // Basic: ₹499/mo base | Premium (KDS + KOT): ₹999/mo base
@@ -440,10 +441,13 @@ exports.enableRoute = asyncHandler(async (req, res) => {
     return fail(res, 'Account ID mismatch', 400);
   }
 
-  await db.query(
-    `UPDATE cafes SET razorpay_account_status = 'active', razorpay_route_enabled = true WHERE id = $1`,
+  const updated = await db.query(
+    `UPDATE cafes SET razorpay_account_status = 'active', razorpay_route_enabled = true
+     WHERE id = $1 RETURNING slug`,
     [req.cafeId]
   );
+  // Bust the public café cache so razorpay_route_enabled is immediately visible
+  if (updated.rows[0]?.slug) cache.del(`cafe:${updated.rows[0].slug}`);
 
   ok(res, { route_enabled: true }, 'Payout routing activated!');
 });

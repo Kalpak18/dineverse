@@ -407,9 +407,11 @@ export default function OrderConfirmation() {
           const isReady      = order.status === 'ready' ||
             (order.order_type === 'takeaway' && order.status === 'served');
           // Customer can pay online when food is served (dine-in) or ready (takeaway)
-          const canPayOnline = (order.status === 'served' && order.order_type === 'dine-in') ||
-            (order.status === 'ready' && order.order_type === 'takeaway') ||
-            order.status === 'ready';
+          const canPayOnline = cafeInfo?.razorpay_route_enabled && (
+            (order.status === 'served' && order.order_type === 'dine-in') ||
+            (order.status === 'ready'  && order.order_type === 'takeaway') ||
+            order.status === 'ready'
+          );
           const isPaying     = paying === order.id;
 
           return (
