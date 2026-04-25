@@ -547,6 +547,7 @@ export default function MenuPage() {
                     categoryLabel={isSearching ? item._catName : null}
                     onAdd={() => addItem(item)}
                     onUpdateQty={(qty) => updateQty(item.id, qty)}
+                    c={c}
                   />
                 ))}
               </div>
@@ -587,7 +588,7 @@ export default function MenuPage() {
   );
 }
 
-function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty }) {
+function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
   return (
     <div className={`bg-white rounded-2xl overflow-hidden flex flex-col shadow-sm border transition-all ${
       qty > 0 ? 'border-brand-300 shadow-brand-100' : 'border-gray-100'
