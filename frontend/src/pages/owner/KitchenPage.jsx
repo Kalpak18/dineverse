@@ -102,7 +102,7 @@ function printKot(kot, cafeName) {
   </table>
 
   <div class="footer">
-    ${items.length} item${items.length !== 1 ? 's' : ''} — Kitchen Copy
+    ${items.length} item${items.length !== 1 ? 's' : ''}
   </div>
 
   <div class="print-btn">
@@ -506,14 +506,14 @@ export default function KitchenPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <div className="h-screen bg-gray-950 flex items-center justify-center">
         <p className="text-gray-400 text-lg">Loading kitchen...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
+    <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
         <div className="flex items-center gap-3">

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
@@ -160,10 +160,7 @@ export default function CartPage() {
     return () => clearTimeout(offerDebounce.current);
   }, [slug, total, items]);
 
-  if (!session) {
-    navigate(`/cafe/${slug}`);
-    return null;
-  }
+  if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
 
   if (items.length === 0) {
     return (
@@ -642,14 +639,38 @@ export default function CartPage() {
                 </p>
               </div>
 
-              <div className="bg-gray-50 rounded-xl px-4 py-3">
-                <div className="flex justify-between text-sm text-gray-500 mb-1">
+              <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1">
+                <div className="flex justify-between text-sm text-gray-500">
                   <span>{itemCount} item{itemCount !== 1 ? 's' : ''}</span>
-                  <span>{session.table_number}</span>
+                  <span>{session.table_number || session.order_type}</span>
                 </div>
-                <div className="flex justify-between font-bold text-gray-900">
+                {hasGst && (
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>GST ({gstRate}%)</span>
+                    <span>{taxInclusive ? 'included' : `+${c(totalTax)}`}</span>
+                  </div>
+                )}
+                {discountAmt > 0 && (
+                  <div className="flex justify-between text-xs text-green-600">
+                    <span>Discount</span>
+                    <span>-{c(discountAmt)}</span>
+                  </div>
+                )}
+                {tip > 0 && (
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Tip</span>
+                    <span>{c(tip)}</span>
+                  </div>
+                )}
+                {isDelivery && deliveryFeeBase > 0 && (
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>Delivery fee</span>
+                    <span>{c(deliveryFeeBase)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
                   <span>Total</span>
-                  <span>{c(total)}</span>
+                  <span>{c(grandTotal)}</span>
                 </div>
               </div>
 

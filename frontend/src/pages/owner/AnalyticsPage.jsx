@@ -140,11 +140,25 @@ export default function AnalyticsPage() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await exportOrdersCSV({ period });
+      const now = new Date();
+      const toDate = now.toLocaleDateString('en-CA'); // YYYY-MM-DD local
+      let fromDate;
+      if (period === 'daily') {
+        fromDate = toDate;
+      } else if (period === 'weekly') {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 6);
+        fromDate = d.toLocaleDateString('en-CA');
+      } else if (period === 'monthly') {
+        fromDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      } else { // yearly
+        fromDate = `${now.getFullYear()}-01-01`;
+      }
+      const res = await exportOrdersCSV({ from: fromDate, to: toDate });
       const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `orders-${period}-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.download = `orders-${period}-${toDate}.csv`;
       a.click();
       URL.revokeObjectURL(url);
       toast.success('CSV exported');

@@ -46,6 +46,7 @@ export default function MyOrdersPage() {
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
   const [activeTab, setActiveTab]     = useState(TABS.ACTIVE);
+  const [initialized, setInitialized] = useState(false);
   const socketRef   = useRef(null);
   const pollRef     = useRef(null);
   const pollStartTs = useRef(null);
@@ -81,6 +82,8 @@ export default function MyOrdersPage() {
       navigate(`/cafe/${slug}`, { replace: true });
       return;
     }
+
+    setInitialized(true);
 
     // Socket setup
     const socket = io(SOCKET_URL, {
@@ -200,6 +203,14 @@ export default function MyOrdersPage() {
     [TABS.HISTORY]:      historyOrders.length,
   };
 
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-50">
       {/* Header */}
@@ -306,7 +317,7 @@ export default function MyOrdersPage() {
             {historyOrders.length === 0 ? (
               <EmptyState icon="🧾" title="No past orders" sub="Completed orders will appear here." />
             ) : (
-              groupByDate(historyOrders).map(({ label, orders: dayOrders }) => (
+              groupByDate(historyOrders.filter((o) => o.created_at)).map(({ label, orders: dayOrders }) => (
                 <div key={label}>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2 px-1">{label}</p>
                   {dayOrders.map((order) => (
@@ -406,10 +417,30 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
           ))}
         </div>
 
-        {/* Total */}
-        <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
-          <span>Total</span>
-          <span>{c(order.final_amount || order.total_amount)}</span>
+        {/* Price breakdown */}
+        <div className="pt-2 border-t border-gray-100 space-y-1 text-sm">
+          {parseFloat(order.tax_amount || 0) > 0 && (
+            <div className="flex justify-between text-gray-400 text-xs">
+              <span>GST {order.tax_rate}%</span>
+              <span>{c(order.tax_amount)}</span>
+            </div>
+          )}
+          {parseFloat(order.discount_amount || 0) > 0 && (
+            <div className="flex justify-between text-green-600 text-xs">
+              <span>Discount</span>
+              <span>−{c(order.discount_amount)}</span>
+            </div>
+          )}
+          {parseFloat(order.tip_amount || 0) > 0 && (
+            <div className="flex justify-between text-gray-400 text-xs">
+              <span>Tip</span>
+              <span>{c(order.tip_amount)}</span>
+            </div>
+          )}
+          <div className="flex justify-between font-bold text-gray-900">
+            <span>Total</span>
+            <span>{c(order.final_amount || order.total_amount)}</span>
+          </div>
         </div>
 
         {/* Cancellation reason */}

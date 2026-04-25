@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
@@ -82,10 +82,7 @@ export default function MenuPage() {
   }, []);
 
   useEffect(() => {
-    if (!session) {
-      navigate(`/cafe/${slug}`, { replace: true });
-      return;
-    }
+    if (!session) return; // <Navigate> below handles redirect before this runs
     Promise.all([getCafeBySlug(slug), getCafeMenu(slug), getPublicOffers(slug).catch(() => ({ data: { offers: [] } }))])
       .then(([cafeRes, menuRes, offersRes]) => {
         const cafeData = cafeRes.data.cafe;
@@ -193,6 +190,7 @@ export default function MenuPage() {
     contentRef.current?.scrollTo({ top: 0, behavior: 'instant' });
   };
 
+  if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
   if (loading) return <LoadingSpinner />;
 
   const isSearching = search.trim().length > 0;

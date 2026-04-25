@@ -43,6 +43,7 @@ export default function OrderConfirmation() {
   const [tableBill, setTableBill] = useState(null);
   const [loadingBill, setLoadingBill] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null); // digital receipt modal
+  const [initialized, setInitialized] = useState(false);
   const [lostConnection, setLostConnection] = useState(false); // socket gave up reconnecting
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
@@ -89,6 +90,7 @@ export default function OrderConfirmation() {
       return;
     }
     setOrders(stored);
+    setInitialized(true);
 
     // 2b. Load cafe info (for bill printing)
     getCafeBySlug(slug).then(({ data }) => setCafeInfo(data.cafe)).catch(() => {});
@@ -324,20 +326,10 @@ export default function OrderConfirmation() {
     }
   };
 
-  if (orders.length === 0) {
+  if (!initialized) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center px-4">
-        <div className="text-center max-w-xs">
-          <div className="text-5xl mb-4">📋</div>
-          <h2 className="font-bold text-gray-900 text-lg">No active orders</h2>
-          <p className="text-gray-500 text-sm mt-1 mb-5">Head back to the menu to place an order.</p>
-          <button
-            onClick={() => navigate(`/cafe/${slug}`)}
-            className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm transition-colors"
-          >
-            Back to Menu
-          </button>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -494,12 +486,42 @@ export default function OrderConfirmation() {
                 </div>
               )}
 
-              {/* Total */}
-              <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900 text-sm">
-                <span>Total</span>
-                <span className={order.status === 'cancelled' ? 'line-through text-gray-400' : ''}>
-                  {c(order.total_amount)}
-                </span>
+              {/* Price breakdown */}
+              <div className="border-t border-gray-200 pt-2 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-500">
+                  <span>Subtotal</span>
+                  <span>{c(order.total_amount)}</span>
+                </div>
+                {parseFloat(order.tax_amount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-400 text-xs">
+                    <span>GST {order.tax_rate}% (CGST + SGST)</span>
+                    <span>{c(order.tax_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(order.discount_amount || 0) > 0 && (
+                  <div className="flex justify-between text-green-600 text-xs">
+                    <span>Discount</span>
+                    <span>−{c(order.discount_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(order.tip_amount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-400 text-xs">
+                    <span>Tip</span>
+                    <span>{c(order.tip_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(order.delivery_fee || 0) > 0 && (
+                  <div className="flex justify-between text-gray-400 text-xs">
+                    <span>🛵 Delivery</span>
+                    <span>{c(order.delivery_fee)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-100">
+                  <span>Total{order.status === 'paid' ? ' Paid' : ''}</span>
+                  <span className={order.status === 'cancelled' ? 'line-through text-gray-400' : ''}>
+                    {c(order.final_amount || order.total_amount)}
+                  </span>
+                </div>
               </div>
 
               {/* Cancellation reason */}
