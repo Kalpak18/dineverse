@@ -6,13 +6,22 @@ const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 
 // ─── Pricing config ───────────────────────────────────────────
-// Base rate: ₹499/month. Longer commitments get a discount.
+// Basic: ₹499/mo base | Premium (KDS + KOT): ₹999/mo base
+// Longer commitments get a discount (~10% at 2yr, ~11% at 3yr).
 const PLANS = {
-  '1year': { label: '1 Year Plan',  price_paise:  598800, months: 12 }, // ₹499 × 12 = ₹5,988
-  '2year': { label: '2 Year Plan',  price_paise: 1078800, months: 24 }, // ₹449 × 24 = ₹10,788 (10% off)
-  '3year': { label: '3 Year Plan',  price_paise: 1599900, months: 36 }, // ₹444 × 36 = ₹15,999 (11% off)
-  // Legacy key — kept so old payment records still resolve correctly
-  yearly:  { label: '1 Year Plan',  price_paise:  598800, months: 12 },
+  // ── Basic tier ──────────────────────────────────────────────
+  'basic_1year': { label: 'Basic · 1 Year',  price_paise:  598800, months: 12, tier: 'basic' }, // ₹499 × 12
+  'basic_2year': { label: 'Basic · 2 Years', price_paise: 1078800, months: 24, tier: 'basic' }, // ₹449 × 24
+  'basic_3year': { label: 'Basic · 3 Years', price_paise: 1599900, months: 36, tier: 'basic' }, // ₹444 × 36
+  // ── Premium tier ────────────────────────────────────────────
+  'premium_1year': { label: 'Premium · 1 Year',  price_paise: 1198800, months: 12, tier: 'premium' }, // ₹999 × 12
+  'premium_2year': { label: 'Premium · 2 Years', price_paise: 2157600, months: 24, tier: 'premium' }, // ₹899 × 24
+  'premium_3year': { label: 'Premium · 3 Years', price_paise: 3196800, months: 36, tier: 'premium' }, // ₹888 × 36
+  // ── Legacy keys — old payment records still resolve correctly
+  '1year':  { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
+  '2year':  { label: '2 Year Plan',  price_paise: 1078800, months: 24, tier: 'basic' },
+  '3year':  { label: '3 Year Plan',  price_paise: 1599900, months: 36, tier: 'basic' },
+  yearly:   { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
 };
 
 // Support both RAZORPAY_KEY_ID (production) and RAZORPAY_TEST_KEY_ID (legacy/dev)
@@ -25,7 +34,7 @@ const razorpay = new Razorpay({
 // Returns available plans + current subscription info
 exports.getPlans = asyncHandler(async (req, res) => {
   const result = await db.query(
-    'SELECT plan_type, plan_start_date, plan_expiry_date FROM cafes WHERE id = $1',
+    'SELECT plan_type, plan_tier, plan_start_date, plan_expiry_date FROM cafes WHERE id = $1',
     [req.cafeId]
   );
   const cafe = result.rows[0];
@@ -37,6 +46,7 @@ exports.getPlans = asyncHandler(async (req, res) => {
   ok(res, {
     current: {
       plan_type: cafe.plan_type,
+      plan_tier: cafe.plan_tier || 'basic',
       plan_expiry_date: cafe.plan_expiry_date,
       is_active: isActive,
       days_left: isActive ? daysLeft : 0,
@@ -138,6 +148,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
 
   const plan = PLANS[payment.plan_type];
   const months = plan ? plan.months : 12;
+  const tier   = plan?.tier || 'basic';
 
   // Calculate new expiry: extend from current expiry if still active, else from today
   const cafeRes = await db.query(
@@ -165,11 +176,12 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     );
     await client.query(
       `UPDATE cafes SET
-         plan_type         = $1,
-         plan_start_date   = NOW(),
-         plan_expiry_date  = $2
-       WHERE id = $3`,
-      [payment.plan_type, base.toISOString(), req.cafeId]
+         plan_type        = $1,
+         plan_tier        = $2,
+         plan_start_date  = NOW(),
+         plan_expiry_date = $3
+       WHERE id = $4`,
+      [payment.plan_type, tier, base.toISOString(), req.cafeId]
     );
     await client.query('COMMIT');
   } catch (err) {
@@ -179,11 +191,12 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
     client.release();
   }
 
-  logger.info('Payment verified & plan activated: %s → %s, expires %s',
-    req.cafeId, payment.plan_type, base.toISOString());
+  logger.info('Payment verified & plan activated: %s → %s (%s), expires %s',
+    req.cafeId, payment.plan_type, tier, base.toISOString());
 
   ok(res, {
     plan_type: payment.plan_type,
+    plan_tier: tier,
     plan_expiry_date: base.toISOString(),
   }, 'Payment verified — subscription activated!');
 });
@@ -256,6 +269,7 @@ exports.webhookHandler = async (req, res) => {
 
   const plan   = PLANS[record.plan_type];
   const months = plan ? plan.months : 12;
+  const tier   = plan?.tier || 'basic';
 
   // Extend from current expiry if still active, else from today
   const cafeRes = await db.query(
@@ -281,10 +295,11 @@ exports.webhookHandler = async (req, res) => {
     await client.query(
       `UPDATE cafes SET
          plan_type        = $1,
+         plan_tier        = $2,
          plan_start_date  = NOW(),
-         plan_expiry_date = $2
-       WHERE id = $3`,
-      [record.plan_type, base.toISOString(), record.cafe_id]
+         plan_expiry_date = $3
+       WHERE id = $4`,
+      [record.plan_type, tier, base.toISOString(), record.cafe_id]
     );
     await client.query('COMMIT');
   } catch (err) {

@@ -12,6 +12,7 @@ const {
   getTableBill,
   setKitchenMode, updateItemStatus,
   acceptOrder, rejectOrder, acceptItem, rejectItem,
+  cancelItem, reorderItems, generateKot, getKotHistory,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -48,8 +49,12 @@ router.patch('/:id/kitchen-mode', authenticate, checkSubscription, setKitchenMod
 router.patch('/:id/items/:itemId/status', authenticate, checkSubscription, updateItemStatus);
 router.post('/:id/accept', authenticate, checkSubscription, acceptOrder);
 router.post('/:id/reject', authenticate, checkSubscription, rejectOrder);
-router.post('/:id/items/:itemId/accept', authenticate, checkSubscription, acceptItem);
-router.post('/:id/items/:itemId/reject', authenticate, checkSubscription, rejectItem);
+router.post('/:id/items/:itemId/accept',  authenticate, checkSubscription, acceptItem);
+router.post('/:id/items/:itemId/reject',  authenticate, checkSubscription, rejectItem);
+router.patch('/:id/items/:itemId/cancel', authenticate, checkSubscription, cancelItem);
+router.patch('/:id/items/reorder',        authenticate, checkSubscription, reorderItems);
+router.post('/:id/kot',                   authenticate, checkSubscription, generateKot);
+router.get('/:id/kot/history',            authenticate, checkSubscription, getKotHistory);
 
 // Owner: all conversations inbox
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);

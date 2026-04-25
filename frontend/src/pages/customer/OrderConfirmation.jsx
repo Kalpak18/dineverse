@@ -18,6 +18,14 @@ const STATUS_LABELS = {
   cancelled: { label: 'Cancelled',      color: 'text-red-600 bg-red-50',      icon: '❌' },
 };
 
+const ITEM_STATUS_LABELS = {
+  pending:   { label: 'Queued',    color: 'bg-gray-100 text-gray-500',         icon: '⏳' },
+  preparing: { label: 'Preparing', color: 'bg-orange-100 text-orange-700',     icon: '👨‍🍳' },
+  ready:     { label: 'Ready',     color: 'bg-teal-100 text-teal-700',         icon: '🔔' },
+  served:    { label: 'Served',    color: 'bg-green-100 text-green-700',       icon: '✓' },
+  cancelled: { label: 'Unavailable', color: 'bg-red-100 text-red-600',         icon: '✕' },
+};
+
 const POLL_MS      = 10000;               // fallback poll every 10s (socket handles real-time)
 const POLL_MAX_MS  = 2 * 60 * 60 * 1000; // stop polling after 2 hours regardless
 
@@ -109,12 +117,38 @@ export default function OrderConfirmation() {
     const onOrderUpdated = (updated) => {
       upsertOrder(slug, updated);
       setOrders(loadOrders(slug));
-      // Auto-open rating prompt when order is marked paid
       if (updated.status === 'paid') {
         setRatingOrder((prev) => prev || updated);
       }
     };
     socket.on('order_updated', onOrderUpdated);
+
+    // 5b. Per-item status update (premium KDS)
+    const onItemStatusUpdate = ({ orderId, itemId, status }) => {
+      const current = loadOrders(slug);
+      const target = current.find((o) => o.id === orderId);
+      if (!target) return;
+      const updatedItems = (target.items || []).map((item) =>
+        item.id === itemId ? { ...item, item_status: status } : item
+      );
+      upsertOrder(slug, { ...target, items: updatedItems });
+      setOrders(loadOrders(slug));
+    };
+    socket.on('item_status_update', onItemStatusUpdate);
+
+    // 5c. Item cancelled by kitchen
+    const onItemCancelled = ({ orderId, itemId, itemName, reason }) => {
+      const current = loadOrders(slug);
+      const target = current.find((o) => o.id === orderId);
+      if (!target) return;
+      const updatedItems = (target.items || []).map((item) =>
+        item.id === itemId ? { ...item, item_status: 'cancelled', cancellation_reason: reason } : item
+      );
+      upsertOrder(slug, { ...target, items: updatedItems });
+      setOrders(loadOrders(slug));
+      toast(`${itemName || 'An item'} is unavailable — ${reason}`, { icon: '⚠️', duration: 8000 });
+    };
+    socket.on('item_cancelled', onItemCancelled);
 
     // 5b. Delivery partner status updates
     const onDeliveryUpdated = (update) => {
@@ -176,6 +210,8 @@ export default function OrderConfirmation() {
       clearInterval(pollRef.current);
       socket.off('connect', onConnect);
       socket.off('order_updated', onOrderUpdated);
+      socket.off('item_status_update', onItemStatusUpdate);
+      socket.off('item_cancelled', onItemCancelled);
       socket.off('delivery_updated', onDeliveryUpdated);
       socket.disconnect();
       socketRef.current = null;
@@ -407,17 +443,36 @@ export default function OrderConfirmation() {
 
               {/* Items */}
               {order.items?.length > 0 && (
-                <div className="space-y-0.5 mb-3">
-                  {order.items.map((item) => (
-                    <div key={item.id} className="flex justify-between text-sm">
-                      <span className={`text-gray-700 ${order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
-                        {item.item_name} × {item.quantity}
-                      </span>
-                      <span className={`font-medium ${order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
-                        {c(item.subtotal)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="space-y-1 mb-3">
+                  {order.items.map((item) => {
+                    const isCancelled = item.item_status === 'cancelled';
+                    const itemStatusCfg = cafeInfo?.plan_tier === 'premium' && item.item_status && item.item_status !== 'pending'
+                      ? ITEM_STATUS_LABELS[item.item_status]
+                      : null;
+                    return (
+                      <div key={item.id}>
+                        <div className="flex justify-between text-sm">
+                          <span className={`text-gray-700 ${isCancelled || order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
+                            {item.item_name} × {item.quantity}
+                          </span>
+                          <span className={`font-medium ${isCancelled || order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
+                            {isCancelled ? <span className="text-red-400 text-xs font-semibold">Unavailable</span> : c(item.subtotal)}
+                          </span>
+                        </div>
+                        {/* Per-item status chip (premium only) */}
+                        {itemStatusCfg && (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${itemStatusCfg.color}`}>
+                              {itemStatusCfg.icon} {itemStatusCfg.label}
+                            </span>
+                            {isCancelled && item.cancellation_reason && (
+                              <span className="text-[11px] text-red-500">— {item.cancellation_reason}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

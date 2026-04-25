@@ -665,7 +665,12 @@ async function getOrderWithItems(orderId, cafeId = null) {
       params
     ),
     db.query(
-      'SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal, item_status FROM order_items WHERE order_id = $1',
+      `SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal,
+              item_status, accepted, cancellation_reason,
+              COALESCE(sort_order, 0) AS sort_order,
+              preparing_at, ready_at, served_at, cancelled_at
+       FROM order_items WHERE order_id = $1
+       ORDER BY sort_order ASC, id ASC`,
       [orderId]
     ),
   ]);
@@ -908,11 +913,22 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   if (order.kitchen_mode !== 'individual') return fail(res, 'Order is not in individual mode');
   if (['paid', 'cancelled'].includes(order.status)) return fail(res, 'Order is already completed');
 
+  // Set the relevant timestamp column alongside item_status
+  const tsMap = { preparing: 'preparing_at', ready: 'ready_at', served: 'served_at' };
+  const tsCol = tsMap[status];
   const itemResult = await db.query(
-    'UPDATE order_items SET item_status = $1 WHERE id = $2 AND order_id = $3 RETURNING id',
+    `UPDATE order_items SET item_status = $1${tsCol ? `, ${tsCol} = NOW()` : ''}
+     WHERE id = $2 AND order_id = $3 RETURNING id`,
     [status, itemId, id]
   );
   if (itemResult.rows.length === 0) return fail(res, 'Item not found', 404);
+
+  // Emit item-level status update to customer tracking the order
+  if (req.io) {
+    req.io.to(`order:${id}`).emit('item_status_update', {
+      orderId: parseInt(id, 10), itemId: parseInt(itemId, 10), status, timestamp: new Date().toISOString(),
+    });
+  }
 
   // Auto-advance order status based on all item statuses
   const allItems = await db.query(
@@ -920,9 +936,10 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
     [id]
   );
   const statuses = allItems.rows.map((r) => r.item_status);
-  const allServed       = statuses.every((s) => s === 'served');
-  const allReadyOrServed = statuses.every((s) => s === 'ready' || s === 'served');
-  const anyActive       = statuses.some((s) => s !== 'pending');
+  // Treat cancelled items as "done" so they don't block order progression
+  const allServed        = statuses.every((s) => s === 'served' || s === 'cancelled');
+  const allReadyOrServed = statuses.every((s) => ['ready', 'served', 'cancelled'].includes(s));
+  const anyActive        = statuses.some((s) => !['pending', 'cancelled'].includes(s));
 
   let newOrderStatus = order.status;
   if (allServed) newOrderStatus = 'served';
@@ -1099,4 +1116,141 @@ exports.rejectItem = asyncHandler(async (req, res) => {
     req.io.to(`order:${id}`).emit('order_updated', fullOrder);
   }
   ok(res, { order: fullOrder });
+});
+
+// ─── Kitchen: cancel an item after acceptance (item unavailable) ─
+exports.cancelItem = asyncHandler(async (req, res) => {
+  const { id, itemId } = req.params;
+  const { reason } = req.body;
+  const { cafeId } = req;
+
+  if (!reason?.trim()) return fail(res, 'Cancellation reason is required', 400);
+
+  const orderCheck = await db.query(
+    'SELECT id, status FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (['paid', 'cancelled'].includes(orderCheck.rows[0].status)) return fail(res, 'Order is already completed');
+
+  const itemResult = await db.query(
+    `UPDATE order_items
+     SET item_status = 'cancelled', cancellation_reason = $1, cancelled_at = NOW()
+     WHERE id = $2 AND order_id = $3 AND item_status != 'cancelled'
+     RETURNING id, item_name`,
+    [reason.trim(), itemId, id]
+  );
+  if (itemResult.rows.length === 0) return fail(res, 'Item not found or already cancelled', 404);
+
+  // Void entire order if every item is now cancelled
+  const remaining = await db.query(
+    "SELECT COUNT(*) FROM order_items WHERE order_id = $1 AND item_status != 'cancelled'",
+    [id]
+  );
+  if (parseInt(remaining.rows[0].count, 10) === 0) {
+    await db.query(
+      "UPDATE orders SET status = 'cancelled', cancellation_reason = 'All items unavailable', updated_at = NOW() WHERE id = $1",
+      [id]
+    );
+  }
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('item_cancelled', {
+      orderId: parseInt(id, 10),
+      itemId: parseInt(itemId, 10),
+      itemName: itemResult.rows[0].item_name,
+      reason: reason.trim(),
+    });
+  }
+  ok(res, { order: fullOrder });
+});
+
+// ─── Kitchen: update sort_order for items (course sequencing) ──
+exports.reorderItems = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { items } = req.body; // [{ id, sort_order }]
+  const { cafeId } = req;
+
+  if (!Array.isArray(items) || items.length === 0) return fail(res, 'items array required', 400);
+
+  const orderCheck = await db.query(
+    'SELECT id FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+
+  for (const item of items) {
+    await db.query(
+      'UPDATE order_items SET sort_order = $1 WHERE id = $2 AND order_id = $3',
+      [item.sort_order, item.id, id]
+    );
+  }
+
+  const fullOrder = await getOrderWithItems(id, cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// ─── Kitchen: generate KOT slip for currently-ready items ──────
+exports.generateKot = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { cafeId } = req;
+
+  const orderCheck = await db.query(
+    'SELECT id, table_number, customer_name FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+  const order = orderCheck.rows[0];
+
+  // Find ready items not yet included in any KOT slip for this order
+  const readyItems = await db.query(
+    `SELECT oi.id, oi.item_name, oi.quantity
+     FROM order_items oi
+     WHERE oi.order_id = $1
+       AND oi.item_status = 'ready'
+       AND oi.id NOT IN (
+         SELECT (elem->>'id')::int
+         FROM kot_slips k, jsonb_array_elements(k.items) AS elem
+         WHERE k.order_id = $1
+       )`,
+    [id]
+  );
+
+  if (readyItems.rows.length === 0) return fail(res, 'No new ready items to print KOT for', 400);
+
+  const slipCount = await db.query(
+    'SELECT COALESCE(MAX(slip_number), 0) AS max_slip FROM kot_slips WHERE order_id = $1',
+    [id]
+  );
+  const slipNumber = slipCount.rows[0].max_slip + 1;
+
+  const slip = await db.query(
+    `INSERT INTO kot_slips (cafe_id, order_id, slip_number, table_number, customer_name, items, printed_at)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+     RETURNING *`,
+    [cafeId, id, slipNumber, order.table_number, order.customer_name, JSON.stringify(readyItems.rows)]
+  );
+
+  ok(res, { kot: slip.rows[0] });
+});
+
+// ─── Kitchen: get KOT history for an order (for reprint) ───────
+exports.getKotHistory = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { cafeId } = req;
+
+  const orderCheck = await db.query('SELECT id FROM orders WHERE id = $1 AND cafe_id = $2', [id, cafeId]);
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+
+  const slips = await db.query(
+    'SELECT * FROM kot_slips WHERE order_id = $1 ORDER BY slip_number ASC',
+    [id]
+  );
+  ok(res, { slips: slips.rows });
 });

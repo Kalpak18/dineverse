@@ -169,8 +169,12 @@ export const setKitchenMode   = (id, mode)             => api.patch(`/orders/${i
 export const updateItemStatus = (id, itemId, status)   => api.patch(`/orders/${id}/items/${itemId}/status`, { status });
 export const acceptOrder = (id) => api.post(`/orders/${id}/accept`);
 export const rejectOrder = (id, reason) => api.post(`/orders/${id}/reject`, { reason });
-export const acceptItem = (id, itemId) => api.post(`/orders/${id}/items/${itemId}/accept`);
-export const rejectItem = (id, itemId, reason) => api.post(`/orders/${id}/items/${itemId}/reject`, { reason });
+export const acceptItem    = (id, itemId)         => api.post(`/orders/${id}/items/${itemId}/accept`);
+export const rejectItem    = (id, itemId, reason) => api.post(`/orders/${id}/items/${itemId}/reject`, { reason });
+export const cancelOrderItem = (id, itemId, reason) => api.patch(`/orders/${id}/items/${itemId}/cancel`, { reason });
+export const reorderOrderItems = (id, items)      => api.patch(`/orders/${id}/items/reorder`, { items });
+export const generateOrderKot  = (id)             => api.post(`/orders/${id}/kot`);
+export const getKotHistory     = (id)             => api.get(`/orders/${id}/kot/history`);
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────

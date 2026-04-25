@@ -7,14 +7,14 @@ module.exports = async function checkSubscription(req, res, next) {
   try {
     // Outlets share the parent (root) café's subscription
     const result = await db.query(
-      'SELECT plan_type, plan_expiry_date FROM cafes WHERE id = $1',
+      'SELECT plan_type, plan_tier, plan_expiry_date FROM cafes WHERE id = $1',
       [req.rootCafeId || req.cafeId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Café not found' });
     }
 
-    const { plan_type, plan_expiry_date } = result.rows[0];
+    const { plan_type, plan_tier, plan_expiry_date } = result.rows[0];
 
     if (plan_expiry_date) {
       const now = new Date();
@@ -33,7 +33,7 @@ module.exports = async function checkSubscription(req, res, next) {
       req.subscriptionDaysLeft = daysLeft <= WARN_DAYS ? daysLeft : null;
     }
 
-    req.subscription = { plan_type, plan_expiry_date };
+    req.subscription = { plan_type, plan_tier: plan_tier || 'basic', plan_expiry_date };
     next();
   } catch (err) {
     logger.error('CheckSubscription DB error: %s', err.message);
