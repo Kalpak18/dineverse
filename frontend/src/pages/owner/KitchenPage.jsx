@@ -244,6 +244,114 @@ const ACTION_COLORS = {
   ready:     'bg-teal-600 hover:bg-teal-500',
 };
 
+// ─── Combined Table Card ──────────────────────────────────────
+function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotPrint }) {
+  const { tableKey, orders } = group;
+  const orderCount = orders.length;
+  const earliestTs = orders.reduce((min, o) => Math.min(min, new Date(o.created_at).getTime()), Infinity);
+  const allOverdue = orders.every((o) => now - new Date(o.created_at).getTime() > OVERDUE_MS);
+
+  const cardCls = `rounded-xl border-l-4 p-3 ${
+    allOverdue ? 'border-red-500 bg-red-950/40 animate-pulse' : STATUS_COLORS[status]
+  }`;
+
+  return (
+    <div className={cardCls}>
+      {/* Card header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-white text-base">
+            {tableKey ? `🍽️ ${tableKey}` : (orders[0]?.order_type === 'takeaway' ? '🥡 Takeaway' : '🛵 Delivery')}
+          </span>
+          {orderCount > 1 && (
+            <span className="text-[10px] bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded-full font-semibold">
+              {orderCount} orders
+            </span>
+          )}
+        </div>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${allOverdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+          {elapsed(new Date(earliestTs).toISOString(), now)}
+        </span>
+      </div>
+
+      {/* Per-order items */}
+      {orders.map((order, idx) => (
+        <div key={order.id}>
+          {orderCount > 1 && (
+            <p className="text-[11px] text-gray-500 mt-2 mb-1">
+              {fmtToken(order.daily_order_number, order.order_type)} · {order.customer_name} · {fmtTime(order.created_at)}
+            </p>
+          )}
+          {orderCount === 1 && (
+            <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
+          )}
+
+          <div className="space-y-1">
+            {(order.items || []).map((item) => (
+              <div key={item.id} className="flex items-center gap-1.5">
+                <span className="w-6 h-6 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                  {item.quantity}
+                </span>
+                <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
+              </div>
+            ))}
+          </div>
+
+          {order.notes && (
+            <p className="text-xs text-amber-400 mt-1.5 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
+          )}
+
+          {idx < orders.length - 1 && <hr className="border-dashed border-gray-700 mt-2" />}
+        </div>
+      ))}
+
+      {/* Actions */}
+      <div className="mt-3 space-y-1.5">
+        {orderCount === 1 ? (
+          <>
+            {getNextStatus(status, orders[0].order_type) && (
+              <button
+                onClick={() => onAdvance(orders[0])}
+                className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}
+              >
+                {getActionLabel(status, orders[0].order_type)} →
+              </button>
+            )}
+            <button
+              onClick={() => onKotPrint(orders[0].id)}
+              className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+            >
+              📋 Print KOT
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => onAdvanceAll(orders)}
+              className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}
+            >
+              ⚡ Advance All ({orderCount}) →
+            </button>
+            <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${Math.min(orderCount, 3)}, 1fr)` }}>
+              {orders.map((order) => (
+                getNextStatus(order.status, order.order_type) ? (
+                  <button
+                    key={order.id}
+                    onClick={() => onAdvance(order)}
+                    className="py-1.5 rounded-lg text-[10px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+                  >
+                    {fmtToken(order.daily_order_number, order.order_type)} →
+                  </button>
+                ) : null
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function KitchenHint() {
   const [open, setOpen] = useState(() => !localStorage.getItem('dv_hint_kitchen'));
   if (!open) return null;
@@ -268,6 +376,7 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState('individual'); // 'individual' | 'combined'
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
@@ -414,6 +523,22 @@ export default function KitchenPage() {
     }
   };
 
+  const handleAdvanceAll = async (groupOrders) => {
+    const toAdvance = groupOrders.filter((o) => getNextStatus(o.status, o.order_type));
+    if (!toAdvance.length) return;
+    try {
+      await Promise.all(toAdvance.map(async (order) => {
+        const next = getNextStatus(order.status, order.order_type);
+        await updateOrderStatus(order.id, next);
+        setOrders((prev) =>
+          KITCHEN_STATUSES.includes(next)
+            ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
+            : prev.filter((o) => o.id !== order.id)
+        );
+      }));
+    } catch { toast.error('Failed to advance some orders'); }
+  };
+
   const handleAcceptOrder = async (orderId) => {
     try {
       const { data } = await acceptOrder(orderId);
@@ -504,6 +629,25 @@ export default function KitchenPage() {
     return acc;
   }, {});
 
+  // Combined view: group dine-in orders by table_number; takeaway/delivery stay solo
+  const groupByTable = (colOrders) => {
+    const result = [];
+    const tableMap = new Map();
+    for (const order of colOrders) {
+      if (order.order_type === 'dine-in' && order.table_number) {
+        if (!tableMap.has(order.table_number)) {
+          const group = { tableKey: order.table_number, orders: [] };
+          tableMap.set(order.table_number, group);
+          result.push(group);
+        }
+        tableMap.get(order.table_number).orders.push(order);
+      } else {
+        result.push({ tableKey: null, orders: [order] });
+      }
+    }
+    return result;
+  };
+
   if (loading) {
     return (
       <div className="h-screen bg-gray-950 flex items-center justify-center">
@@ -524,6 +668,25 @@ export default function KitchenPage() {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">{orders.length} active order{orders.length !== 1 ? 's' : ''}</span>
+
+          {/* View mode toggle */}
+          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+            {[
+              { key: 'individual', label: '☰ Individual' },
+              { key: 'combined',   label: '⊞ By Table'   },
+            ].map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setViewMode(key)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  viewMode === key ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <button onClick={() => setSoundEnabled((s) => !s)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
             {soundEnabled ? '🔔 Sound On' : '🔕 Muted'}
           </button>
@@ -583,6 +746,18 @@ export default function KitchenPage() {
                     <span className="text-4xl mb-3 opacity-20">{colIcons[status]}</span>
                     <p className="text-xs text-gray-600">No {TAB_LABELS[status].toLowerCase()} orders</p>
                   </div>
+                ) : viewMode === 'combined' ? (
+                  groupByTable(colOrders).map((group) => (
+                    <CombinedTableCard
+                      key={group.tableKey || group.orders[0].id}
+                      group={group}
+                      status={status}
+                      now={now}
+                      onAdvance={handleAdvance}
+                      onAdvanceAll={handleAdvanceAll}
+                      onKotPrint={handleKotPrint}
+                    />
+                  ))
                 ) : (
                   colOrders.map((order) => {
                     const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
