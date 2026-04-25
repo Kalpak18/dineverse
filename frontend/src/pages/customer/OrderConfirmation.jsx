@@ -324,7 +324,23 @@ export default function OrderConfirmation() {
     }
   };
 
-  if (orders.length === 0) return null;
+  if (orders.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 flex items-center justify-center px-4">
+        <div className="text-center max-w-xs">
+          <div className="text-5xl mb-4">📋</div>
+          <h2 className="font-bold text-gray-900 text-lg">No active orders</h2>
+          <p className="text-gray-500 text-sm mt-1 mb-5">Head back to the menu to place an order.</p>
+          <button
+            onClick={() => navigate(`/cafe/${slug}`)}
+            className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm transition-colors"
+          >
+            Back to Menu
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const activeCount = orders.filter((o) => !['paid', 'cancelled'].includes(o.status)).length;
   const allDone     = activeCount === 0 && orders.length > 0;

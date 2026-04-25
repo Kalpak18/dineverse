@@ -152,6 +152,7 @@ export default function CafeEntry() {
       customer_phone: form.customer_phone || '',
       table_number:   form.order_type === 'takeaway' ? 'Takeaway' : form.order_type === 'delivery' ? 'Delivery' : tableLabel,
       order_type:     form.order_type,
+      currency:       cafe?.currency || 'INR',
       // GST + delivery config forwarded to CartPage
       gst_rate:         cafe?.gst_rate,
       gst_number:       cafe?.gst_number,

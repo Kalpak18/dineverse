@@ -38,8 +38,10 @@ export default function MyOrdersPage() {
   const { slug }              = useParams();
   const navigate              = useNavigate();
   const { addItem, clearCart } = useCart();
-  const sessionCurrency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
-  const c = (n) => fmtCurrency(n, sessionCurrency);
+  const [cafeCurrency, setCafeCurrency] = useState(
+    () => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } }
+  );
+  const c = (n) => fmtCurrency(n, cafeCurrency);
   const [orders, setOrders]           = useState([]);
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
@@ -66,8 +68,11 @@ export default function MyOrdersPage() {
     refreshOrders();
     refreshRes();
 
-    // Load café name for display
-    getCafeBySlug(slug).then(({ data }) => setCafeName(data.cafe?.name || '')).catch(() => {});
+    // Load café name + currency for display
+    getCafeBySlug(slug).then(({ data }) => {
+      setCafeName(data.cafe?.name || '');
+      if (data.cafe?.currency) setCafeCurrency(data.cafe.currency);
+    }).catch(() => {});
 
     // If nothing stored, redirect back
     const storedOrders = loadOrders(slug);
@@ -329,6 +334,8 @@ export default function MyOrdersPage() {
 // ─── Order Card ───────────────────────────────────────────────
 function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
   const [chatOpen, setChatOpen] = useState(false);
+  const currency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
+  const c = (n) => fmtCurrency(n, currency);
   const cfg        = ORDER_STATUS[order.status] || ORDER_STATUS.pending;
   const isPending  = order.status === 'pending';
   const isTerminal = ['paid', 'cancelled'].includes(order.status);

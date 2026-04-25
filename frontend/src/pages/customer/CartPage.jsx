@@ -1,14 +1,22 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, previewOffer } from '../../services/api';
+import { placeOrder, previewOffer, getCafeTables } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 import QuantityControl from '../../components/QuantityControl';
+
+// Normalise "5"→"Table 5", "T5"→"Table 5"; prepend area if given
+function normTable(raw, areaName) {
+  const t = (raw || '').trim();
+  if (!t) return t;
+  const n = /^\d+$/.test(t) ? `Table ${t}` : /^t\d+$/i.test(t) ? `Table ${t.slice(1)}` : t;
+  return (areaName && areaName !== 'General' && !n.startsWith(areaName)) ? `${areaName} — ${n}` : n;
+}
 
 export default function CartPage() {
   const { slug } = useParams();
@@ -22,6 +30,13 @@ export default function CartPage() {
   const [tip, setTip] = useState(0);
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
+
+  // Table / order-type re-confirm state
+  const [showTableModal, setShowTableModal] = useState(false);
+  const [tableForm, setTableForm] = useState({ order_type: 'dine-in', table_number: '' });
+  const [tableAreas, setTableAreas] = useState([]);
+  const [tableDropOpen, setTableDropOpen] = useState(false);
+  const tableInputRef = useRef(null);
 
   const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null');
 
@@ -77,7 +92,54 @@ export default function CartPage() {
     totalTax   = 0;
     grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
   }
-  const activeOrders = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
+  const allOrders    = loadOrders(slug);
+  const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
+  // Detect "new session" — previous orders exist but all are paid/cancelled
+  const needsTableConfirm = allOrders.length > 0 && activeOrders.length === 0;
+
+  // When a new session is needed, init the table form from the current session and open modal
+  useEffect(() => {
+    if (!needsTableConfirm) return;
+    setTableForm({
+      order_type:   session?.order_type || 'dine-in',
+      table_number: session?.order_type === 'dine-in' ? (session?.table_number || '') : '',
+      area_id: '',
+    });
+    setShowTableModal(true);
+    // Load tables for the dropdown
+    const { date, time } = (() => {
+      const d = new Date();
+      return {
+        date: d.toLocaleDateString('en-CA'),
+        time: `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`,
+      };
+    })();
+    getCafeTables(slug, { date, time })
+      .then(({ data }) => setTableAreas(data.areas || []))
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsTableConfirm]);
+
+  const handleConfirmTable = () => {
+    if (tableForm.order_type === 'dine-in' && !tableForm.table_number.trim()) {
+      toast.error('Please enter your table number');
+      return;
+    }
+    const selectedArea = tableAreas.find((a) => String(a.id) === String(tableForm.area_id));
+    const tableLabel = tableForm.order_type === 'dine-in'
+      ? normTable(tableForm.table_number, selectedArea?.name)
+      : tableForm.order_type === 'takeaway' ? 'Takeaway' : 'Delivery';
+
+    const updated = {
+      ...session,
+      order_type:   tableForm.order_type,
+      table_number: tableLabel,
+    };
+    localStorage.setItem(`session_${slug}`, JSON.stringify(updated));
+    setShowTableModal(false);
+    // Force CartPage to re-read session by reloading
+    window.location.reload();
+  };
 
   // Debounced offer preview: refetch when cart total changes
   useEffect(() => {
@@ -175,22 +237,43 @@ export default function CartPage() {
 
   return (
     <div className="max-w-2xl mx-auto bg-white min-h-screen pb-32">
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
-        <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-sm">
-          ← Back
-        </button>
-        <h1 className="font-bold text-lg flex-1">Your Cart</h1>
-        {activeOrders.length > 0 && (
-          <button
-            onClick={() => navigate(`/cafe/${slug}/confirmation`)}
-            className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1.5 rounded-lg"
-          >
-            📋 <span>{activeOrders.length} order{activeOrders.length !== 1 ? 's' : ''}</span>
+      <div className="sticky top-0 bg-white z-10 border-b border-gray-100">
+        <div className="flex items-center gap-3 px-4 py-3.5">
+          <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-sm">
+            ← Back
           </button>
-        )}
-        {activeOrders.length === 0 && (
-          <span className="text-sm text-gray-400">{session.table_number}</span>
-        )}
+          <h1 className="font-bold text-lg flex-1">Your Cart</h1>
+          {activeOrders.length > 0 && (
+            <button
+              onClick={() => navigate(`/cafe/${slug}/confirmation`)}
+              className="flex items-center gap-1 text-xs font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2.5 py-1.5 rounded-lg"
+            >
+              📋 <span>{activeOrders.length} order{activeOrders.length !== 1 ? 's' : ''}</span>
+            </button>
+          )}
+        </div>
+        {/* Ordering-for strip */}
+        <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-t border-gray-100">
+          <div className="flex items-center gap-1.5 text-xs text-gray-600">
+            <span>{session.order_type === 'takeaway' ? '🥡' : session.order_type === 'delivery' ? '🛵' : '🍽️'}</span>
+            <span className="font-medium">{session.table_number || session.order_type}</span>
+            <span className="text-gray-400">·</span>
+            <span className="text-gray-500">{session.customer_name}</span>
+          </div>
+          <button
+            onClick={() => {
+              setTableForm({
+                order_type:   session?.order_type || 'dine-in',
+                table_number: session?.order_type === 'dine-in' ? (session?.table_number || '') : '',
+                area_id: '',
+              });
+              setShowTableModal(true);
+            }}
+            className="text-xs text-brand-600 font-medium hover:underline"
+          >
+            Change
+          </button>
+        </div>
       </div>
 
       <div className="px-4 py-4 space-y-3">
@@ -415,6 +498,121 @@ export default function CartPage() {
           </button>
         </div>
       </div>
+
+      {/* Table / order-type re-confirm modal — shown when previous orders are all paid */}
+      {showTableModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-6">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="h-1 bg-brand-500 rounded-t-2xl" />
+            <div className="p-5 space-y-4">
+              <div className="text-center">
+                <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <span className="text-2xl">🍽️</span>
+                </div>
+                <h3 className="font-bold text-gray-900 text-lg">New Order?</h3>
+                <p className="text-sm text-gray-500 mt-1">
+                  Your previous order was paid. Please confirm where you're sitting for this new order.
+                </p>
+              </div>
+
+              {/* Order type selector */}
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Order Type</label>
+                <div className="flex rounded-xl border border-gray-200 overflow-hidden">
+                  {[
+                    { key: 'dine-in',  label: '🍽️ Dine In' },
+                    { key: 'takeaway', label: '🥡 Takeaway' },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setTableForm((f) => ({ ...f, order_type: key, table_number: '' }))}
+                      className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+                        tableForm.order_type === key ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Table number for dine-in */}
+              {tableForm.order_type === 'dine-in' && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Table Number</label>
+                  <div className="relative">
+                    <input
+                      ref={tableInputRef}
+                      type="text"
+                      className="input"
+                      placeholder="e.g. 5 or Table 5"
+                      value={tableForm.table_number}
+                      autoComplete="off"
+                      onChange={(e) => {
+                        setTableForm((f) => ({ ...f, table_number: e.target.value }));
+                        setTableDropOpen(true);
+                      }}
+                      onFocus={() => setTableDropOpen(true)}
+                      onBlur={() => setTimeout(() => setTableDropOpen(false), 150)}
+                    />
+                    {/* Suggestions from fetched tables */}
+                    {tableDropOpen && tableAreas.length > 0 && (() => {
+                      const q = tableForm.table_number.toLowerCase();
+                      const sugg = tableAreas
+                        .flatMap((a) => a.tables.filter((t) => !t.is_reserved))
+                        .filter((t) => !q || t.label.toLowerCase().includes(q))
+                        .slice(0, 6);
+                      return sugg.length > 0 ? (
+                        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+                          {sugg.map((t) => (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setTableForm((f) => ({ ...f, table_number: t.label }));
+                                setTableDropOpen(false);
+                              }}
+                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 flex items-center justify-between"
+                            >
+                              <span className="font-medium text-gray-800">{t.label}</span>
+                              {t.area_name && t.area_name !== 'General' && (
+                                <span className="text-xs text-gray-400">{t.area_name}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null;
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {tableForm.order_type === 'takeaway' && (
+                <p className="text-xs text-gray-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
+                  Your order will be ready for pickup at the counter.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-2 pt-1">
+                <button
+                  onClick={handleConfirmTable}
+                  className="btn-primary w-full py-3"
+                >
+                  Confirm & Continue
+                </button>
+                <button
+                  onClick={() => navigate(`/cafe/${slug}`)}
+                  className="btn-secondary w-full py-3"
+                >
+                  Back to Entry
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showConfirm && (
         <div
