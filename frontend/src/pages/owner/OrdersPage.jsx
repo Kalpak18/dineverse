@@ -463,6 +463,7 @@ export default function OrdersPage() {
 function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
+  const isPremium = cafe?.plan_tier === 'premium';
   const [advancing, setAdvancing] = useState(false);
   const statusCfg = STATUS_CONFIG[order.status] || {};
   const nextStatus = getNextStatus(order.status, order.order_type);
@@ -544,8 +545,8 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         )}
       </div>
 
-      {/* Kitchen mode toggle (only for active orders, not paid/cancelled) */}
-      {!['paid', 'cancelled', 'served'].includes(order.status) && (
+      {/* Kitchen mode toggle (premium only — basic stays combined) */}
+      {isPremium && !['paid', 'cancelled', 'served'].includes(order.status) && (
         <div className="px-4 pb-2 flex items-center justify-between gap-2">
           <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide shrink-0">Kitchen</span>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] font-medium">

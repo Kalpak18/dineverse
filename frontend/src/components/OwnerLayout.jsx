@@ -107,14 +107,8 @@ function OwnerLayoutInner() {
     return () => window.removeEventListener('subscription:expired', handle);
   }, [navigate]);
 
-  const isPremium = cafe?.plan_tier === 'premium';
-
-  // Filter nav by role; Kitchen is premium-only
-  const visibleNav = ALL_NAV.filter((item) => {
-    if (!item.roles.includes(effectiveRole)) return false;
-    if (item.to === '/owner/kitchen' && !isPremium && !isStaff) return false;
-    return true;
-  });
+  // Filter nav by role
+  const visibleNav = ALL_NAV.filter((item) => item.roles.includes(effectiveRole));
 
   // Avatar: logo image or first-letter fallback
   const Avatar = ({ size = 'md' }) => {

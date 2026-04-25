@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { getOrders, updateOrderStatus, updateItemStatus, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, generateOrderKot, getKotHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -191,33 +190,6 @@ function KitchenHint() {
   );
 }
 
-// ─── Premium gate ──────────────────────────────────────────────
-function PremiumGate() {
-  const navigate = useNavigate();
-  return (
-    <div className="min-h-screen bg-gray-950 flex items-center justify-center px-4">
-      <div className="text-center max-w-md">
-        <div className="w-20 h-20 rounded-2xl bg-purple-900/50 flex items-center justify-center mx-auto mb-5 text-4xl">🍳</div>
-        <h2 className="text-2xl font-bold text-white mb-2">Kitchen Display is Premium</h2>
-        <p className="text-gray-400 text-sm mb-1">Per-item tracking, course sequencing, and KOT printing are available on the Premium plan.</p>
-        <p className="text-gray-500 text-xs mb-6">Perfect for restaurants and hotels that serve starters, mains, and desserts.</p>
-        <div className="bg-gray-900 rounded-2xl p-4 mb-6 text-left space-y-2">
-          {['Kitchen Display Screen (KDS)', 'Per-item status: Preparing → Ready → Served', 'Course sequencing (starters before mains)', 'KOT auto-printing when items are ready', 'Item-level cancellation with customer notification', 'Customer sees live item progress'].map((f) => (
-            <div key={f} className="flex items-center gap-2 text-sm text-gray-300">
-              <span className="text-purple-400">✓</span><span>{f}</span>
-            </div>
-          ))}
-        </div>
-        <button
-          onClick={() => navigate('/owner/billing')}
-          className="w-full py-3.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-base transition-colors"
-        >
-          Upgrade to Premium
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export default function KitchenPage() {
   const { cafe } = useAuth();
@@ -419,6 +391,16 @@ export default function KitchenPage() {
     } catch { toast.error('Failed to serve selected items'); }
   };
 
+  const handleKotPrint = async (orderId) => {
+    try {
+      const { data } = await generateOrderKot(orderId);
+      printKot(data.kot, cafe?.name);
+      setKotHistory((prev) => ({ ...prev, [orderId]: [...(prev[orderId] || []), data.kot] }));
+    } catch {
+      toast.error('Could not generate KOT');
+    }
+  };
+
   const handleKotReprint = async (orderId) => {
     try {
       let slips = kotHistory[orderId];
@@ -448,9 +430,6 @@ export default function KitchenPage() {
     return acc;
   }, {});
 
-  // Non-premium owners see the upgrade gate
-  if (!isPremium && cafe?.plan_tier !== undefined) return <PremiumGate />;
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center">
@@ -467,7 +446,7 @@ export default function KitchenPage() {
           <span className="text-xl">🍳</span>
           <h1 className="font-bold text-lg">Kitchen Display</h1>
           <span className="text-xs text-gray-500">{cafe?.name}</span>
-          <span className="text-[10px] font-bold bg-purple-800 text-purple-300 px-2 py-0.5 rounded-full">PREMIUM</span>
+          {isPremium && <span className="text-[10px] font-bold bg-purple-800 text-purple-300 px-2 py-0.5 rounded-full">PREMIUM</span>}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500">{orders.length} active order{orders.length !== 1 ? 's' : ''}</span>
@@ -641,9 +620,13 @@ export default function KitchenPage() {
                           <button onClick={() => printKitchenToken(order, cafe?.name)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-white/10 hover:bg-white/20 text-white/70 transition-colors">
                             🖨 Print Slip
                           </button>
-                          {order.kitchen_mode === 'individual' && (
+                          {order.kitchen_mode === 'individual' ? (
                             <button onClick={() => handleKotReprint(order.id)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
                               📋 Reprint KOT
+                            </button>
+                          ) : (
+                            <button onClick={() => handleKotPrint(order.id)} className="flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+                              📋 Print KOT
                             </button>
                           )}
                         </div>
