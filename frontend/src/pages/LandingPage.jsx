@@ -468,7 +468,7 @@ export default function LandingPage() {
               <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
                 🔥 MOST POPULAR
               </span>
-              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">Basic</p>
+              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">Essential</p>
               <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-4xl font-extrabold text-gray-900">{p.essential.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
@@ -493,7 +493,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm shadow-md shadow-brand-200">
-                Get Basic →
+                Get Essential →
               </button>
             </div>
 
@@ -502,7 +502,7 @@ export default function LandingPage() {
               <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
                 👨‍🍳 KITCHEN TEAMS
               </span>
-              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3">Premium</p>
+              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3">Kitchen Pro</p>
               <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-4xl font-extrabold text-gray-900">{p.pro.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
@@ -513,7 +513,7 @@ export default function LandingPage() {
               )}
               {!p.pro.save[durIdx] && <div className="mb-4" />}
               <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-700">
-                <li className="flex items-center gap-2 font-semibold text-gray-500 text-xs">Everything in Basic, plus:</li>
+                <li className="flex items-center gap-2 font-semibold text-gray-500 text-xs">Everything in Essential, plus:</li>
                 {[
                   'Per-item status: Preparing → Ready → Served',
                   'Course sequencing — starters before mains',
@@ -526,7 +526,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors text-sm">
-                Get Premium →
+                Get Kitchen Pro →
               </button>
             </div>
 
@@ -544,8 +544,8 @@ export default function LandingPage() {
                   <tr className="bg-gray-50">
                     <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase">Feature</th>
                     <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Free Trial</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Basic</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Premium</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Essential</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Kitchen Pro</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">

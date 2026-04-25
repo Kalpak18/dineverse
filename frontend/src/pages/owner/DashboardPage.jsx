@@ -226,7 +226,7 @@ export default function DashboardPage() {
             <p className="text-gray-500 text-sm mt-0.5">Here's how you're doing today.</p>
           </div>
           <button
-            onClick={() => openWizardAt(0)}
+            onClick={() => { localStorage.removeItem(`dv_ob_done_${cafe?.id}`); setOnboardingDismissed(false); }}
             className="hidden sm:flex items-center gap-1.5 text-xs text-gray-500 hover:text-brand-600 border border-gray-200 hover:border-brand-300 px-3 py-1.5 rounded-lg transition-colors"
           >
             <span>📖</span> Setup Guide

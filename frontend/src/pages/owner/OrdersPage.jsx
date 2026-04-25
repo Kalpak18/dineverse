@@ -110,7 +110,12 @@ export default function OrdersPage() {
         customerName: order.customer_name,
         orderNumber: order.daily_order_number,
         table_number: order.table_number,
-        total: parseFloat(order.total_amount),
+        subtotal:       parseFloat(order.total_amount) || 0,
+        taxAmount:      parseFloat(order.tax_amount)   || 0,
+        taxRate:        parseInt(order.tax_rate)        || 0,
+        discountAmount: parseFloat(order.discount_amount) || 0,
+        tipAmount:      parseFloat(order.tip_amount)   || 0,
+        total:          parseFloat(order.final_amount  || order.total_amount) || 0,
         aggregatedItems: (order.items || []).map((i) => ({
           name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
         })),
@@ -227,13 +232,18 @@ export default function OrdersPage() {
           table_number: o.table_number,
           customer_name: o.customer_name,
           orders: [],
-          total: 0,
+          total: 0, subtotal: 0, taxAmount: 0, discountAmount: 0, tipAmount: 0,
+          taxRate: parseInt(o.tax_rate) || 0,
           itemMap: {},
         };
       }
       const bill = tableMap[o.table_number];
       bill.orders.push(o);
-      bill.total += parseFloat(o.total_amount);
+      bill.subtotal       += parseFloat(o.total_amount)    || 0;
+      bill.taxAmount      += parseFloat(o.tax_amount)      || 0;
+      bill.discountAmount += parseFloat(o.discount_amount) || 0;
+      bill.tipAmount      += parseFloat(o.tip_amount)      || 0;
+      bill.total          += parseFloat(o.final_amount || o.total_amount) || 0;
       o.items?.forEach((item) => {
         if (!bill.itemMap[item.item_name]) {
           bill.itemMap[item.item_name] = { name: item.item_name, qty: 0, total: 0 };
@@ -738,7 +748,12 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
       customerName: order.customer_name,
       orderNumber: order.daily_order_number,
       table_number: 'Takeaway',
-      total: parseFloat(order.total_amount),
+      subtotal:       parseFloat(order.total_amount)    || 0,
+      taxAmount:      parseFloat(order.tax_amount)      || 0,
+      taxRate:        parseInt(order.tax_rate)           || 0,
+      discountAmount: parseFloat(order.discount_amount) || 0,
+      tipAmount:      parseFloat(order.tip_amount)      || 0,
+      total:          parseFloat(order.final_amount || order.total_amount) || 0,
       aggregatedItems: (order.items || []).map((i) => ({
         name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
       })),
@@ -1008,17 +1023,26 @@ function BillingModal({ bill, onConfirm, onClose }) {
   const [confirming, setConfirming] = useState(false);
   const [cashInput, setCashInput] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [tipInput, setTipInput]   = useState('');
   // saved values carried into receipt step
   const [paidMode, setPaidMode]   = useState(null);
   const [paidCash, setPaidCash]   = useState(null);
+  const [paidTip, setPaidTip]     = useState(0);
 
-  const cash    = parseFloat(cashInput) || 0;
-  const change  = cash - bill.total;
-  const isValid = cash >= bill.total;
-  const isCash  = paymentMode === 'cash';
+  const counterTip  = parseFloat(tipInput) || 0;
+  const grandTotal  = bill.total + counterTip;
+  const cash        = parseFloat(cashInput) || 0;
+  const change      = cash - grandTotal;
+  const isValid     = cash >= grandTotal;
+  const isCash      = paymentMode === 'cash';
+
+  // Build an enriched bill for printing (tip included in total)
+  const billForPrint = counterTip > 0
+    ? { ...bill, total: grandTotal, tipAmount: (bill.tipAmount || 0) + counterTip }
+    : bill;
 
   const doPrint = (mode, cashVal, isPaid = true) =>
-    printBill({ cafe, bill, cashReceived: cashVal, paymentMode: mode, isPaid });
+    printBill({ cafe, bill: billForPrint, cashReceived: cashVal, paymentMode: mode, isPaid });
 
   const handleMarkPaid = async () => {
     const cashVal = isCash && cashInput ? parseFloat(cashInput) : null;
@@ -1027,6 +1051,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
       await onConfirm(cashVal);
       setPaidMode(paymentMode);
       setPaidCash(cashVal);
+      setPaidTip(counterTip);
       setStep('receipt');
     } finally {
       setConfirming(false);
@@ -1038,7 +1063,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-6"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="h-1 bg-green-500 rounded-t-2xl" />
         {children}
       </div>
@@ -1048,6 +1073,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
   // ── Step 2: Receipt ───────────────────────────────────────────
   if (step === 'receipt') {
     const modeLabel = PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
+    const finalTotal = bill.total + paidTip;
     return overlay(
       <div className="p-5 space-y-4">
         <div className="text-center py-2">
@@ -1055,12 +1081,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <h3 className="font-bold text-gray-900 text-lg">Payment Collected!</h3>
           <p className="text-sm text-gray-500 mt-0.5">
             {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ Table ${bill.table_number}`}
-            {' · '}{c(bill.total)}
+            {' · '}{c(finalTotal)}
           </p>
           <p className="text-xs text-gray-400 mt-1">{modeLabel}</p>
           {paidCash != null && (
             <p className="text-xs text-gray-400">
-              Cash: {c(paidCash)} · Change: {c(paidCash - bill.total)}
+              Cash: {c(paidCash)} · Change: {c(paidCash - finalTotal)}
             </p>
           )}
         </div>
@@ -1080,6 +1106,8 @@ function BillingModal({ bill, onConfirm, onClose }) {
   }
 
   // ── Step 1: Collect ───────────────────────────────────────────
+  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || counterTip > 0;
+
   return overlay(
     <div className="p-5 space-y-4">
       <div>
@@ -1091,7 +1119,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
         </p>
       </div>
 
-      {/* Item list */}
+      {/* Item list + price breakdown */}
       <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1 text-sm">
         {bill.aggregatedItems.map((item) => (
           <div key={item.name} className="flex justify-between text-gray-600">
@@ -1099,10 +1127,60 @@ function BillingModal({ bill, onConfirm, onClose }) {
             <span>{c(item.total)}</span>
           </div>
         ))}
-        <div className="border-t border-gray-200 pt-2 flex justify-between font-bold text-gray-900">
-          <span>Bill Total</span>
-          <span>{c(bill.total)}</span>
+
+        {hasBreakdown && (
+          <>
+            <div className="border-t border-gray-200 pt-2 mt-1 space-y-1">
+              <div className="flex justify-between text-gray-500 text-xs">
+                <span>Subtotal</span>
+                <span>{c(bill.subtotal || bill.total)}</span>
+              </div>
+              {bill.taxAmount > 0 && (
+                <div className="flex justify-between text-gray-500 text-xs">
+                  <span>Tax{bill.taxRate > 0 ? ` (${bill.taxRate}%)` : ''}</span>
+                  <span>{c(bill.taxAmount)}</span>
+                </div>
+              )}
+              {bill.discountAmount > 0 && (
+                <div className="flex justify-between text-green-600 text-xs">
+                  <span>Discount</span>
+                  <span>− {c(bill.discountAmount)}</span>
+                </div>
+              )}
+              {bill.tipAmount > 0 && (
+                <div className="flex justify-between text-gray-500 text-xs">
+                  <span>Tip (customer)</span>
+                  <span>{c(bill.tipAmount)}</span>
+                </div>
+              )}
+              {counterTip > 0 && (
+                <div className="flex justify-between text-brand-600 text-xs font-medium">
+                  <span>Tip (counter)</span>
+                  <span>+ {c(counterTip)}</span>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className={`${hasBreakdown ? '' : 'border-t border-gray-200 pt-2'} flex justify-between font-bold text-gray-900`}>
+          <span>Total</span>
+          <span>{c(grandTotal)}</span>
         </div>
+      </div>
+
+      {/* Tip input */}
+      <div>
+        <label className="label">Add Tip (optional)</label>
+        <input
+          type="number"
+          min="0"
+          step="1"
+          placeholder="0"
+          className="input"
+          value={tipInput}
+          onChange={(e) => setTipInput(e.target.value)}
+        />
       </div>
 
       {/* Payment mode selector */}
@@ -1132,9 +1210,9 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <label className="label">Cash Received</label>
           <input
             type="number"
-            min={bill.total}
+            min={grandTotal}
             step="0.50"
-            placeholder={`Min ${c(bill.total)}`}
+            placeholder={`Min ${c(grandTotal)}`}
             className="input text-lg font-semibold"
             value={cashInput}
             onChange={(e) => setCashInput(e.target.value)}
@@ -1154,7 +1232,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
               <p className="text-3xl font-bold text-green-700 mt-0.5">{c(change)}</p>
             </>
           ) : (
-            <p className="text-sm text-red-600 font-medium">Short by {c(bill.total - cash)}</p>
+            <p className="text-sm text-red-600 font-medium">Short by {c(grandTotal - cash)}</p>
           )}
         </div>
       )}

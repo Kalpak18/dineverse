@@ -9,7 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // ─── Pricing config ───────────────────────────────────────────
 const TIERS = {
   basic: {
-    name: 'Basic',
+    name: 'Essential',
     badge: '🔥 Most Popular',
     badgeCls: 'bg-brand-500 text-white',
     tagline: 'Run your entire café from one screen',
@@ -32,7 +32,7 @@ const TIERS = {
     ],
   },
   premium: {
-    name: 'Premium',
+    name: 'Kitchen Pro',
     badge: '👨‍🍳 For Restaurant Teams',
     badgeCls: 'bg-purple-600 text-white',
     tagline: 'Full kitchen management for serious restaurants',
@@ -84,18 +84,18 @@ function fmt(n) {
 function planLabel(plan_type) {
   const map = {
     free_trial:    'Free Trial',
-    yearly:        'Basic · 1 Year',
-    two_year:      'Basic · 2 Years',
-    three_year:    'Basic · 3 Years',
-    '1year':       'Basic · 1 Year',
-    '2year':       'Basic · 2 Years',
-    '3year':       'Basic · 3 Years',
-    basic_1year:   'Basic · 1 Year',
-    basic_2year:   'Basic · 2 Years',
-    basic_3year:   'Basic · 3 Years',
-    premium_1year: 'Premium · 1 Year',
-    premium_2year: 'Premium · 2 Years',
-    premium_3year: 'Premium · 3 Years',
+    yearly:        'Essential · 1 Year',
+    two_year:      'Essential · 2 Years',
+    three_year:    'Essential · 3 Years',
+    '1year':       'Essential · 1 Year',
+    '2year':       'Essential · 2 Years',
+    '3year':       'Essential · 3 Years',
+    basic_1year:   'Essential · 1 Year',
+    basic_2year:   'Essential · 2 Years',
+    basic_3year:   'Essential · 3 Years',
+    premium_1year: 'Kitchen Pro · 1 Year',
+    premium_2year: 'Kitchen Pro · 2 Years',
+    premium_3year: 'Kitchen Pro · 3 Years',
   };
   return map[plan_type] || plan_type;
 }
