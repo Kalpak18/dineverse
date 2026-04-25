@@ -244,8 +244,30 @@ const ACTION_COLORS = {
   ready:     'bg-teal-600 hover:bg-teal-500',
 };
 
+// Item-level tap-to-cycle constants
+const NEXT_ITEM_STATUS = { pending: 'preparing', preparing: 'ready', ready: 'served' };
+
+const ITEM_ROW_STYLE = {
+  pending:   'border-red-500    bg-red-950/25    hover:bg-red-950/40',
+  preparing: 'border-yellow-400 bg-yellow-950/25 hover:bg-yellow-950/40',
+  ready:     'border-green-500  bg-green-950/25  hover:bg-green-950/40',
+  served:    'border-gray-700   bg-gray-900/20   opacity-50',
+  cancelled: 'border-gray-800   bg-transparent   opacity-30',
+};
+
+const ITEM_BADGE_STYLE = {
+  pending:   'bg-red-600/80 text-white',
+  preparing: 'bg-yellow-500/80 text-black',
+  ready:     'bg-green-600/80 text-white',
+  served:    'bg-gray-700 text-gray-400',
+  cancelled: 'bg-gray-800 text-gray-500',
+};
+
+// Orders placed within this window from the same table are combined in "By Table" view
+const TABLE_GROUP_WINDOW_MS = 30 * 60 * 1000;
+
 // ─── Combined Table Card ──────────────────────────────────────
-function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotPrint }) {
+function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotPrint, onItemUpdate }) {
   const { tableKey, orders } = group;
   const orderCount = orders.length;
   const earliestTs = orders.reduce((min, o) => Math.min(min, new Date(o.created_at).getTime()), Infinity);
@@ -287,14 +309,33 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotP
           )}
 
           <div className="space-y-1">
-            {(order.items || []).map((item) => (
-              <div key={item.id} className="flex items-center gap-1.5">
-                <span className="w-6 h-6 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                  {item.quantity}
-                </span>
-                <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
-              </div>
-            ))}
+            {(order.items || []).map((item) => {
+              const ist = item.item_status || 'pending';
+              const nextIst = NEXT_ITEM_STATUS[ist];
+              const isCancelled = ist === 'cancelled';
+              return (
+                <div
+                  key={item.id}
+                  onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
+                  className={`flex items-center gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
+                    ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
+                    ${ITEM_ROW_STYLE[ist]}`}
+                >
+                  <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                    {item.quantity}
+                  </span>
+                  <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                    {item.item_name}
+                  </span>
+                  <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
+                    {ITEM_STATUS_LABEL[ist] || ist}
+                  </span>
+                  {!isCancelled && nextIst && (
+                    <span className="text-gray-600 text-xs flex-shrink-0">›</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {order.notes && (
@@ -629,18 +670,32 @@ export default function KitchenPage() {
     return acc;
   }, {});
 
-  // Combined view: group dine-in orders by table_number; takeaway/delivery stay solo
+  // Combined view: group dine-in orders from the same table within TABLE_GROUP_WINDOW_MS.
+  // Orders from a table placed >30 min apart are treated as separate seatings.
   const groupByTable = (colOrders) => {
     const result = [];
-    const tableMap = new Map();
+    // Map: tableKey → array of groups (each group is a time window)
+    const tableGroups = new Map();
+
     for (const order of colOrders) {
       if (order.order_type === 'dine-in' && order.table_number) {
-        if (!tableMap.has(order.table_number)) {
-          const group = { tableKey: order.table_number, orders: [] };
-          tableMap.set(order.table_number, group);
+        const key = order.table_number;
+        const orderTs = new Date(order.created_at).getTime();
+
+        if (!tableGroups.has(key)) tableGroups.set(key, []);
+        const groups = tableGroups.get(key);
+
+        // Try to join the most recent group within the time window
+        const last = groups[groups.length - 1];
+        const lastTs = last ? Math.max(...last.orders.map((o) => new Date(o.created_at).getTime())) : -Infinity;
+
+        if (last && orderTs - lastTs <= TABLE_GROUP_WINDOW_MS) {
+          last.orders.push(order);
+        } else {
+          const group = { tableKey: key, orders: [order] };
+          groups.push(group);
           result.push(group);
         }
-        tableMap.get(order.table_number).orders.push(order);
       } else {
         result.push({ tableKey: null, orders: [order] });
       }
@@ -756,6 +811,7 @@ export default function KitchenPage() {
                       onAdvance={handleAdvance}
                       onAdvanceAll={handleAdvanceAll}
                       onKotPrint={handleKotPrint}
+                      onItemUpdate={handleItemUpdate}
                     />
                   ))
                 ) : (
@@ -854,12 +910,33 @@ export default function KitchenPage() {
                           </div>
                         ) : (
                           <div className="space-y-1 mb-3">
-                            {(order.items || []).map((item) => (
-                              <div key={item.id} className="flex items-center gap-1.5">
-                                <span className="w-6 h-6 rounded bg-gray-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                                <span className="text-sm text-gray-200 font-medium">{item.item_name}</span>
-                              </div>
-                            ))}
+                            {(order.items || []).map((item) => {
+                              const ist = item.item_status || 'pending';
+                              const nextIst = NEXT_ITEM_STATUS[ist];
+                              const isCancelled = ist === 'cancelled';
+                              return (
+                                <div
+                                  key={item.id}
+                                  onClick={() => !isCancelled && nextIst && handleItemUpdate(order.id, item.id, nextIst)}
+                                  className={`flex items-center gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
+                                    ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
+                                    ${ITEM_ROW_STYLE[ist]}`}
+                                >
+                                  <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                                    {item.quantity}
+                                  </span>
+                                  <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                                    {item.item_name}
+                                  </span>
+                                  <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
+                                    {ITEM_STATUS_LABEL[ist] || ist}
+                                  </span>
+                                  {!isCancelled && nextIst && (
+                                    <span className="text-gray-600 text-xs flex-shrink-0">›</span>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
 
