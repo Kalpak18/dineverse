@@ -1215,7 +1215,7 @@ exports.generateKot = asyncHandler(async (req, res) => {
      WHERE oi.order_id = $1
        AND oi.item_status = 'ready'
        AND oi.id NOT IN (
-         SELECT (elem->>'id')::int
+         SELECT (elem->>'id')::uuid
          FROM kot_slips k, jsonb_array_elements(k.items) AS elem
          WHERE k.order_id = $1
        )`,

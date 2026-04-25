@@ -35,8 +35,8 @@ ALTER TABLE order_items ADD CONSTRAINT order_items_item_status_check
 -- 5. KOT slips table — one slip per batch of ready items
 CREATE TABLE IF NOT EXISTS kot_slips (
   id            SERIAL PRIMARY KEY,
-  cafe_id       INT NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
-  order_id      INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  cafe_id       UUID NOT NULL REFERENCES cafes(id) ON DELETE CASCADE,
+  order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   slip_number   INT NOT NULL,
   table_number  VARCHAR(50),
   customer_name VARCHAR(100),
