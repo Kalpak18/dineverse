@@ -562,7 +562,6 @@ export default function RegisterPage() {
                     <OtpInput
                       value={otp}
                       onChange={setOtp}
-                      onComplete={() => document.getElementById('reg-form-1')?.requestSubmit()}
                       autoFocus
                     />
                     <div className="flex items-center justify-between mt-3">
