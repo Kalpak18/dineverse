@@ -9,7 +9,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 // ─── Pricing config ───────────────────────────────────────────
 const TIERS = {
   basic: {
-    name: 'Essential',
+    name: 'Basic',
     badge: '🔥 Most Popular',
     badgeCls: 'bg-brand-500 text-white',
     tagline: 'Run your entire café from one screen',
@@ -32,7 +32,7 @@ const TIERS = {
     ],
   },
   premium: {
-    name: 'Kitchen Pro',
+    name: 'Premium',
     badge: '👨‍🍳 For Restaurant Teams',
     badgeCls: 'bg-purple-600 text-white',
     tagline: 'Full kitchen management for serious restaurants',
@@ -44,7 +44,7 @@ const TIERS = {
     savingsPct: [0, 10, 11],
     planKeys:   ['premium_1year', 'premium_2year', 'premium_3year'],
     outcomes: [
-      { icon: '✅', text: 'Everything in Essential, plus:' },
+      { icon: '✅', text: 'Everything in Basic, plus:' },
       { icon: '🔄', text: 'Live per-item progress: Preparing → Ready → Served' },
       { icon: '🍽️', text: 'Course sequencing — starters fire before mains' },
       { icon: '❌', text: 'Cancel individual items & notify the customer' },
@@ -84,18 +84,18 @@ function fmt(n) {
 function planLabel(plan_type) {
   const map = {
     free_trial:    'Free Trial',
-    yearly:        'Essential · 1 Year',
-    two_year:      'Essential · 2 Years',
-    three_year:    'Essential · 3 Years',
-    '1year':       'Essential · 1 Year',
-    '2year':       'Essential · 2 Years',
-    '3year':       'Essential · 3 Years',
-    basic_1year:   'Essential · 1 Year',
-    basic_2year:   'Essential · 2 Years',
-    basic_3year:   'Essential · 3 Years',
-    premium_1year: 'Kitchen Pro · 1 Year',
-    premium_2year: 'Kitchen Pro · 2 Years',
-    premium_3year: 'Kitchen Pro · 3 Years',
+    yearly:        'Basic · 1 Year',
+    two_year:      'Basic · 2 Years',
+    three_year:    'Basic · 3 Years',
+    '1year':       'Basic · 1 Year',
+    '2year':       'Basic · 2 Years',
+    '3year':       'Basic · 3 Years',
+    basic_1year:   'Basic · 1 Year',
+    basic_2year:   'Basic · 2 Years',
+    basic_3year:   'Basic · 3 Years',
+    premium_1year: 'Premium · 1 Year',
+    premium_2year: 'Premium · 2 Years',
+    premium_3year: 'Premium · 3 Years',
   };
   return map[plan_type] || plan_type;
 }
@@ -370,8 +370,8 @@ export default function BillingPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Feature</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Essential</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Kitchen Pro</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Basic</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Premium</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">

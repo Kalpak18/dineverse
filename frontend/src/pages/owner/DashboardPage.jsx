@@ -8,6 +8,14 @@ import { fmtToken, fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
 
+// Onboarding steps — shown inline on dashboard until dismissed
+const ONBOARDING = [
+  { id: 'menu',    icon: '🍽️', label: 'Add your menu items',         route: '/owner/menu',    check: (s) => s.total_items > 0 },
+  { id: 'tables',  icon: '🪑', label: 'Set up tables & QR codes',    route: '/owner/tables',  check: (s) => s.total_tables > 0 },
+  { id: 'profile', icon: '🎨', label: 'Upload logo & fill profile',  route: '/owner/profile', check: (_, cafe) => !!cafe?.logo_url },
+  { id: 'live',    icon: '🟢', label: 'Toggle café Open to go live', route: null,             check: (s) => s.cafe_is_open },
+];
+
 export default function DashboardPage() {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
@@ -20,6 +28,9 @@ export default function DashboardPage() {
   const [togglingOpen, setTogglingOpen] = useState(false);
   const [dismissedAnnouncement, setDismissedAnnouncement] = useState(
     () => localStorage.getItem('dineverse_announcement_dismissed') || ''
+  );
+  const [onboardingDismissed, setOnboardingDismissed] = useState(
+    () => !!localStorage.getItem(`dv_ob_done_${cafe?.id}`)
   );
 
   const loadDashboard = useCallback(async () => {
@@ -106,6 +117,54 @@ export default function DashboardPage() {
                 }
               </span>
               <Link to="/owner/billing" className="flex-shrink-0 underline font-semibold">Renew →</Link>
+            </div>
+          );
+        })()}
+
+        {/* ── Onboarding checklist (new accounts only, dismissible) ── */}
+        {!onboardingDismissed && stats && (() => {
+          const steps = ONBOARDING.map((s) => ({ ...s, done: s.check(stats, cafe) }));
+          const doneCount = steps.filter((s) => s.done).length;
+          const allDone   = doneCount === steps.length;
+          if (allDone) {
+            // auto-dismiss once everything is done
+            localStorage.setItem(`dv_ob_done_${cafe?.id}`, '1');
+            return null;
+          }
+          return (
+            <div className="bg-brand-50 border border-brand-200 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center text-white text-sm flex-shrink-0">🚀</div>
+                  <div>
+                    <p className="font-semibold text-gray-900 text-sm">Finish setting up your café</p>
+                    <p className="text-xs text-gray-500">{doneCount} of {steps.length} steps done</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { localStorage.setItem(`dv_ob_done_${cafe?.id}`, '1'); setOnboardingDismissed(true); }}
+                  className="text-gray-400 hover:text-gray-600 text-lg leading-none flex-shrink-0"
+                  title="Dismiss"
+                >✕</button>
+              </div>
+              <div className="h-1 bg-brand-100">
+                <div className="h-1 bg-brand-500 transition-all" style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+              </div>
+              <div className="divide-y divide-brand-100">
+                {steps.map((step) => (
+                  <div key={step.id} className={`flex items-center gap-3 px-5 py-3 ${step.done ? 'opacity-40' : ''}`}>
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${step.done ? 'bg-brand-500 border-brand-500' : 'border-gray-300 bg-white'}`}>
+                      {step.done && <span className="text-white text-[10px] font-bold">✓</span>}
+                    </div>
+                    <span className="text-sm flex-1 text-gray-700">{step.icon} {step.label}</span>
+                    {!step.done && (
+                      step.route
+                        ? <button onClick={() => navigate(step.route)} className="text-xs font-semibold text-brand-600 hover:underline flex-shrink-0">Go →</button>
+                        : <button onClick={handleToggleOpen} disabled={togglingOpen} className="text-xs font-semibold text-green-600 hover:underline flex-shrink-0">{togglingOpen ? '...' : 'Open now →'}</button>
+                    )}
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })()}
