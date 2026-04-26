@@ -102,36 +102,28 @@ export default function OrdersPage() {
     }
   );
 
-  // Opens BillingModal for a single active-order card — stores orderId so bill stays live
+  // Opens BillingModal for a single active-order card (print / quick mark-paid)
   const openOrderBilling = useCallback((order) => {
     setBillingModal({
-      orderId: order.id,
+      bill: {
+        isTakeaway: order.order_type === 'takeaway',
+        customerName: order.customer_name,
+        orderNumber: order.daily_order_number,
+        table_number: order.table_number,
+        subtotal:       parseFloat(order.total_amount) || 0,
+        taxAmount:      parseFloat(order.tax_amount)   || 0,
+        taxRate:        parseInt(order.tax_rate)        || 0,
+        discountAmount: parseFloat(order.discount_amount) || 0,
+        tipAmount:      parseFloat(order.tip_amount)   || 0,
+        total:          parseFloat(order.final_amount  || order.total_amount) || 0,
+        aggregatedItems: (order.items || []).map((i) => ({
+          name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+        })),
+        orders: [order],
+      },
       onConfirm: (cashReceived) => handleStatusUpdate(order.id, 'paid', cashReceived),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Compute a fresh bill snapshot from current orders state for single-order billing
-  const liveSingleBill = useMemo(() => {
-    if (!billingModal?.orderId) return null;
-    const order = orders.find((o) => o.id === billingModal.orderId);
-    if (!order) return null;
-    return {
-      isTakeaway: order.order_type === 'takeaway',
-      customerName: order.customer_name,
-      orderNumber: order.daily_order_number,
-      table_number: order.table_number,
-      subtotal:       parseFloat(order.total_amount)    || 0,
-      taxAmount:      parseFloat(order.tax_amount)      || 0,
-      taxRate:        parseInt(order.tax_rate)           || 0,
-      discountAmount: parseFloat(order.discount_amount) || 0,
-      tipAmount:      parseFloat(order.tip_amount)      || 0,
-      total:          parseFloat(order.final_amount || order.total_amount) || 0,
-      aggregatedItems: (order.items || []).map((i) => ({
-        name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
-      })),
-      orders: [order],
-    };
-  }, [billingModal?.orderId, orders]);
 
   const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null) => {
     try {
@@ -466,9 +458,9 @@ export default function OrdersPage() {
       )}
 
       {/* ── Billing Modal (shared: Bills tab + OrderCard print) ── */}
-      {billingModal && (billingModal.bill || liveSingleBill) && (
+      {billingModal?.bill && (
         <BillingModal
-          bill={billingModal.bill || liveSingleBill}
+          bill={billingModal.bill}
           onConfirm={billingModal.onConfirm}
           onClose={() => setBillingModal(null)}
         />

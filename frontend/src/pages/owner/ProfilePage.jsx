@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute } from '../../services/api';
+import { getApiError } from '../../utils/apiError';
 import ImageUpload from '../../components/ImageUpload';
 import MapPicker from '../../components/MapPicker';
 import toast from 'react-hot-toast';
@@ -206,13 +207,14 @@ export default function ProfilePage() {
 
   const saveTab = async (requirePhone = false) => {
     if (requirePhone && !form.phone.trim()) { toast.error('Phone number is required'); return; }
+    if (!form.phone.trim()) { toast.error('Phone number is required — fill in Contact tab first'); return; }
     setSaving(true);
     try {
       await updateProfile(form);
       await refreshCafe();
       toast.success('Saved!');
-    } catch {
-      toast.error('Failed to save');
+    } catch (err) {
+      toast.error(getApiError(err));
     } finally {
       setSaving(false);
     }
