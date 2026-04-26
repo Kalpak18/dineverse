@@ -9,7 +9,7 @@ const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const EMPTY_FORM = {
   name: '', description: '', offer_type: 'percentage', discount_value: '',
   min_order_amount: '', active_from: '', active_until: '',
-  active_days: [], combo_price: '',
+  active_days: [], combo_price: '', coupon_code: '',
   is_active: true,
 };
 
@@ -93,10 +93,20 @@ function OfferForm({ initial, onSave, onCancel }) {
         </div>
       </div>
 
-      <div>
-        <label className="label">Description (shown to customers)</label>
-        <input className="input" placeholder="e.g. 20% off between 3 PM and 6 PM every day!"
-          value={form.description} onChange={set('description')} />
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Description (shown to customers)</label>
+          <input className="input" placeholder="e.g. 20% off between 3 PM and 6 PM every day!"
+            value={form.description} onChange={set('description')} />
+        </div>
+        <div>
+          <label className="label">Coupon Code (optional)</label>
+          <input className="input uppercase" placeholder="e.g. SUMMER20"
+            value={form.coupon_code}
+            onChange={(e) => setForm((f) => ({ ...f, coupon_code: e.target.value.toUpperCase() }))}
+          />
+          <p className="text-xs text-gray-400 mt-1">Leave blank to auto-apply; set a code for manual redemption.</p>
+        </div>
       </div>
 
       {/* Time restriction */}
@@ -178,6 +188,11 @@ function OfferBadge({ offer }) {
           </div>
           {offer.description && <p className="text-xs text-gray-500 mt-0.5">{offer.description}</p>}
           <p className="text-xs text-gray-400 mt-1">{timeLabel}{dayLabel}{minLabel}</p>
+          {offer.coupon_code && (
+            <p className="text-xs font-mono font-bold text-brand-700 bg-brand-50 border border-brand-200 rounded px-2 py-0.5 mt-1.5 inline-block tracking-widest">
+              {offer.coupon_code}
+            </p>
+          )}
         </div>
       </div>
       <div className="flex gap-1 flex-shrink-0">

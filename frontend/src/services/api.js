@@ -214,6 +214,7 @@ export const getRatings = (params) => api.get('/ratings', { params });
 // ─── Offers ───────────────────────────────────────────────────
 export const getPublicOffers = (slug)       => api.get(`/offers/cafe/${slug}/offers`);
 export const previewOffer    = (slug, data) => api.post(`/offers/cafe/${slug}/preview`, data);
+export const validateCoupon  = (slug, data) => api.post(`/offers/cafe/${slug}/validate-coupon`, data);
 export const getOffers       = ()           => api.get('/offers');
 export const createOffer     = (data)       => api.post('/offers', data);
 export const updateOffer     = (id, data)   => api.patch(`/offers/${id}`, data);

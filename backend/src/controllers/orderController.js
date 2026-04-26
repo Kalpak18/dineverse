@@ -499,7 +499,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     db.query(
       `SELECT id, order_number,
             COALESCE(daily_order_number, order_number) AS daily_order_number,
-            customer_name, table_number, status, total_amount, created_at
+            customer_name, table_number, status, total_amount, final_amount, created_at
        FROM orders WHERE cafe_id = $1 ORDER BY created_at DESC LIMIT 10`,
       [req.cafeId]
     ),
@@ -966,7 +966,7 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   // Emit item-level status update to customer tracking the order
   if (req.io) {
     req.io.to(`order:${id}`).emit('item_status_update', {
-      orderId: parseInt(id, 10), itemId: parseInt(itemId, 10), status, timestamp: new Date().toISOString(),
+      orderId: id, itemId, status, timestamp: new Date().toISOString(),
     });
   }
 

@@ -22,9 +22,11 @@ function timeAgo(dateStr) {
 
 export default function WaitlistPage() {
   const { cafe } = useAuth();
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter]   = useState('waiting'); // waiting | all
+  const [entries, setEntries]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [filter, setFilter]     = useState('waiting'); // waiting | all
+  const [seating, setSeating]   = useState(null); // { id } while table input is open
+  const [tableInput, setTableInput] = useState('');
   const socketRef = useRef(null);
 
   const load = useCallback(async () => {
@@ -47,16 +49,25 @@ export default function WaitlistPage() {
     return () => socket.disconnect();
   }, [cafe?.id, load]);
 
-  const handleAction = async (id, status) => {
+  const handleAction = async (id, status, tableNumber) => {
     try {
-      const { data } = await updateWaitlistEntry(id, { status });
-      setEntries((prev) => prev.map((e) => e.id === id ? { ...e, status: data.entry.status } : e));
+      const payload = { status };
+      if (tableNumber) payload.table_number = tableNumber;
+      const { data } = await updateWaitlistEntry(id, payload);
+      setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...data.entry } : e));
       toast.success(
-        status === 'seated'    ? 'Customer seated!' :
+        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}!` :
         status === 'no_show'   ? 'Marked as no-show' :
         status === 'cancelled' ? 'Entry cancelled' : 'Updated'
       );
     } catch { toast.error('Failed to update entry'); }
+  };
+
+  const handleSeatConfirm = async () => {
+    if (!seating) return;
+    await handleAction(seating.id, 'seated', tableInput.trim() || undefined);
+    setSeating(null);
+    setTableInput('');
   };
 
   const handleDelete = async (id) => {
@@ -155,25 +166,45 @@ export default function WaitlistPage() {
               </div>
 
               {entry.status === 'waiting' && (
-                <div className="flex gap-2 mt-3 pt-3 border-t border-gray-50">
-                  <button
-                    onClick={() => handleAction(entry.id, 'seated')}
-                    className="flex-1 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    ✓ Seat Now
-                  </button>
-                  <button
-                    onClick={() => handleAction(entry.id, 'no_show')}
-                    className="text-xs font-medium text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    No Show
-                  </button>
-                  <button
-                    onClick={() => handleAction(entry.id, 'cancelled')}
-                    className="text-xs font-medium text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
+                <div className="mt-3 pt-3 border-t border-gray-50">
+                  {seating?.id === entry.id ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        autoFocus
+                        type="text"
+                        placeholder="Table number (optional)"
+                        value={tableInput}
+                        onChange={(e) => setTableInput(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSeatConfirm(); if (e.key === 'Escape') { setSeating(null); setTableInput(''); } }}
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-500"
+                      />
+                      <button onClick={handleSeatConfirm} className="text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap">
+                        ✓ Confirm
+                      </button>
+                      <button onClick={() => { setSeating(null); setTableInput(''); }} className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5">✕</button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { setSeating({ id: entry.id }); setTableInput(''); }}
+                        className="flex-1 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        ✓ Seat Now
+                      </button>
+                      <button
+                        onClick={() => handleAction(entry.id, 'no_show')}
+                        className="text-xs font-medium text-gray-500 hover:text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        No Show
+                      </button>
+                      <button
+                        onClick={() => handleAction(entry.id, 'cancelled')}
+                        className="text-xs font-medium text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 

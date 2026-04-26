@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, previewOffer, getCafeTables } from '../../services/api';
+import { placeOrder, previewOffer, validateCoupon, getCafeTables } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -33,6 +33,9 @@ export default function CartPage() {
   const [tip, setTip] = useState(0);
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
+  const [couponInput, setCouponInput]     = useState('');
+  const [couponApplied, setCouponApplied] = useState(false); // true when offer was set via coupon
+  const [couponLoading, setCouponLoading] = useState(false);
 
   // Table / order-type re-confirm state
   const [showTableModal, setShowTableModal] = useState(false);
@@ -146,8 +149,9 @@ export default function CartPage() {
     setSessionTick((t) => t + 1); // re-read session without destroying cart state
   };
 
-  // Debounced offer preview: refetch when cart total changes
+  // Debounced offer preview: refetch when cart total changes (only if no coupon is manually applied)
   useEffect(() => {
+    if (couponApplied) return; // don't auto-override a manually entered coupon
     if (!items.length) { setOfferPreview(null); return; }
     clearTimeout(offerDebounce.current);
     offerDebounce.current = setTimeout(async () => {
@@ -163,7 +167,32 @@ export default function CartPage() {
       }
     }, 500);
     return () => clearTimeout(offerDebounce.current);
-  }, [slug, total, items]);
+  }, [slug, total, items, couponApplied]);
+
+  const handleApplyCoupon = async () => {
+    if (!couponInput.trim()) return;
+    setCouponLoading(true);
+    try {
+      const { data } = await validateCoupon(slug, {
+        coupon_code: couponInput.trim(),
+        items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+        total,
+      });
+      setOfferPreview(data);
+      setCouponApplied(true);
+      toast.success(`Coupon applied! You save ${c(data.discount_amount)}`);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Invalid or expired coupon code');
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setCouponInput('');
+    setCouponApplied(false);
+    setOfferPreview(null);
+  };
 
   if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
 
@@ -373,11 +402,44 @@ export default function CartPage() {
         />
       </div>
 
-      {offerPreview?.applied && (
-        <div className="mx-4 mt-4 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+      {/* Coupon code input */}
+      <div className="mx-4 mt-4">
+        {couponApplied ? (
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
+            <span className="text-green-500 text-lg">🎉</span>
+            <div className="flex-1">
+              <p className="text-xs font-semibold text-green-800">{offerPreview?.offer_name || couponInput} applied!</p>
+              <p className="text-xs text-green-600">You save {c(discountAmt)} on this order</p>
+            </div>
+            <button onClick={handleRemoveCoupon} className="text-xs text-gray-400 hover:text-red-500 font-medium px-1">Remove</button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Have a coupon code?"
+              value={couponInput}
+              onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && handleApplyCoupon()}
+              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase placeholder:normal-case placeholder:text-gray-400"
+            />
+            <button
+              onClick={handleApplyCoupon}
+              disabled={!couponInput.trim() || couponLoading}
+              className="text-sm font-semibold bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
+            >
+              {couponLoading ? '…' : 'Apply'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Auto-detected offer banner (shown only when no coupon is manually applied) */}
+      {!couponApplied && offerPreview?.applied && (
+        <div className="mx-4 mt-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
           <span className="text-green-500 text-lg">🎉</span>
           <div>
-            <p className="text-xs font-semibold text-green-800">{offerPreview.offer_name} applied!</p>
+            <p className="text-xs font-semibold text-green-800">{offerPreview.offer_name} automatically applied!</p>
             <p className="text-xs text-green-600">You save {c(discountAmt)} on this order</p>
           </div>
         </div>
@@ -393,82 +455,94 @@ export default function CartPage() {
             </div>
           ))}
         </div>
-        <div className="border-t border-gray-200 mt-3 pt-3 space-y-1.5 text-sm">
-          {hasGst ? (
-            taxInclusive ? (
-              <>
-                <div className="flex justify-between text-gray-500">
-                  <span>Base amount</span>
-                  <span>{c(taxableAmt)}</span>
-                </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>{c(totalTax / 2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>{c(totalTax / 2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-600 font-medium border-t border-gray-100 pt-1">
-                  <span>Subtotal (GST {gstRate}% incl.)</span>
-                  <span>{c(total)}</span>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex justify-between text-gray-600">
-                  <span>Subtotal</span>
-                  <span>{c(total)}</span>
-                </div>
-                {discountAmt > 0 && (
-                  <div className="flex justify-between text-green-600 font-medium">
-                    <span>Discount</span>
-                    <span>-{c(discountAmt)}</span>
+
+        <div className="border-t border-gray-200 mt-4 pt-4 space-y-3 text-sm">
+          {hasGst && (
+            <div className="rounded-2xl bg-white border border-gray-200 p-3">
+              <p className="text-xs uppercase tracking-[0.18em] font-semibold text-gray-500 mb-3">
+                {taxInclusive
+                  ? 'GST included in menu prices'
+                  : 'GST is calculated on your subtotal'}
+              </p>
+              {taxInclusive ? (
+                <>
+                  <div className="flex justify-between text-gray-500">
+                    <span>Base amount</span>
+                    <span>{c(taxableAmt)}</span>
                   </div>
-                )}
-                <div className="flex justify-between text-gray-500">
-                  <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>{c(totalTax / 2)}</span>
-                </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
-                  <span>{c(totalTax / 2)}</span>
-                </div>
-              </>
-            )
-          ) : (
+                  <div className="flex justify-between text-gray-500">
+                    <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
+                    <span>{c(totalTax / 2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
+                    <span>{c(totalTax / 2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-700 font-medium border-t border-gray-100 pt-3">
+                    <span>Total item price</span>
+                    <span>{c(total)}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Subtotal</span>
+                    <span>{c(total)}</span>
+                  </div>
+                  {discountAmt > 0 && (
+                    <div className="flex justify-between text-green-600 font-medium">
+                      <span>Discount</span>
+                      <span>-{c(discountAmt)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-gray-500">
+                    <span>CGST ({(gstRate / 2).toFixed(1)}%)</span>
+                    <span>{c(totalTax / 2)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>SGST ({(gstRate / 2).toFixed(1)}%)</span>
+                    <span>{c(totalTax / 2)}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {!hasGst && (
             <div className="flex justify-between text-gray-600">
               <span>Subtotal</span>
               <span>{c(total)}</span>
             </div>
           )}
-          {/* Discount row: show for inclusive-GST and no-GST paths (exclusive-GST already shows it inline above) */}
-          {offerPreview?.applied && discountAmt > 0 && (!hasGst || taxInclusive) && (
+
+          {offerPreview?.applied && discountAmt > 0 && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
               <span>-{c(discountAmt)}</span>
             </div>
           )}
+
           {tip > 0 && (
             <div className="flex justify-between text-gray-600">
               <span>Tip</span>
               <span>{c(tip)}</span>
             </div>
           )}
+
           {isDelivery && (
             <div className="flex justify-between text-gray-600">
               <span>🛵 Delivery fee</span>
               <span>{deliveryFeeBase > 0 ? c(deliveryFeeBase) : 'Free'}</span>
             </div>
           )}
-          <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">
-            <span>Total</span>
-            <span>{c(grandTotal)}</span>
+
+          <div className="flex justify-between items-center font-bold text-gray-900 pt-3 border-t border-gray-200">
+            <span className="text-base">Total amount due</span>
+            <span className="text-base">{c(grandTotal)}</span>
           </div>
         </div>
       </div>
 
-      {/* Tip selector */}
       <div className="mx-4 mt-3 bg-white border border-gray-200 rounded-xl p-4">
         <p className="text-sm font-semibold text-gray-700 mb-2.5">Add a tip? 🙏</p>
         <div className="flex gap-2 flex-wrap">

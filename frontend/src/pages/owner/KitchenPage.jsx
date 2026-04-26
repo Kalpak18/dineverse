@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getOrders, updateOrderStatus, updateItemStatus, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, generateOrderKot, getKotHistory } from '../../services/api';
+import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, generateOrderKot, getKotHistory } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
@@ -493,6 +493,12 @@ export default function KitchenPage() {
 
   const handleItemUpdate = async (orderId, itemId, status) => {
     try {
+      // Orders default to 'combined' mode; switch to individual on first item tap
+      const order = orders.find((o) => o.id === orderId);
+      if (order?.kitchen_mode !== 'individual') {
+        const { data: modeData } = await setKitchenMode(orderId, 'individual');
+        setOrders((prev) => prev.map((o) => o.id === orderId ? modeData.order : o));
+      }
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => {
         if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== orderId);

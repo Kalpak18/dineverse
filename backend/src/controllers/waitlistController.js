@@ -97,7 +97,7 @@ exports.getWaitlist = asyncHandler(async (req, res) => {
 
 // Owner: update waitlist entry (seat / cancel / no_show / notify)
 exports.updateWaitlist = asyncHandler(async (req, res) => {
-  const { status, notify } = req.body;
+  const { status, notify, table_number } = req.body;
   const { id } = req.params;
 
   const allowed = ['waiting', 'seated', 'cancelled', 'no_show'];
@@ -107,8 +107,9 @@ exports.updateWaitlist = asyncHandler(async (req, res) => {
   const vals   = [];
   let i = 1;
 
-  if (status)  { fields.push(`status = $${i++}`);       vals.push(status); }
-  if (notify)  { fields.push(`notified_at = NOW()`); }
+  if (status)       { fields.push(`status = $${i++}`);       vals.push(status); }
+  if (table_number) { fields.push(`table_number = $${i++}`); vals.push(table_number.trim()); }
+  if (notify)       { fields.push(`notified_at = NOW()`); }
   fields.push(`updated_at = NOW()`);
 
   if (!fields.length) return fail(res, 'Nothing to update', 400);
@@ -129,7 +130,7 @@ exports.updateWaitlist = asyncHandler(async (req, res) => {
 
   // Notify the customer socket room if they're tracking
   if (notify || status === 'seated') {
-    req.io.to(`waitlist:${id}`).emit('waitlist_called', { entry });
+    req.io.to(`waitlist:${id}`).emit('waitlist_called', { entry, table_number: entry.table_number });
   }
 
   ok(res, { entry });

@@ -75,6 +75,7 @@ export default function LandingPage() {
             <a href="#how-it-works" className="hover:text-brand-600 transition-colors">How It Works</a>
             <a href="#features"     className="hover:text-brand-600 transition-colors">Features</a>
             <a href="#pricing"      className="hover:text-brand-600 transition-colors">Pricing</a>
+            <a href="#help"         className="hover:text-brand-600 transition-colors">Help</a>
           </div>
           <div className="flex items-center gap-3">
             <button onClick={() => navigate('/owner/login')} className="text-sm text-gray-600 hover:text-gray-900 font-medium">
@@ -624,6 +625,73 @@ export default function LandingPage() {
                 <p className="text-xs text-gray-500 leading-relaxed">{a}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Help Desk ── */}
+      <section id="help" className="py-16 px-6 bg-white border-t border-gray-100">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Help & Support</h2>
+            <p className="text-gray-500 text-sm">Quick answers. Human support when you need it.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4 mb-8">
+            {[
+              {
+                icon: '📚',
+                title: 'Getting Started Guide',
+                desc: 'Set up your café in 10 minutes — tables, menu, tax, and your first QR code.',
+                action: 'Read guide →',
+                href: 'mailto:hello@dine-verse.com?subject=Getting Started Help',
+              },
+              {
+                icon: '🖨️',
+                title: 'Printer & KDS Setup',
+                desc: 'Connect a Bluetooth or network printer. Set up your Kitchen Display on any screen.',
+                action: 'Get setup help →',
+                href: 'mailto:hello@dine-verse.com?subject=Printer or KDS Setup',
+              },
+              {
+                icon: '💳',
+                title: 'Billing & Payments',
+                desc: 'Questions about Razorpay, GST invoices, or subscription billing? We\'ll sort it.',
+                action: 'Contact billing →',
+                href: 'mailto:hello@dine-verse.com?subject=Billing Question',
+              },
+              {
+                icon: '🔧',
+                title: 'Something Not Working?',
+                desc: 'Report a bug or unexpected behaviour. We respond within 4 hours on business days.',
+                action: 'Report issue →',
+                href: 'mailto:hello@dine-verse.com?subject=Bug Report',
+              },
+            ].map(({ icon, title, desc, action, href }) => (
+              <a
+                key={title}
+                href={href}
+                className="group flex gap-4 bg-gray-50 hover:bg-brand-50 border border-gray-200 hover:border-brand-300 rounded-2xl p-5 transition-colors"
+              >
+                <span className="text-2xl flex-shrink-0">{icon}</span>
+                <div>
+                  <p className="font-semibold text-gray-900 text-sm mb-1">{title}</p>
+                  <p className="text-xs text-gray-500 leading-relaxed mb-2">{desc}</p>
+                  <span className="text-xs font-semibold text-brand-600 group-hover:underline">{action}</span>
+                </div>
+              </a>
+            ))}
+          </div>
+          <div className="bg-gradient-to-r from-brand-50 to-orange-50 border border-brand-200 rounded-2xl px-6 py-5 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div>
+              <p className="font-bold text-gray-900 text-sm">Still need help?</p>
+              <p className="text-xs text-gray-500 mt-0.5">Email us at <strong>hello@dine-verse.com</strong> — average reply time under 2 hours.</p>
+            </div>
+            <a
+              href="mailto:hello@dine-verse.com"
+              className="flex-shrink-0 px-5 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-xl transition-colors"
+            >
+              Email Support
+            </a>
           </div>
         </div>
       </section>

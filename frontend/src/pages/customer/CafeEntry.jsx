@@ -712,6 +712,7 @@ function WaitlistModal({ slug, cafeName, onClose }) {
   const [saving, setSaving] = useState(false);
   const [joined, setJoined] = useState(null); // { id, position, ... }
   const [called, setCalled] = useState(false); // true when café seats this customer
+  const [assignedTable, setAssignedTable] = useState(null);
   const socketRef = useRef(null);
 
   // Join per-entry socket room once we have the entry ID, listen for café call
@@ -720,9 +721,13 @@ function WaitlistModal({ slug, cafeName, onClose }) {
     const socket = io(SOCKET_URL, { transports: ['websocket'] });
     socketRef.current = socket;
     socket.emit('track_waitlist', joined.id);
-    socket.on('waitlist_called', () => {
+    socket.on('waitlist_called', ({ table_number } = {}) => {
       setCalled(true);
-      toast.success('Your table is ready! Please proceed to the café.', { duration: 8000 });
+      setAssignedTable(table_number || null);
+      const msg = table_number
+        ? `Your table is ready! Please go to Table ${table_number}.`
+        : 'Your table is ready! Please proceed to the café.';
+      toast.success(msg, { duration: 10000 });
     });
     return () => socket.disconnect();
   }, [joined?.id]);
@@ -774,7 +779,11 @@ function WaitlistModal({ slug, cafeName, onClose }) {
               <>
                 <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto text-3xl">🍽️</div>
                 <p className="font-bold text-green-700 text-lg">Your table is ready!</p>
-                <p className="text-sm text-gray-500">Please proceed to <strong>{cafeName}</strong>. The team is expecting you.</p>
+                {assignedTable ? (
+                  <p className="text-sm text-gray-700 font-medium">Please go to <strong className="text-green-700">Table {assignedTable}</strong> at <strong>{cafeName}</strong>.</p>
+                ) : (
+                  <p className="text-sm text-gray-500">Please proceed to <strong>{cafeName}</strong>. The team is expecting you.</p>
+                )}
               </>
             ) : (
               <>

@@ -16,7 +16,7 @@ exports.createOffer = asyncHandler(async (req, res) => {
   const {
     name, description, offer_type, discount_value,
     combo_items, combo_price, min_order_amount,
-    active_from, active_until, active_days,
+    active_from, active_until, active_days, coupon_code,
   } = req.body;
 
   if (!name?.trim()) return fail(res, 'Offer name is required');
@@ -27,12 +27,14 @@ exports.createOffer = asyncHandler(async (req, res) => {
   if (offer_type === 'combo' && !combo_price)
     return fail(res, 'combo_price is required for combo offers');
 
+  const normalizedCoupon = coupon_code?.trim().toUpperCase() || null;
+
   const result = await db.query(
     `INSERT INTO offers
        (cafe_id, name, description, offer_type, discount_value,
         combo_items, combo_price, min_order_amount,
-        active_from, active_until, active_days)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        active_from, active_until, active_days, coupon_code)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      RETURNING *`,
     [
       req.cafeId, name.trim(), description || null, offer_type,
@@ -41,7 +43,7 @@ exports.createOffer = asyncHandler(async (req, res) => {
       combo_price ? parseFloat(combo_price) : null,
       parseFloat(min_order_amount) || 0,
       active_from || null, active_until || null,
-      active_days || null,
+      active_days || null, normalizedCoupon,
     ]
   );
   ok(res, { offer: result.rows[0] }, 'Offer created', 201);
@@ -52,8 +54,12 @@ exports.updateOffer = asyncHandler(async (req, res) => {
   const {
     name, description, offer_type, discount_value,
     combo_items, combo_price, min_order_amount,
-    active_from, active_until, active_days, is_active,
+    active_from, active_until, active_days, is_active, coupon_code,
   } = req.body;
+
+  const normalizedCoupon = coupon_code !== undefined
+    ? (coupon_code?.trim().toUpperCase() || null)
+    : undefined;
 
   const result = await db.query(
     `UPDATE offers SET
@@ -67,8 +73,9 @@ exports.updateOffer = asyncHandler(async (req, res) => {
        active_from      = COALESCE($8,  active_from),
        active_until     = COALESCE($9,  active_until),
        active_days      = COALESCE($10, active_days),
-       is_active        = COALESCE($11, is_active)
-     WHERE id = $12 AND cafe_id = $13
+       is_active        = COALESCE($11, is_active),
+       coupon_code      = CASE WHEN $12::TEXT IS NOT NULL THEN $12::VARCHAR(30) ELSE coupon_code END
+     WHERE id = $13 AND cafe_id = $14
      RETURNING *`,
     [
       name || null, description || null, offer_type || null,
@@ -78,6 +85,7 @@ exports.updateOffer = asyncHandler(async (req, res) => {
       min_order_amount != null ? parseFloat(min_order_amount) : null,
       active_from || null, active_until || null, active_days || null,
       is_active != null ? is_active : null,
+      normalizedCoupon !== undefined ? normalizedCoupon : null,
       id, req.cafeId,
     ]
   );
@@ -149,6 +157,64 @@ exports.previewOffer = asyncHandler(async (req, res) => {
     discount_value:  offerRow.rows[0]?.discount_value,
     discount_amount: discountAmount,
     final_amount:    finalAmount,
+  });
+});
+
+// ─── Public: validate a coupon code ─────────────────────────────
+// POST /offers/cafe/:slug/validate-coupon  { coupon_code, items, total }
+exports.validateCoupon = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const { coupon_code, items = [], total = 0 } = req.body;
+
+  if (!coupon_code?.trim()) return fail(res, 'Coupon code is required', 400);
+
+  const cafeResult = await db.query(
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    [slug]
+  );
+  if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
+  const cafeId = cafeResult.rows[0].id;
+
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const timeStr = now.toTimeString().slice(0, 5);
+
+  const offerResult = await db.query(
+    `SELECT * FROM offers
+     WHERE cafe_id = $1 AND is_active = true
+       AND UPPER(coupon_code) = $2
+       AND min_order_amount <= $3
+       AND (active_days IS NULL OR $4 = ANY(active_days))
+       AND (active_from IS NULL OR active_from <= $5::TIME)
+       AND (active_until IS NULL OR active_until >= $5::TIME)
+     LIMIT 1`,
+    [cafeId, coupon_code.trim().toUpperCase(), parseFloat(total) || 0, dayOfWeek, timeStr]
+  );
+
+  if (offerResult.rows.length === 0) {
+    return fail(res, 'Invalid or expired coupon code', 400);
+  }
+
+  const offer = offerResult.rows[0];
+  let discountAmount = 0;
+  let finalAmount = parseFloat(total) || 0;
+
+  if (offer.offer_type === 'percentage') {
+    discountAmount = parseFloat(((finalAmount * parseFloat(offer.discount_value)) / 100).toFixed(2));
+    finalAmount = parseFloat((finalAmount - discountAmount).toFixed(2));
+  } else if (offer.offer_type === 'fixed') {
+    discountAmount = Math.min(parseFloat(offer.discount_value), finalAmount);
+    finalAmount = parseFloat((finalAmount - discountAmount).toFixed(2));
+  }
+
+  ok(res, {
+    applied: true,
+    offer_id:        offer.id,
+    offer_name:      offer.name,
+    offer_type:      offer.offer_type,
+    discount_value:  offer.discount_value,
+    discount_amount: discountAmount,
+    final_amount:    Math.max(0, finalAmount),
   });
 });
 
