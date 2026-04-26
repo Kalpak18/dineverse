@@ -613,19 +613,17 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         )}
         <button
           onClick={() => onOpenBilling(order)}
-          className="px-3 py-2 rounded-xl border border-gray-200 text-gray-500 text-xs font-medium hover:bg-gray-50 transition-colors flex-shrink-0"
-          title="Print / collect payment"
+          className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1"
         >
-          🖨️
+          🖨️ <span>Bill</span>
         </button>
         <button
           onClick={() => onChatClick(order)}
-          className={`relative px-3 py-2 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 ${
-            chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+          className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 ${
+            chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100'
           }`}
-          title="Chat with customer"
         >
-          💬
+          💬 <span>Chat</span>
           {chatUnread > 0 && (
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
               {chatUnread}
@@ -634,10 +632,9 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </button>
         <button
           onClick={() => onCancelClick(order)}
-          className="px-3 py-2 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors flex-shrink-0"
-          title="Cancel order"
+          className="px-2.5 py-1.5 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 active:bg-red-100 transition-colors flex-shrink-0 flex items-center gap-1"
         >
-          ✕
+          ✕ <span>Cancel</span>
         </button>
       </div>
 
@@ -1039,26 +1036,18 @@ function BillingModal({ bill, onConfirm, onClose }) {
   const [confirming, setConfirming] = useState(false);
   const [cashInput, setCashInput] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
-  const [tipInput, setTipInput]   = useState('');
   // saved values carried into receipt step
   const [paidMode, setPaidMode]   = useState(null);
   const [paidCash, setPaidCash]   = useState(null);
-  const [paidTip, setPaidTip]     = useState(0);
 
-  const counterTip  = parseFloat(tipInput) || 0;
-  const grandTotal  = bill.total + counterTip;
+  const grandTotal  = bill.total;
   const cash        = parseFloat(cashInput) || 0;
   const change      = cash - grandTotal;
   const isValid     = cash >= grandTotal;
   const isCash      = paymentMode === 'cash';
 
-  // Build an enriched bill for printing (tip included in total)
-  const billForPrint = counterTip > 0
-    ? { ...bill, total: grandTotal, tipAmount: (bill.tipAmount || 0) + counterTip }
-    : bill;
-
   const doPrint = (mode, cashVal, isPaid = true) =>
-    printBill({ cafe, bill: billForPrint, cashReceived: cashVal, paymentMode: mode, isPaid });
+    printBill({ cafe, bill, cashReceived: cashVal, paymentMode: mode, isPaid });
 
   const handleMarkPaid = async () => {
     const cashVal = isCash && cashInput ? parseFloat(cashInput) : null;
@@ -1067,14 +1056,13 @@ function BillingModal({ bill, onConfirm, onClose }) {
       await onConfirm(cashVal);
       setPaidMode(paymentMode);
       setPaidCash(cashVal);
-      setPaidTip(counterTip);
       setStep('receipt');
     } finally {
       setConfirming(false);
     }
   };
 
-  const isDirty = cashInput !== '' || tipInput !== '' || paymentMode !== 'cash';
+  const isDirty = cashInput !== '' || paymentMode !== 'cash';
 
   const handleBackdropClick = (e) => {
     if (e.target !== e.currentTarget) return;
@@ -1101,7 +1089,6 @@ function BillingModal({ bill, onConfirm, onClose }) {
   // ── Step 2: Receipt ───────────────────────────────────────────
   if (step === 'receipt') {
     const modeLabel = PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
-    const finalTotal = bill.total + paidTip;
     return overlay(
       <div className="p-5 space-y-4">
         <div className="text-center py-2">
@@ -1109,12 +1096,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <h3 className="font-bold text-gray-900 text-lg">Payment Collected!</h3>
           <p className="text-sm text-gray-500 mt-0.5">
             {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ Table ${bill.table_number}`}
-            {' · '}{c(finalTotal)}
+            {' · '}{c(bill.total)}
           </p>
           <p className="text-xs text-gray-400 mt-1">{modeLabel}</p>
           {paidCash != null && (
             <p className="text-xs text-gray-400">
-              Cash: {c(paidCash)} · Change: {c(paidCash - finalTotal)}
+              Cash: {c(paidCash)} · Change: {c(paidCash - bill.total)}
             </p>
           )}
         </div>
@@ -1134,7 +1121,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
   }
 
   // ── Step 1: Collect ───────────────────────────────────────────
-  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || (bill.deliveryFee > 0) || counterTip > 0;
+  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || (bill.deliveryFee > 0);
 
   return overlay(
     <div className="p-5 space-y-4">
@@ -1187,12 +1174,6 @@ function BillingModal({ bill, onConfirm, onClose }) {
                   <span>{c(bill.deliveryFee)}</span>
                 </div>
               )}
-              {counterTip > 0 && (
-                <div className="flex justify-between text-brand-600 text-xs font-medium">
-                  <span>Tip (counter)</span>
-                  <span>+ {c(counterTip)}</span>
-                </div>
-              )}
             </div>
           </>
         )}
@@ -1201,20 +1182,6 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <span>Total</span>
           <span>{c(grandTotal)}</span>
         </div>
-      </div>
-
-      {/* Tip input */}
-      <div>
-        <label className="label">Add Tip (optional)</label>
-        <input
-          type="number"
-          min="0"
-          step="1"
-          placeholder="0"
-          className="input"
-          value={tipInput}
-          onChange={(e) => setTipInput(e.target.value)}
-        />
       </div>
 
       {/* Payment mode selector */}

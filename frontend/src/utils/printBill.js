@@ -67,9 +67,11 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   const sgst = totalTax / 2;
 
   // Breakdown fields from bill object (populated by BillingModal/openOrderBilling)
+  const subtotalAmt  = parseFloat(bill.subtotal || 0);
   const discountAmt  = parseFloat(bill.discountAmount || 0);
   const tipAmt       = parseFloat(bill.tipAmount || 0);
   const deliveryFee  = parseFloat(bill.deliveryFee || 0);
+  const hasBreakdown = hasGst || discountAmt > 0 || tipAmt > 0 || deliveryFee > 0;
 
   const change      = cashReceived != null ? (parseFloat(cashReceived) - total) : null;
 
@@ -262,11 +264,13 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 
   <!-- ── Totals ── -->
   <table class="totals">
-    ${hasGst ? `
+    ${hasBreakdown && subtotalAmt > 0 ? `
     <tr>
-      <td class="lbl">Taxable Amount</td>
-      <td class="val">${sym}${fmt(taxableAmt)}</td>
+      <td class="lbl">Subtotal</td>
+      <td class="val">${sym}${fmt(subtotalAmt)}</td>
     </tr>
+    ` : ''}
+    ${hasGst ? `
     <tr>
       <td class="lbl indent">CGST @ ${gstRate / 2}%</td>
       <td class="val">${sym}${fmt(cgst)}</td>
