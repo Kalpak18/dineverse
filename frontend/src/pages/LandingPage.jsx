@@ -412,9 +412,9 @@ export default function LandingPage() {
       <section id="pricing" className="py-20 px-6 bg-gray-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
-            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Transparent Pricing</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Start free. Pay only when you're ready.</h2>
-            <p className="text-gray-500 mt-3 text-sm">30-day free trial on every plan. No card needed to start.</p>
+            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Simple, Honest Pricing</span>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">One price. Everything included. No surprises.</h2>
+            <p className="text-gray-500 mt-3 text-sm">30-day free trial on every plan — full access, no card needed.</p>
           </div>
 
           {/* Billing period toggle */}
@@ -445,88 +445,116 @@ export default function LandingPage() {
 
             {/* Free Trial */}
             <div className="bg-white border-2 border-gray-200 rounded-2xl p-6 flex flex-col">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Free Trial</p>
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Free Trial</p>
+              <p className="text-xs text-gray-400 mb-3">Try before you commit</p>
               <p className="text-4xl font-extrabold text-gray-900">₹0</p>
-              <p className="text-sm text-gray-400 mt-1 mb-6">30 days · No card required</p>
+              <p className="text-sm text-gray-400 mt-1 mb-2">30 days · No card required</p>
+              <div className="inline-flex items-center gap-1.5 bg-gray-100 rounded-lg px-2.5 py-1.5 mb-5 self-start">
+                <span className="text-xs text-gray-500 font-medium">☕ Any size café</span>
+              </div>
               <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-600">
                 {[
-                  'Full access to all features',
-                  'Unlimited orders during trial',
-                  'QR menu, KDS, GST billing',
-                  'Analytics & staff accounts',
+                  'Full access to every feature',
+                  'Unlimited orders & menu items',
+                  'QR ordering, KDS, GST billing',
+                  'Analytics, staff accounts, multi-branch',
                 ].map((f) => (
                   <li key={f} className="flex items-center gap-2"><CheckIcon /> {f}</li>
                 ))}
               </ul>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors text-sm">
-                Start Free Trial
+                Start Free — No Card
               </button>
             </div>
 
-            {/* Basic */}
+            {/* Essential */}
             <div className="relative bg-white border-2 border-brand-500 rounded-2xl p-6 flex flex-col shadow-lg">
               <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
                 🔥 MOST POPULAR
               </span>
-              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-3">Essential</p>
+              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-1">Essential</p>
+              <p className="text-xs text-gray-400 mb-3">Everything a small café needs to run smoothly</p>
               <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-4xl font-extrabold text-gray-900">{p.essential.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
               </div>
-              <p className="text-sm text-gray-400 mt-0.5">{p.essential.total[durIdx]} · {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{p.essential.total[durIdx]} billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
               {p.essential.save[durIdx] && (
-                <p className="text-xs font-semibold text-green-600 mt-0.5 mb-4">{p.essential.save[durIdx]}</p>
+                <p className="text-xs font-semibold text-green-600 mt-0.5">{p.essential.save[durIdx]}</p>
               )}
-              {!p.essential.save[durIdx] && <div className="mb-4" />}
-              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-700">
+              <div className="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1.5 mt-3 mb-4 self-start">
+                <span className="text-xs text-brand-700 font-medium">☕ Solo cafés · Food stalls · Small restaurants</span>
+              </div>
+              <ul className="space-y-2.5 mb-2 flex-1 text-sm text-gray-700">
                 {[
-                  'Accept unlimited orders & menu items',
-                  'Real-time kitchen display (KDS)',
-                  'KOT printing for kitchen team',
-                  'GST invoices & thermal bill printing',
-                  'Full analytics — revenue, bestsellers',
-                  'Staff accounts with role-based access',
-                  'Multi-branch management',
-                  'Customer ratings & feedback',
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2"><CheckIcon cls="text-brand-500" /> {f}</li>
+                  ['Customers order themselves via QR', 'Zero waiter back-and-forth, zero wrong orders'],
+                  ['Live kitchen display — orders appear instantly', 'No shouting, no slips, no missed tickets'],
+                  ['GST tax invoice in one tap', 'CGST + SGST auto-split, UPI QR on every bill'],
+                  ['Unlimited orders, items & categories', 'No caps, ever — grow without paying more'],
+                  ['Daily revenue & bestseller reports', 'Know your numbers every single evening'],
+                  ['Staff accounts + role-based access', 'Separate logins for counter, kitchen, manager'],
+                  ['Delivery, takeaway & dine-in modes', 'Handle every order type from one dashboard'],
+                  ['Discount & offer management', 'Run happy-hour deals, combo offers automatically'],
+                ].map(([title, sub]) => (
+                  <li key={title} className="flex items-start gap-2">
+                    <CheckIcon cls="text-brand-500 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <span className="font-medium text-gray-800">{title}</span>
+                      <span className="block text-xs text-gray-400 mt-0.5">{sub}</span>
+                    </span>
+                  </li>
                 ))}
               </ul>
+              <p className="text-xs text-brand-600 font-semibold mt-3 mb-5 bg-brand-50 rounded-lg px-3 py-2">
+                💡 Pays for itself with just 2–3 extra covers a day — less time on billing = more time serving.
+              </p>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm shadow-md shadow-brand-200">
                 Get Essential →
               </button>
             </div>
 
-            {/* Premium */}
+            {/* Pro */}
             <div className="relative bg-white border-2 border-purple-400 rounded-2xl p-6 flex flex-col">
               <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
-                👨‍🍳 KITCHEN TEAMS
+                🚀 FOR GROWING RESTAURANTS
               </span>
-              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3">Kitchen Pro</p>
+              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">Pro</p>
+              <p className="text-xs text-gray-400 mb-3">Built for busy kitchens and multi-staff operations</p>
               <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-4xl font-extrabold text-gray-900">{p.pro.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
               </div>
-              <p className="text-sm text-gray-400 mt-0.5">{p.pro.total[durIdx]} · {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{p.pro.total[durIdx]} billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
               {p.pro.save[durIdx] && (
-                <p className="text-xs font-semibold text-green-600 mt-0.5 mb-4">{p.pro.save[durIdx]}</p>
+                <p className="text-xs font-semibold text-green-600 mt-0.5">{p.pro.save[durIdx]}</p>
               )}
-              {!p.pro.save[durIdx] && <div className="mb-4" />}
-              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-700">
-                <li className="flex items-center gap-2 font-semibold text-gray-500 text-xs">Everything in Essential, plus:</li>
+              <div className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1.5 mt-3 mb-4 self-start">
+                <span className="text-xs text-purple-700 font-medium">🍽️ Medium restaurants · High-volume dine-in · Chains</span>
+              </div>
+              <p className="text-xs font-semibold text-gray-400 mb-3">Everything in Essential, plus:</p>
+              <ul className="space-y-2.5 mb-2 flex-1 text-sm text-gray-700">
                 {[
-                  'Per-item status: Preparing → Ready → Served',
-                  'Course sequencing — starters before mains',
-                  'Cancel individual items, notify customer',
-                  'KOT auto-prints when items are ready',
-                  'Customer sees live item-level progress',
-                  'Full KOT reprint history',
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2"><CheckIcon cls="text-purple-500" /> {f}</li>
+                  ['Item-level kitchen tracking', 'Each dish tracked: Preparing → Ready → Served. Chef owns every ticket.'],
+                  ['Customers see live dish progress', 'Fewer "where's my food?" questions — transparency = happier tables.'],
+                  ['Course sequencing', 'Starters fire first, mains hold until the table is ready. Zero cold plates.'],
+                  ['Cancel individual items mid-order', 'Remove a dish, customer gets notified instantly — no awkward conversations.'],
+                  ['Advanced KDS with category filters', 'Separate hot, cold, beverage queues. Each station sees only their work.'],
+                  ['Full KOT reprint history', 'Reprint any ticket from any past order. Accountability end to end.'],
+                ].map(([title, sub]) => (
+                  <li key={title} className="flex items-start gap-2">
+                    <CheckIcon cls="text-purple-500 mt-0.5 flex-shrink-0" />
+                    <span>
+                      <span className="font-medium text-gray-800">{title}</span>
+                      <span className="block text-xs text-gray-400 mt-0.5">{sub}</span>
+                    </span>
+                  </li>
                 ))}
               </ul>
+              <p className="text-xs text-purple-700 font-semibold mt-3 mb-5 bg-purple-50 rounded-lg px-3 py-2">
+                💡 At 50+ covers/day, one avoided remake or wrong order covers the monthly cost.
+              </p>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors text-sm">
-                Get Kitchen Pro →
+                Get Pro →
               </button>
             </div>
 
@@ -535,32 +563,38 @@ export default function LandingPage() {
 
           {/* Quick compare */}
           <div className="mt-10 bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100">
-              <p className="font-semibold text-gray-900 text-sm">Quick comparison</p>
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <p className="font-semibold text-gray-900 text-sm">Full feature comparison</p>
+              <span className="text-xs text-gray-400">All plans include 30-day free trial</span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50">
                     <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase">Feature</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Free Trial</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Trial</th>
                     <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Essential</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Kitchen Pro</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Pro</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {[
-                    { label: 'Unlimited orders',             trial: true,  ess: true,  pro: true  },
-                    { label: 'QR menu & ordering',           trial: true,  ess: true,  pro: true  },
-                    { label: 'Kitchen display (KDS)',        trial: true,  ess: true,  pro: true  },
-                    { label: 'KOT printing',                 trial: true,  ess: true,  pro: true  },
-                    { label: 'GST invoices & billing',       trial: true,  ess: true,  pro: true  },
-                    { label: 'Analytics & reports',          trial: true,  ess: true,  pro: true  },
-                    { label: 'Staff accounts',               trial: true,  ess: true,  pro: true  },
-                    { label: 'Multi-branch',                 trial: true,  ess: true,  pro: true  },
-                    { label: 'Per-item kitchen tracking',    trial: false, ess: false, pro: true  },
-                    { label: 'Course sequencing',            trial: false, ess: false, pro: true  },
-                    { label: 'Customer live item status',    trial: false, ess: false, pro: true  },
+                    { label: 'QR menu & self-ordering',             trial: true,  ess: true,  pro: true  },
+                    { label: 'Unlimited orders & menu items',       trial: true,  ess: true,  pro: true  },
+                    { label: 'Live kitchen display (KDS)',          trial: true,  ess: true,  pro: true  },
+                    { label: 'GST tax invoices & thermal printing', trial: true,  ess: true,  pro: true  },
+                    { label: 'Delivery, takeaway & dine-in',        trial: true,  ess: true,  pro: true  },
+                    { label: 'Revenue analytics & reports',         trial: true,  ess: true,  pro: true  },
+                    { label: 'Staff accounts & role access',        trial: true,  ess: true,  pro: true  },
+                    { label: 'Multi-branch management',             trial: true,  ess: true,  pro: true  },
+                    { label: 'Offers & discount management',        trial: true,  ess: true,  pro: true  },
+                    { label: 'KOT printing per ticket',             trial: true,  ess: true,  pro: true  },
+                    { label: 'Per-item status tracking in kitchen', trial: false, ess: false, pro: true  },
+                    { label: 'Customer sees live dish progress',    trial: false, ess: false, pro: true  },
+                    { label: 'Course sequencing (starters → mains)',trial: false, ess: false, pro: true  },
+                    { label: 'Cancel items mid-order & notify',     trial: false, ess: false, pro: true  },
+                    { label: 'Category-filtered KDS stations',      trial: false, ess: false, pro: true  },
+                    { label: 'Full KOT reprint history',            trial: false, ess: false, pro: true  },
                   ].map((row) => (
                     <tr key={row.label} className="hover:bg-gray-50">
                       <td className="px-6 py-2.5 text-gray-700">{row.label}</td>
@@ -576,6 +610,20 @@ export default function LandingPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* FAQ-style objection busters */}
+          <div className="mt-10 grid sm:grid-cols-3 gap-4">
+            {[
+              { q: 'Do I need any hardware?', a: 'No. Works on any smartphone, tablet, or laptop. Your kitchen display runs on a cheap Android tablet or an old phone propped up in the kitchen.' },
+              { q: 'What if I need to cancel mid-trial?', a: 'Just stop — no card was charged, nothing to cancel. If you upgrade and later want to stop, we refund the unused months, no questions asked.' },
+              { q: 'Can I switch plans later?', a: 'Yes, anytime. Upgrade from Essential to Pro in one click. Downgrade too — your data stays safe regardless.' },
+            ].map(({ q, a }) => (
+              <div key={q} className="bg-white border border-gray-200 rounded-xl p-4">
+                <p className="text-sm font-semibold text-gray-800 mb-1.5">{q}</p>
+                <p className="text-xs text-gray-500 leading-relaxed">{a}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
