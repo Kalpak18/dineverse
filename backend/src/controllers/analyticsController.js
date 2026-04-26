@@ -36,7 +36,9 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
          COUNT(*)                                          AS total_orders,
          COUNT(*) FILTER (WHERE status = 'cancelled')     AS cancelled_orders,
          COUNT(*) FILTER (WHERE status = 'paid')          AS paid_orders,
-         COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue
+         COALESCE(SUM(final_amount)  FILTER (WHERE status = 'paid'), 0) AS total_revenue,
+         COALESCE(SUM(tip_amount)    FILTER (WHERE status = 'paid'), 0) AS total_tips,
+         COALESCE(SUM(delivery_fee)  FILTER (WHERE status = 'paid'), 0) AS total_delivery_fees
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) BETWEEN $2 AND $3`,
       [req.cafeId, startDate, endDate]
@@ -74,7 +76,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     db.query(
       `SELECT DATE(created_at) AS date,
               COUNT(*) FILTER (WHERE status != 'cancelled') AS orders,
-              COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS revenue
+              COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0) AS revenue
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) BETWEEN $2 AND $3
        GROUP BY DATE(created_at)
@@ -111,20 +113,26 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  const totalRevenue  = parseFloat(summaryRes.rows[0].total_revenue);
-  const totalExpenses = parseFloat(expensesRes.rows[0].total_expenses);
+  const totalRevenue     = parseFloat(summaryRes.rows[0].total_revenue);
+  const totalTips        = parseFloat(summaryRes.rows[0].total_tips);
+  const totalDelivery    = parseFloat(summaryRes.rows[0].total_delivery_fees);
+  const totalExpenses    = parseFloat(expensesRes.rows[0].total_expenses);
+  const foodRevenue      = parseFloat((totalRevenue - totalTips - totalDelivery).toFixed(2));
 
   ok(res, {
     period,
     startDate,
     endDate,
     summary: {
-      total_orders:     parseInt(summaryRes.rows[0].total_orders),
-      cancelled_orders: parseInt(summaryRes.rows[0].cancelled_orders),
-      paid_orders:      parseInt(summaryRes.rows[0].paid_orders),
-      total_revenue:    totalRevenue,
-      total_expenses:   totalExpenses,
-      profit:           parseFloat((totalRevenue - totalExpenses).toFixed(2)),
+      total_orders:        parseInt(summaryRes.rows[0].total_orders),
+      cancelled_orders:    parseInt(summaryRes.rows[0].cancelled_orders),
+      paid_orders:         parseInt(summaryRes.rows[0].paid_orders),
+      total_revenue:       totalRevenue,
+      food_revenue:        foodRevenue,
+      total_tips:          totalTips,
+      total_delivery_fees: totalDelivery,
+      total_expenses:      totalExpenses,
+      profit:              parseFloat((totalRevenue - totalExpenses).toFixed(2)),
     },
     topItems:            topItemsRes.rows,
     dailyBreakdown:      dailyRes.rows,

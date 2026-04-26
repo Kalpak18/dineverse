@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist } from '../../services/api';
+import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist, getWaitlistPosition } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
@@ -488,9 +488,14 @@ export default function CafeEntry() {
           onBooked={(reservation) => {
             upsertReservation(slug, reservation);
             setMyBookings(loadReservations(slug));
-            // Immediately track this reservation for live updates
-            if (socketRef.current) {
-              socketRef.current.emit('track_reservation', reservation.id);
+            // Track this reservation — emit now if connected, otherwise queue via connect handler
+            const sock = socketRef.current;
+            if (sock) {
+              if (sock.connected) {
+                sock.emit('track_reservation', reservation.id);
+              } else {
+                sock.once('connect', () => sock.emit('track_reservation', reservation.id));
+              }
             }
           }}
         />
@@ -705,7 +710,7 @@ function ReservationModal({ slug, cafeName, onClose, onBooked }) {
 function WaitlistModal({ slug, cafeName, onClose }) {
   const [form, setForm] = useState({ customer_name: '', customer_phone: '', party_size: 2, notes: '' });
   const [saving, setSaving] = useState(false);
-  const [joined, setJoined] = useState(null); // { position }
+  const [joined, setJoined] = useState(null); // { id, position, ... }
   const [called, setCalled] = useState(false); // true when café seats this customer
   const socketRef = useRef(null);
 
@@ -721,6 +726,20 @@ function WaitlistModal({ slug, cafeName, onClose }) {
     });
     return () => socket.disconnect();
   }, [joined?.id]);
+
+  // Poll position every 60s while waiting
+  useEffect(() => {
+    if (!joined?.id || called) return;
+    const poll = async () => {
+      try {
+        const { data } = await getWaitlistPosition(slug, joined.id);
+        if (data.position != null) setJoined((prev) => ({ ...prev, position: data.position }));
+        if (data.status === 'seated') setCalled(true);
+      } catch { /* ignore — socket is the primary channel */ }
+    };
+    const timer = setInterval(poll, 60000);
+    return () => clearInterval(timer);
+  }, [joined?.id, called, slug]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

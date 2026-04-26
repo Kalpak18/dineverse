@@ -308,6 +308,18 @@ export default function CartPage() {
           {deliveryEstMins > 0 && (
             <p className="text-xs text-gray-500">Estimated delivery: ~{deliveryEstMins} min</p>
           )}
+          {deliveryMinOrder > 0 && (
+            <div className={`rounded-xl px-3 py-2.5 text-xs font-medium flex items-center justify-between ${
+              total >= deliveryMinOrder
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-amber-50 border border-amber-200 text-amber-700'
+            }`}>
+              <span>Min. order for delivery: {c(deliveryMinOrder)}</span>
+              {total < deliveryMinOrder
+                ? <span className="font-bold">Add {c(deliveryMinOrder - total)} more</span>
+                : <span>✓ Met</span>}
+            </div>
+          )}
           <input
             className="input"
             placeholder="Street address *"

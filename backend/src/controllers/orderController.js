@@ -479,7 +479,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     db.query(
       `SELECT
          COUNT(*) FILTER (WHERE status != 'cancelled') AS total_orders,
-         COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue
+         COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) = CURRENT_DATE`,
       [req.cafeId]

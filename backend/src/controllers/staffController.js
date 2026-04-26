@@ -24,7 +24,9 @@ exports.createStaff = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
-  const { name, email, password } = req.body;
+  const { name, email, password, role } = req.body;
+  const VALID_ROLES = ['cashier', 'kitchen', 'manager'];
+  const staffRole = VALID_ROLES.includes(role) ? role : 'cashier';
 
   const existing = await db.query(
     'SELECT id FROM cafe_staff WHERE email = $1 AND cafe_id = $2',
@@ -36,10 +38,10 @@ exports.createStaff = asyncHandler(async (req, res) => {
 
   const password_hash = await bcrypt.hash(password, 12);
   const result = await db.query(
-    `INSERT INTO cafe_staff (cafe_id, name, email, password_hash)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, name, email, is_active, created_at`,
-    [req.cafeId, name, email, password_hash]
+    `INSERT INTO cafe_staff (cafe_id, name, email, password_hash, role)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, name, email, role, is_active, created_at`,
+    [req.cafeId, name, email, password_hash, staffRole]
   );
   ok(res, { staff: result.rows[0] }, 'Staff account created', 201);
 });

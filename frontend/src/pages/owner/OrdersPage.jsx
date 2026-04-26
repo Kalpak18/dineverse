@@ -102,28 +102,36 @@ export default function OrdersPage() {
     }
   );
 
-  // Opens BillingModal for a single active-order card (print / quick mark-paid)
+  // Opens BillingModal for a single active-order card — stores orderId so bill stays live
   const openOrderBilling = useCallback((order) => {
     setBillingModal({
-      bill: {
-        isTakeaway: order.order_type === 'takeaway',
-        customerName: order.customer_name,
-        orderNumber: order.daily_order_number,
-        table_number: order.table_number,
-        subtotal:       parseFloat(order.total_amount) || 0,
-        taxAmount:      parseFloat(order.tax_amount)   || 0,
-        taxRate:        parseInt(order.tax_rate)        || 0,
-        discountAmount: parseFloat(order.discount_amount) || 0,
-        tipAmount:      parseFloat(order.tip_amount)   || 0,
-        total:          parseFloat(order.final_amount  || order.total_amount) || 0,
-        aggregatedItems: (order.items || []).map((i) => ({
-          name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
-        })),
-        orders: [order],
-      },
+      orderId: order.id,
       onConfirm: (cashReceived) => handleStatusUpdate(order.id, 'paid', cashReceived),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Compute a fresh bill snapshot from current orders state for single-order billing
+  const liveSingleBill = useMemo(() => {
+    if (!billingModal?.orderId) return null;
+    const order = orders.find((o) => o.id === billingModal.orderId);
+    if (!order) return null;
+    return {
+      isTakeaway: order.order_type === 'takeaway',
+      customerName: order.customer_name,
+      orderNumber: order.daily_order_number,
+      table_number: order.table_number,
+      subtotal:       parseFloat(order.total_amount)    || 0,
+      taxAmount:      parseFloat(order.tax_amount)      || 0,
+      taxRate:        parseInt(order.tax_rate)           || 0,
+      discountAmount: parseFloat(order.discount_amount) || 0,
+      tipAmount:      parseFloat(order.tip_amount)      || 0,
+      total:          parseFloat(order.final_amount || order.total_amount) || 0,
+      aggregatedItems: (order.items || []).map((i) => ({
+        name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+      })),
+      orders: [order],
+    };
+  }, [billingModal?.orderId, orders]);
 
   const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null) => {
     try {
@@ -415,12 +423,9 @@ export default function OrdersPage() {
                       try {
                         const { data } = await getOwnerMessages(o.id);
                         setChatMessages((prev) => {
-                          // Merge HTTP history with any messages already received via socket
-                          const socketMsgs = prev[o.id] || [];
-                          const merged = [...(data.messages || [])];
-                          socketMsgs.forEach((sm) => {
-                            if (!merged.find((m) => m.id === sm.id)) merged.push(sm);
-                          });
+                          // Merge HTTP history with socket messages, dedup by id
+                          const all = [...(data.messages || []), ...(prev[o.id] || [])];
+                          const merged = [...new Map(all.map((m) => [m.id, m])).values()];
                           merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                           return { ...prev, [o.id]: merged };
                         });
@@ -461,9 +466,9 @@ export default function OrdersPage() {
       )}
 
       {/* ── Billing Modal (shared: Bills tab + OrderCard print) ── */}
-      {billingModal && (
+      {billingModal && (billingModal.bill || liveSingleBill) && (
         <BillingModal
-          bill={billingModal.bill}
+          bill={billingModal.bill || liveSingleBill}
           onConfirm={billingModal.onConfirm}
           onClose={() => setBillingModal(null)}
         />

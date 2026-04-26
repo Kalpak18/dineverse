@@ -2,11 +2,12 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const {
-  joinWaitlist, getWaitlist, updateWaitlist, deleteWaitlist,
+  joinWaitlist, getWaitlistPosition, getWaitlist, updateWaitlist, deleteWaitlist,
 } = require('../controllers/waitlistController');
 
-// Public: customer joins waitlist for a café
+// Public: customer joins or checks their position in a waitlist
 router.post('/cafe/:slug/waitlist', joinWaitlist);
+router.get('/cafe/:slug/waitlist/:entryId/position', getWaitlistPosition);
 
 // Owner: manage waitlist
 router.get('/',        authenticate, requireOwner, getWaitlist);

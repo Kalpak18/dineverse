@@ -201,8 +201,9 @@ export const getCustomers      = (params) => api.get('/customers', { params });
 export const getCustomerOrders = (params) => api.get('/customers/orders', { params });
 
 // ─── Waitlist ─────────────────────────────────────────────────
-export const joinWaitlist     = (slug, data) => api.post(`/waitlist/cafe/${slug}/waitlist`, data);
-export const getWaitlist      = ()           => api.get('/waitlist');
+export const joinWaitlist          = (slug, data)     => api.post(`/waitlist/cafe/${slug}/waitlist`, data);
+export const getWaitlistPosition   = (slug, entryId)  => api.get(`/waitlist/cafe/${slug}/waitlist/${entryId}/position`);
+export const getWaitlist           = ()               => api.get('/waitlist');
 export const updateWaitlistEntry = (id, data) => api.patch(`/waitlist/${id}`, data);
 export const deleteWaitlistEntry = (id)      => api.delete(`/waitlist/${id}`);
 

@@ -42,6 +42,37 @@ exports.joinWaitlist = asyncHandler(async (req, res) => {
   ok(res, { entry: { ...entry, position }, queue_length: position }, 'Added to waitlist');
 });
 
+// Public: customer checks their current position
+exports.getWaitlistPosition = asyncHandler(async (req, res) => {
+  const { slug, entryId } = req.params;
+
+  const cafeRes = await db.query('SELECT id FROM cafes WHERE slug = $1 AND is_active = true', [slug]);
+  if (!cafeRes.rows.length) return fail(res, 'Café not found', 404);
+  const cafeId = cafeRes.rows[0].id;
+
+  // Get the entry's own created_at and status
+  const entryRes = await db.query(
+    'SELECT id, status, created_at FROM waitlist WHERE id = $1 AND cafe_id = $2',
+    [entryId, cafeId]
+  );
+  if (!entryRes.rows.length) return fail(res, 'Entry not found', 404);
+  const entry = entryRes.rows[0];
+
+  if (entry.status !== 'waiting') {
+    return ok(res, { position: null, status: entry.status });
+  }
+
+  // Count how many 'waiting' entries were created before this one (they are ahead in line)
+  const posRes = await db.query(
+    `SELECT COUNT(*) AS count FROM waitlist
+     WHERE cafe_id = $1 AND status = 'waiting' AND created_at <= $2`,
+    [cafeId, entry.created_at]
+  );
+  const position = parseInt(posRes.rows[0].count);
+
+  ok(res, { position, status: 'waiting' });
+});
+
 // Owner: list waitlist (active entries first)
 exports.getWaitlist = asyncHandler(async (req, res) => {
   const result = await db.query(

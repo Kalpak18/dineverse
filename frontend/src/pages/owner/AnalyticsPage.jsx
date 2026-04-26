@@ -244,7 +244,11 @@ export default function AnalyticsPage() {
               value={c(data.summary.total_revenue)}
               icon="💰"
               color="green"
-              sub="From paid orders only"
+              sub={[
+                `Food: ${c(data.summary.food_revenue ?? data.summary.total_revenue)}`,
+                data.summary.total_tips > 0 ? `Tips: ${c(data.summary.total_tips)}` : null,
+                data.summary.total_delivery_fees > 0 ? `Delivery: ${c(data.summary.total_delivery_fees)}` : null,
+              ].filter(Boolean).join(' · ') || 'From paid orders only'}
             />
             <SummaryCard
               label="Expenses"
