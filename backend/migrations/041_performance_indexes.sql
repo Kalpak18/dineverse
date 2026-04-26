@@ -38,11 +38,11 @@ CREATE INDEX IF NOT EXISTS idx_notifications_cafe_unread
 
 -- ── Reservations ────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_reservations_cafe_status
-  ON reservations(cafe_id, status, reserved_date DESC);
+  ON reservations(cafe_id, status, reserved_at DESC);
 
 -- ── Waitlist ─────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_waitlist_cafe_status
-  ON waitlist_entries(cafe_id, status, created_at ASC);
+  ON waitlist(cafe_id, status, created_at ASC);
 
 -- ── OTP codes cleanup ───────────────────────────────────────────────────────
 -- Periodic cleanup query: DELETE WHERE expires_at < NOW()

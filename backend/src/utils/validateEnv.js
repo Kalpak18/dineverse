@@ -35,4 +35,26 @@ module.exports = function validateEnv() {
   if (!process.env.BREVO_API_KEY) {
     logger.warn('[STARTUP] BREVO_API_KEY not set — email OTP verification will fail');
   }
+
+  // S3: required for menu image uploads and logo/cover uploads
+  const hasS3 = process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && process.env.S3_BUCKET_NAME;
+  if (!hasS3) {
+    logger.warn('[STARTUP] AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / S3_BUCKET_NAME not set — image uploads will fail');
+  }
+
+  // Twilio SMS: optional, used for SMS notifications
+  if (process.env.TWILIO_ACCOUNT_SID && !process.env.TWILIO_AUTH_TOKEN) {
+    logger.warn('[STARTUP] TWILIO_ACCOUNT_SID set but TWILIO_AUTH_TOKEN missing — SMS will fail');
+  }
+
+  // CLIENT_URL sanity check — must not contain a trailing slash or be localhost in production
+  const clientUrl = process.env.CLIENT_URL || '';
+  if (process.env.NODE_ENV === 'production') {
+    if (clientUrl.includes('localhost')) {
+      logger.warn('[STARTUP] CLIENT_URL contains "localhost" in production — CORS and email links will be wrong');
+    }
+    if (clientUrl.endsWith('/')) {
+      logger.warn('[STARTUP] CLIENT_URL has a trailing slash — email links may break. Remove the trailing slash.');
+    }
+  }
 };
