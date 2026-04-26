@@ -278,7 +278,7 @@ export default function DashboardPage() {
                       <span className="text-gray-400 ml-2">{order.customer_name} · {order.table_number}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{c(order.total_amount)}</span>
+                      <span className="font-medium">{c(order.final_amount || order.total_amount)}</span>
                       <span className={`badge ${STATUS_CONFIG[order.status]?.color}`}>{order.status}</span>
                     </div>
                   </div>

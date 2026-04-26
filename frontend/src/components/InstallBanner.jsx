@@ -36,7 +36,7 @@ export default function InstallBanner() {
   // Shared card — positioned top-right on desktop, bottom-right on mobile
   // bottom-20 on mobile keeps it above floating cart/FAB buttons (which sit at bottom-4)
   return (
-    <div className="fixed z-50 bottom-20 right-3 md:bottom-auto md:top-4 md:right-4 w-72 max-w-[calc(100vw-1.5rem)]">
+    <div className="fixed z-50 bottom-20 right-3 md:bottom-6 md:right-6 w-72 max-w-[calc(100vw-1.5rem)]">
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 flex items-center gap-3">
         <img src="/icons/header_logo_round_192x192.png" alt="DineVerse" className="w-10 h-10 rounded-xl shrink-0" />
         <div className="flex-1 min-w-0">

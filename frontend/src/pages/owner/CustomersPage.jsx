@@ -63,7 +63,7 @@ function CustomerDrawer({ customer, onClose }) {
   }, [customer.customer_phone, customer.customer_name]);
 
   const avgOrder = orders.length > 0
-    ? orders.reduce((s, o) => s + parseFloat(o.total_amount || 0), 0) / orders.length
+    ? orders.reduce((s, o) => s + parseFloat(o.final_amount || o.total_amount || 0), 0) / orders.length
     : 0;
 
   const preferred = TYPE_BADGE[customer.preferred_type];
@@ -161,7 +161,7 @@ function CustomerDrawer({ customer, onClose }) {
                     day: 'numeric', month: 'short', year: 'numeric',
                   })}
                 </p>
-                <p className="text-sm font-bold text-gray-900">{c(order.total_amount)}</p>
+                <p className="text-sm font-bold text-gray-900">{c(order.final_amount || order.total_amount)}</p>
               </div>
               {order.items?.length > 0 && (
                 <p className="text-xs text-gray-400 mt-1.5 truncate">

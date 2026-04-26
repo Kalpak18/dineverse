@@ -314,7 +314,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     db.query(`
       SELECT c.id, c.name, c.email, c.plan_type, c.plan_expiry_date,
              COUNT(o.id) AS total_orders,
-             COALESCE(SUM(o.total_amount) FILTER (WHERE o.status='paid'), 0) AS total_revenue
+             COALESCE(SUM(o.final_amount) FILTER (WHERE o.status='paid'), 0) AS total_revenue
       FROM cafes c
       LEFT JOIN orders o ON o.cafe_id = c.id
       GROUP BY c.id, c.name, c.email, c.plan_type, c.plan_expiry_date
@@ -490,9 +490,9 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
     // Revenue: total + breakdown by status
     db.query(
       `SELECT
-        COALESCE(SUM(total_amount), 0) AS total_revenue,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'paid'), 0) AS revenue_paid,
-        COALESCE(SUM(total_amount) FILTER (WHERE status = 'pending'), 0) AS revenue_pending,
+        COALESCE(SUM(final_amount), 0) AS total_revenue,
+        COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0) AS revenue_paid,
+        COALESCE(SUM(final_amount) FILTER (WHERE status = 'pending'), 0) AS revenue_pending,
         COUNT(*) FILTER (WHERE status = 'paid') AS completed_orders
        FROM orders WHERE cafe_id = $1`,
       [id]

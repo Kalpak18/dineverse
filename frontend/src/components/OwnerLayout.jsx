@@ -1,7 +1,7 @@
 import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
-import { getOutlets, switchOutlet } from '../services/api';
+import { getOutlets, switchOutlet, toggleCafeOpen } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
 import NotificationCenter from './NotificationCenter';
@@ -61,11 +61,13 @@ function OwnerLayoutInner() {
   const { cafe, role, staffRole, staffInfo, logout, updateCafe } = useAuth();
   const navigate  = useNavigate();
   const location  = useLocation();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [outlets, setOutlets]       = useState([]);
-  const [outletOpen, setOutletOpen] = useState(false);
-  const [switching, setSwitching]   = useState(false);
-  const [collapsed, setCollapsed]   = useState(
+  const [mobileOpen, setMobileOpen]   = useState(false);
+  const [outlets, setOutlets]         = useState([]);
+  const [outletOpen, setOutletOpen]   = useState(false);
+  const [switching, setSwitching]     = useState(false);
+  const [isOpen, setIsOpen]           = useState(cafe?.is_open ?? true);
+  const [togglingOpen, setTogglingOpen] = useState(false);
+  const [collapsed, setCollapsed]     = useState(
     () => localStorage.getItem('dv_sidebar_collapsed') === 'true'
   );
 
@@ -99,6 +101,19 @@ function OwnerLayoutInner() {
     } finally {
       setSwitching(false);
       setOutletOpen(false);
+    }
+  };
+
+  const handleToggleOpen = async () => {
+    setTogglingOpen(true);
+    try {
+      const res = await toggleCafeOpen();
+      setIsOpen(res.data.is_open);
+      toast.success(res.data.is_open ? 'Café is now Open 🟢' : 'Café is now Closed 🔴');
+    } catch {
+      toast.error('Failed to update status');
+    } finally {
+      setTogglingOpen(false);
     }
   };
 
@@ -153,16 +168,29 @@ function OwnerLayoutInner() {
         {/* Brand + profile header */}
         <div className={`pt-4 pb-3 border-b border-gray-100 flex-shrink-0 ${collapsed ? 'px-2' : 'px-4 space-y-3'}`}>
           {collapsed ? (
-            /* Collapsed: show avatar/icon only */
+            /* Collapsed: show avatar/icon only + open/close dot */
             <div className="flex flex-col items-center gap-2">
               {isStaff ? (
                 <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-600">
                   <NavIcon name={effectiveRole === 'kitchen' ? 'chef' : effectiveRole === 'cashier' ? 'cashier' : 'manager'} className="w-5 h-5" />
                 </div>
               ) : (
-                <NavLink to="/owner/profile" onClick={() => setMobileOpen(false)} title={cafe?.name}>
-                  <Avatar size="sm" />
-                </NavLink>
+                <div className="relative">
+                  <NavLink to="/owner/profile" onClick={() => setMobileOpen(false)} title={cafe?.name}>
+                    <Avatar size="sm" />
+                  </NavLink>
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+                </div>
+              )}
+              {!isStaff && (
+                <button
+                  onClick={handleToggleOpen}
+                  disabled={togglingOpen}
+                  title={isOpen ? 'Café is Open — click to close' : 'Café is Closed — click to open'}
+                  className={`w-8 h-5 rounded-full relative transition-colors flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`}
+                >
+                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isOpen ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                </button>
               )}
             </div>
           ) : (
@@ -198,6 +226,28 @@ function OwnerLayoutInner() {
                   </div>
                   <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
                 </NavLink>
+              )}
+
+              {/* Open/Closed toggle — owner only */}
+              {!isStaff && (
+                <button
+                  onClick={handleToggleOpen}
+                  disabled={togglingOpen}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
+                    isOpen
+                      ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
+                      : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+                    <span>{togglingOpen ? 'Updating…' : isOpen ? 'Café is Open' : 'Café is Closed'}</span>
+                  </div>
+                  {/* Toggle pill */}
+                  <div className={`relative w-8 h-4.5 rounded-full transition-colors flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`} style={{ height: '18px', width: '32px' }}>
+                    <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </div>
+                </button>
               )}
 
               {/* Outlet dropdown (owner only) */}
@@ -380,6 +430,19 @@ function OwnerLayoutInner() {
             )}
           </div>
           <div className="flex items-center gap-1 relative">
+            {!isStaff && (
+              <button
+                onClick={handleToggleOpen}
+                disabled={togglingOpen}
+                title={isOpen ? 'Open — tap to close' : 'Closed — tap to open'}
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                  isOpen ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+              >
+                <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 align-middle ${isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
+                {isOpen ? 'Open' : 'Closed'}
+              </button>
+            )}
             {!isStaff && <NotificationCenter cafeId={cafe?.id} />}
             {!isStaff && (
               <NavLink to="/owner/profile" className="p-2 rounded-lg hover:bg-gray-100">

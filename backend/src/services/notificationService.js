@@ -76,7 +76,7 @@ async function sendAlertEmail(to, title, body) {
       <div style="border:1px solid #fde8d8;border-top:none;border-radius:0 0 12px 12px;padding:20px 24px">
         <h3 style="color:#0f1535;margin:0 0 8px">${escHtml(title)}</h3>
         ${body ? `<p style="color:#555;margin:0 0 16px;font-size:14px">${escHtml(body)}</p>` : ''}
-        <a href="${process.env.CLIENT_URL || 'https://dine-verse.com'}/owner/orders"
+        <a href="${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/orders"
            style="display:inline-block;background:#f97316;color:#fff;padding:10px 24px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">
           Open Dashboard →
         </a>

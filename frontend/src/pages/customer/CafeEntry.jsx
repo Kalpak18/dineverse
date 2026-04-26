@@ -19,11 +19,20 @@ const RESERVATION_STATUS = {
   no_show:   { label: 'Expired / No-show',    color: 'bg-gray-100 text-gray-500',    icon: '🕐' },
 };
 
-function nameStyleClass(style) {
-  if (style === 'bold')        return 'font-bold';
-  if (style === 'italic')      return 'italic';
-  if (style === 'bold-italic') return 'font-bold italic';
-  return '';
+function parseNameStyle(raw) {
+  if (!raw || raw === 'normal') return {};
+  if (raw === 'bold')        return { fontWeight: 'bold' };
+  if (raw === 'italic')      return { fontStyle: 'italic' };
+  if (raw === 'bold-italic') return { fontWeight: 'bold', fontStyle: 'italic' };
+  try {
+    const obj = JSON.parse(raw);
+    return {
+      ...(obj.fontFamily && obj.fontFamily !== 'inherit' ? { fontFamily: obj.fontFamily } : {}),
+      ...(obj.fontSize ? { fontSize: obj.fontSize + 'px' } : {}),
+      ...(obj.bold  ? { fontWeight: 'bold' }   : {}),
+      ...(obj.italic ? { fontStyle: 'italic' } : {}),
+    };
+  } catch { return {}; }
 }
 
 // Returns today as YYYY-MM-DD and current time as HH:MM (local)
@@ -201,7 +210,7 @@ export default function CafeEntry() {
     );
   }
 
-  const nameClass = `text-2xl text-gray-900 ${nameStyleClass(cafe.name_style)}`;
+  const nameStyleCss = parseNameStyle(cafe.name_style);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
@@ -274,7 +283,7 @@ export default function CafeEntry() {
               <span className="text-3xl font-bold text-white">{cafe.name.charAt(0)}</span>
             </div>
           )}
-          <h1 className={nameClass}>{cafe.name}</h1>
+          <h1 className="text-2xl text-gray-900" style={nameStyleCss}>{cafe.name}</h1>
           {cafe.description && <p className="text-gray-500 text-sm mt-1">{cafe.description}</p>}
           {cafe.delivery_enabled && (
             <div className="inline-flex items-center gap-1.5 mt-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium px-3 py-1 rounded-full">

@@ -155,7 +155,7 @@ exports.getInventory = asyncHandler(async (req, res) => {
             c.name AS category
      FROM menu_items mi
      LEFT JOIN categories c ON mi.category_id = c.id
-     WHERE mi.cafe_id = $1 AND mi.is_deleted = false
+     WHERE mi.cafe_id = $1
      ORDER BY mi.track_stock DESC, mi.stock_quantity ASC NULLS LAST, mi.name ASC`,
     [req.cafeId]
   );

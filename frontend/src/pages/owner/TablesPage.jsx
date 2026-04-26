@@ -237,12 +237,14 @@ export default function TablesPage() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 flex-1">
-                  <h3 className="font-semibold text-gray-900">
-                    {area.name}
-                    {!area._unassigned && !area.is_active && (
-                      <span className="ml-2 text-xs text-gray-400 font-normal">(inactive)</span>
-                    )}
-                  </h3>
+                  <h3 className="font-semibold text-gray-900">{area.name}</h3>
+                  {!area._unassigned && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                      area.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {area.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400">{tableList.length} table{tableList.length !== 1 ? 's' : ''}</span>
                 </div>
               )}
@@ -257,9 +259,14 @@ export default function TablesPage() {
                   </button>
                   <button
                     onClick={() => handleToggleArea(area)}
-                    className={`text-xs px-2 py-1 rounded-lg ${area.is_active ? 'text-amber-600 hover:bg-amber-50' : 'text-green-600 hover:bg-green-50'}`}
+                    title={area.is_active ? 'Deactivate area' : 'Activate area'}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${
+                      area.is_active ? 'bg-green-500' : 'bg-gray-300'
+                    }`}
                   >
-                    {area.is_active ? 'Deactivate' : 'Activate'}
+                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                      area.is_active ? 'translate-x-[18px]' : 'translate-x-[2px]'
+                    }`} />
                   </button>
                   <button
                     onClick={() => handleDeleteArea(area.id)}
@@ -279,34 +286,46 @@ export default function TablesPage() {
                 {tableList.map((table) => (
                   <div
                     key={table.id}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl border text-sm ${
+                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl border text-sm ${
                       table.is_active
                         ? 'bg-white border-gray-200'
-                        : 'bg-gray-50 border-gray-100 text-gray-400'
+                        : 'bg-gray-50 border-gray-200 opacity-60'
                     }`}
                   >
-                    <span className="font-medium truncate">{table.label}</span>
-                    <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-medium truncate">{table.label}</span>
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                        table.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                      }`}>
+                        {table.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2 flex-shrink-0">
                       <button
                         onClick={() => setQrTable(table)}
                         title="Show QR code"
-                        className="text-xs text-gray-400 hover:text-brand-500"
+                        className="text-gray-400 hover:text-brand-500 transition-colors"
                       >
-                        ▦
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 3h.01M5 8H3m2 0V6m0 2v2M5 20H3m2 0v-2m0 2h2M12 8h.01M5 12h.01" /></svg>
                       </button>
+                      {/* Toggle switch */}
                       <button
                         onClick={() => handleToggleTable(table)}
-                        title={table.is_active ? 'Deactivate' : 'Activate'}
-                        className="text-xs text-gray-400 hover:text-amber-500"
+                        title={table.is_active ? 'Click to deactivate' : 'Click to activate'}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 ${
+                          table.is_active ? 'bg-green-500' : 'bg-gray-300'
+                        }`}
                       >
-                        {table.is_active ? '●' : '○'}
+                        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                          table.is_active ? 'translate-x-[18px]' : 'translate-x-[2px]'
+                        }`} />
                       </button>
                       <button
                         onClick={() => handleDeleteTable(table.id, area._unassigned ? null : area.id)}
                         title="Delete"
-                        className="text-xs text-gray-300 hover:text-red-500"
+                        className="text-gray-300 hover:text-red-500 transition-colors"
                       >
-                        ✕
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                       </button>
                     </div>
                   </div>

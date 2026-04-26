@@ -419,11 +419,21 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
 
         {/* Price breakdown */}
         <div className="pt-2 border-t border-gray-100 space-y-1 text-sm">
+          <div className="flex justify-between text-gray-500">
+            <span>Order subtotal</span>
+            <span>{c(order.total_amount)}</span>
+          </div>
           {parseFloat(order.tax_amount || 0) > 0 && (
-            <div className="flex justify-between text-gray-400 text-xs">
-              <span>GST {order.tax_rate}%</span>
-              <span>{c(order.tax_amount)}</span>
-            </div>
+            <>
+              <div className="flex justify-between text-gray-500">
+                <span>CGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                <span>{c(order.tax_amount / 2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500">
+                <span>SGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                <span>{c(order.tax_amount / 2)}</span>
+              </div>
+            </>
           )}
           {parseFloat(order.discount_amount || 0) > 0 && (
             <div className="flex justify-between text-green-600 text-xs">
@@ -432,7 +442,7 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
             </div>
           )}
           {parseFloat(order.tip_amount || 0) > 0 && (
-            <div className="flex justify-between text-gray-400 text-xs">
+            <div className="flex justify-between text-gray-500 text-xs">
               <span>Tip</span>
               <span>{c(order.tip_amount)}</span>
             </div>

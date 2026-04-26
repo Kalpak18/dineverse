@@ -39,12 +39,32 @@ const INDIAN_STATES = [
   'Delhi','Jammu & Kashmir','Ladakh','Lakshadweep','Puducherry',
 ];
 
-const NAME_STYLES = [
-  { value: 'normal',      label: 'Normal',      style: {} },
-  { value: 'bold',        label: 'Bold',        style: { fontWeight: 'bold' } },
-  { value: 'italic',      label: 'Italic',      style: { fontStyle: 'italic' } },
-  { value: 'bold-italic', label: 'Bold Italic', style: { fontWeight: 'bold', fontStyle: 'italic' } },
+const FONT_FAMILIES = [
+  { value: 'inherit',          label: 'Default'   },
+  { value: 'Georgia, serif',   label: 'Georgia'   },
+  { value: 'serif',            label: 'Serif'     },
+  { value: 'monospace',        label: 'Mono'      },
+  { value: 'cursive',          label: 'Cursive'   },
+  { value: 'fantasy',          label: 'Display'   },
 ];
+
+function parseNameStyle(raw) {
+  if (!raw || raw === 'normal') return { fontFamily: 'inherit', fontSize: 18, bold: false, italic: false };
+  if (raw === 'bold')        return { fontFamily: 'inherit', fontSize: 18, bold: true,  italic: false };
+  if (raw === 'italic')      return { fontFamily: 'inherit', fontSize: 18, bold: false, italic: true  };
+  if (raw === 'bold-italic') return { fontFamily: 'inherit', fontSize: 18, bold: true,  italic: true  };
+  try { return { fontFamily: 'inherit', fontSize: 18, bold: false, italic: false, ...JSON.parse(raw) }; }
+  catch { return { fontFamily: 'inherit', fontSize: 18, bold: false, italic: false }; }
+}
+
+function nameStyleToCss(obj) {
+  return {
+    fontFamily: obj.fontFamily,
+    fontSize: obj.fontSize + 'px',
+    fontWeight: obj.bold ? 'bold' : 'normal',
+    fontStyle: obj.italic ? 'italic' : 'normal',
+  };
+}
 
 const BUSINESS_TYPES = [
   { value: 'restaurant',     label: 'Restaurant (Non-AC)',              rate: 5  },
@@ -78,7 +98,7 @@ function buildForm(cafe) {
     phone:           cafe?.phone           || '',
     logo_url:        cafe?.logo_url        || '',
     cover_image_url: cafe?.cover_image_url || '',
-    name_style:      cafe?.name_style      || 'normal',
+    name_style:      cafe?.name_style      || '',
     latitude:        cafe?.latitude        || null,
     longitude:       cafe?.longitude       || null,
     gst_number:      cafe?.gst_number      || '',
@@ -198,8 +218,11 @@ export default function ProfilePage() {
     }
   };
 
-  const activeStyle = NAME_STYLES.find((s) => s.value === form.name_style) || NAME_STYLES[0];
+  const nameStyleObj = parseNameStyle(form.name_style);
   const gCheck = validateGstin(form.gst_number);
+
+  const setNameStyle = (changes) =>
+    setForm((f) => ({ ...f, name_style: JSON.stringify({ ...parseNameStyle(f.name_style), ...changes }) }));
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -230,15 +253,36 @@ export default function ProfilePage() {
 
           <div>
             <label className="label">Café Name</label>
-            <input className="input" value={form.name} onChange={set('name')} style={activeStyle.style} required />
-            <div className="flex gap-2 mt-2">
-              {NAME_STYLES.map((s) => (
-                <button key={s.value} type="button"
-                  onClick={() => setForm((f) => ({ ...f, name_style: s.value }))}
-                  className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
-                    form.name_style === s.value ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                  }`} style={s.style}>{s.label}</button>
-              ))}
+            <input className="input" value={form.name} onChange={set('name')} style={nameStyleToCss(nameStyleObj)} required />
+            {/* Rich text toolbar */}
+            <div className="flex items-center gap-2 mt-2 p-1.5 bg-gray-50 border border-gray-200 rounded-lg flex-wrap">
+              <select
+                value={nameStyleObj.fontFamily}
+                onChange={(e) => setNameStyle({ fontFamily: e.target.value })}
+                className="text-xs border border-gray-300 rounded px-1.5 py-1 bg-white"
+                style={{ fontFamily: nameStyleObj.fontFamily }}
+              >
+                {FONT_FAMILIES.map((f) => (
+                  <option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                <button type="button"
+                  onClick={() => setNameStyle({ fontSize: Math.max(12, nameStyleObj.fontSize - 2) })}
+                  className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded bg-white text-sm font-bold text-gray-600 hover:bg-gray-100">−</button>
+                <span className="text-xs w-8 text-center text-gray-600">{nameStyleObj.fontSize}px</span>
+                <button type="button"
+                  onClick={() => setNameStyle({ fontSize: Math.min(64, nameStyleObj.fontSize + 2) })}
+                  className="w-6 h-6 flex items-center justify-center border border-gray-300 rounded bg-white text-sm font-bold text-gray-600 hover:bg-gray-100">+</button>
+              </div>
+              <button type="button"
+                onClick={() => setNameStyle({ bold: !nameStyleObj.bold })}
+                className={`w-7 h-7 font-bold border rounded text-sm transition-colors ${nameStyleObj.bold ? 'bg-brand-500 text-white border-brand-500' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+              >B</button>
+              <button type="button"
+                onClick={() => setNameStyle({ italic: !nameStyleObj.italic })}
+                className={`w-7 h-7 italic border rounded text-sm transition-colors ${nameStyleObj.italic ? 'bg-brand-500 text-white border-brand-500' : 'bg-white border-gray-300 text-gray-600 hover:bg-gray-100'}`}
+              >I</button>
             </div>
           </div>
 
@@ -310,7 +354,7 @@ export default function ProfilePage() {
             <MapPicker
               lat={form.latitude} lng={form.longitude}
               address={[form.address, form.address_line2, form.city, form.state, form.pincode].filter(Boolean).join(', ')}
-              onChange={({ lat, lng, address }) => setForm((f) => ({ ...f, latitude: lat, longitude: lng, address }))}
+              onChange={({ lat, lng }) => setForm((f) => ({ ...f, latitude: lat, longitude: lng }))}
             />
           </div>
 

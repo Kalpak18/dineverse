@@ -82,9 +82,9 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   const [locatingUser, setLocatingUser] = useState(false);
 
   // Default to India center if no coords
-  const initLat = lat || 20.5937;
-  const initLng = lng || 78.9629;
-  const initZoom = lat ? 15 : 5;
+  const initLat = parseFloat(lat) || 20.5937;
+  const initLng = parseFloat(lng) || 78.9629;
+  const initZoom = parseFloat(lat) ? 15 : 5;
 
   useEffect(() => {
     if (!expanded || mapRef.current) return;
@@ -132,9 +132,11 @@ export default function MapPicker({ lat, lng, address, onChange }) {
 
   // Sync marker when lat/lng prop changes externally
   useEffect(() => {
-    if (mapRef.current && markerRef.current && lat && lng) {
-      markerRef.current.setLatLng([lat, lng]);
-      mapRef.current.setView([lat, lng], 15);
+    const fLat = parseFloat(lat);
+    const fLng = parseFloat(lng);
+    if (mapRef.current && markerRef.current && fLat && fLng) {
+      markerRef.current.setLatLng([fLat, fLng]);
+      mapRef.current.setView([fLat, fLng], 15);
     }
   }, [lat, lng]);
 
@@ -145,7 +147,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
       return;
     }
     if (query === lastAutoAddressRef.current) return;
-    if (manuallyPinnedRef.current && lat && lng) return;
+    if (lat && lng) return;
 
     const timeout = setTimeout(async () => {
       setAutoLocating(true);

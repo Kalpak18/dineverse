@@ -515,16 +515,22 @@ export default function OrderConfirmation() {
               )}
 
               {/* Price breakdown */}
-              <div className="border-t border-gray-200 pt-2 space-y-1 text-sm">
+              <div className="border-t border-gray-200 pt-4 space-y-3 text-sm">
                 <div className="flex justify-between text-gray-500">
-                  <span>Subtotal</span>
+                  <span>Order subtotal</span>
                   <span>{c(order.total_amount)}</span>
                 </div>
                 {parseFloat(order.tax_amount || 0) > 0 && (
-                  <div className="flex justify-between text-gray-400 text-xs">
-                    <span>GST {order.tax_rate}% (CGST + SGST)</span>
-                    <span>{c(order.tax_amount)}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-gray-500">
+                      <span>CGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                      <span>{c(order.tax_amount / 2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500">
+                      <span>SGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                      <span>{c(order.tax_amount / 2)}</span>
+                    </div>
+                  </>
                 )}
                 {parseFloat(order.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600 text-xs">
@@ -533,19 +539,19 @@ export default function OrderConfirmation() {
                   </div>
                 )}
                 {parseFloat(order.tip_amount || 0) > 0 && (
-                  <div className="flex justify-between text-gray-400 text-xs">
+                  <div className="flex justify-between text-gray-500 text-xs">
                     <span>Tip</span>
                     <span>{c(order.tip_amount)}</span>
                   </div>
                 )}
                 {parseFloat(order.delivery_fee || 0) > 0 && (
-                  <div className="flex justify-between text-gray-400 text-xs">
-                    <span>🛵 Delivery</span>
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>🛵 Delivery fee</span>
                     <span>{c(order.delivery_fee)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-100">
-                  <span>Total{order.status === 'paid' ? ' Paid' : ''}</span>
+                <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
+                  <span>{order.status === 'paid' ? 'Total paid' : 'Total amount due'}</span>
                   <span className={order.status === 'cancelled' ? 'line-through text-gray-400' : ''}>
                     {c(order.final_amount || order.total_amount)}
                   </span>
@@ -733,11 +739,21 @@ export default function OrderConfirmation() {
 
               {/* Totals */}
               <div className="border-t border-dashed border-gray-200 pt-3 space-y-1 text-sm">
+                <div className="flex justify-between text-gray-500">
+                  <span>Order subtotal</span>
+                  <span>{c(receiptOrder.total_amount)}</span>
+                </div>
                 {parseFloat(receiptOrder.tax_amount || 0) > 0 && (
-                  <div className="flex justify-between text-gray-500">
-                    <span>GST {receiptOrder.tax_rate}% (CGST {receiptOrder.tax_rate / 2}% + SGST {receiptOrder.tax_rate / 2}%)</span>
-                    <span>{c(receiptOrder.tax_amount)}</span>
-                  </div>
+                  <>
+                    <div className="flex justify-between text-gray-500">
+                      <span>CGST ({(receiptOrder.tax_rate / 2).toFixed(1)}%)</span>
+                      <span>{c(receiptOrder.tax_amount / 2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500">
+                      <span>SGST ({(receiptOrder.tax_rate / 2).toFixed(1)}%)</span>
+                      <span>{c(receiptOrder.tax_amount / 2)}</span>
+                    </div>
+                  </>
                 )}
                 {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600">
@@ -801,9 +817,45 @@ export default function OrderConfirmation() {
                       <span>{c(item.subtotal)}</span>
                     </div>
                   ))}
-                  <div className="flex justify-between text-xs text-gray-500 mt-1.5 pt-1.5 border-t border-dashed border-gray-100">
-                    <span>Order subtotal</span>
-                    <span>{c(order.final_amount || order.total_amount)}</span>
+                  <div className="pt-2 space-y-1 text-sm">
+                    <div className="flex justify-between text-gray-500">
+                      <span>Order subtotal</span>
+                      <span>{c(order.total_amount)}</span>
+                    </div>
+                    {parseFloat(order.tax_amount || 0) > 0 && (
+                      <>
+                        <div className="flex justify-between text-gray-500">
+                          <span>CGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                          <span>{c(order.tax_amount / 2)}</span>
+                        </div>
+                        <div className="flex justify-between text-gray-500">
+                          <span>SGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
+                          <span>{c(order.tax_amount / 2)}</span>
+                        </div>
+                      </>
+                    )}
+                    {parseFloat(order.discount_amount || 0) > 0 && (
+                      <div className="flex justify-between text-green-600 text-xs">
+                        <span>Discount</span>
+                        <span>−{c(order.discount_amount)}</span>
+                      </div>
+                    )}
+                    {parseFloat(order.tip_amount || 0) > 0 && (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>Tip</span>
+                        <span>{c(order.tip_amount)}</span>
+                      </div>
+                    )}
+                    {parseFloat(order.delivery_fee || 0) > 0 && (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>Delivery fee</span>
+                        <span>{c(order.delivery_fee)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-xs text-gray-500 mt-1.5 pt-1.5 border-t border-dashed border-gray-100">
+                      <span className="font-semibold">Order total</span>
+                      <span className="font-semibold">{c(order.final_amount || order.total_amount)}</span>
+                    </div>
                   </div>
                 </div>
               ))}
