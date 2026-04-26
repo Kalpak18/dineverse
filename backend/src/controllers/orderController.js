@@ -522,13 +522,66 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
             o.status, o.order_type, o.customer_name, o.table_number, o.updated_at,
             o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
-            o.tip_amount, o.delivery_fee, o.final_amount, o.cancellation_reason
+            o.tip_amount, o.delivery_fee, o.final_amount, o.cancellation_reason,
+            o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
+            o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
+            o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
+            o.delivery_token,
+            c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
     [id, slug]
   );
   if (result.rows.length === 0) return fail(res, 'Order not found', 404);
+  ok(res, { order: result.rows[0] });
+});
+
+// ─── Public: Driver updates their GPS location ─────────────────
+// URL is shared by owner to driver — token authenticates without login
+exports.updateDriverLocation = asyncHandler(async (req, res) => {
+  const { orderId, token } = req.params;
+  const { lat, lng } = req.body;
+  if (!lat || !lng) return fail(res, 'lat and lng are required', 400);
+
+  const parsed = { lat: parseFloat(lat), lng: parseFloat(lng) };
+  if (isNaN(parsed.lat) || isNaN(parsed.lng)) return fail(res, 'Invalid coordinates', 400);
+
+  const result = await db.query(
+    `UPDATE orders
+     SET driver_lat = $1, driver_lng = $2, driver_updated_at = NOW()
+     WHERE id = $3 AND delivery_token = $4 AND order_type = 'delivery'
+     RETURNING id, driver_lat, driver_lng, driver_updated_at, delivery_status`,
+    [parsed.lat, parsed.lng, orderId, token]
+  );
+
+  if (result.rows.length === 0) return fail(res, 'Invalid tracking link', 403);
+
+  // Broadcast live driver position to customer tracking screen
+  req.io?.to(`order:${orderId}`).emit('driver_location', {
+    order_id: orderId,
+    lat:      parsed.lat,
+    lng:      parsed.lng,
+    updated_at: result.rows[0].driver_updated_at,
+  });
+
+  ok(res, { updated: true });
+});
+
+// ─── Public: Get order info for driver tracking page ───────────
+exports.getDriverOrderInfo = asyncHandler(async (req, res) => {
+  const { orderId, token } = req.params;
+  const result = await db.query(
+    `SELECT o.id, o.customer_name, o.delivery_address, o.delivery_status,
+            o.delivery_lat, o.delivery_lng,
+            c.name AS cafe_name, c.address AS cafe_address,
+            c.latitude AS cafe_lat, c.longitude AS cafe_lng
+     FROM orders o
+     JOIN cafes c ON o.cafe_id = c.id
+     WHERE o.id = $1 AND o.delivery_token = $2 AND o.order_type = 'delivery'`,
+    [orderId, token]
+  );
+  if (result.rows.length === 0) return fail(res, 'Invalid tracking link', 403);
   ok(res, { order: result.rows[0] });
 });
 

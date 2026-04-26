@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtTime, fmtCurrency } from '../../utils/formatters';
 import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPayment, verifyOrderPayment, getCustomerMessages, postCustomerMessage, getTableBill } from '../../services/api';
+import DeliveryMap from '../../components/DeliveryMap';
 import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 
@@ -46,6 +47,7 @@ export default function OrderConfirmation() {
   const [initialized, setInitialized] = useState(false);
   const [showSuccessFlash, setShowSuccessFlash] = useState(!!location.state?.order);
   const [lostConnection, setLostConnection] = useState(false); // socket gave up reconnecting
+  const [driverPositions, setDriverPositions] = useState({});  // orderId → { lat, lng }
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
     catch { return new Set(); }
@@ -178,6 +180,12 @@ export default function OrderConfirmation() {
     };
     socket.on('delivery_updated', onDeliveryUpdated);
 
+    // 5d. Live driver GPS ping (self-delivery)
+    const onDriverLocation = ({ order_id, lat, lng }) => {
+      setDriverPositions((prev) => ({ ...prev, [order_id]: { lat, lng } }));
+    };
+    socket.on('driver_location', onDriverLocation);
+
     // 6. Join a room for every currently active order
     const liveOrders = stored.filter((o) => !['paid', 'cancelled'].includes(o.status));
     liveOrders.forEach((o) => {
@@ -216,6 +224,7 @@ export default function OrderConfirmation() {
       socket.off('item_status_update', onItemStatusUpdate);
       socket.off('item_cancelled', onItemCancelled);
       socket.off('delivery_updated', onDeliveryUpdated);
+      socket.off('driver_location', onDriverLocation);
       socket.disconnect();
       socketRef.current = null;
       trackedIds.current.clear();
@@ -568,14 +577,31 @@ export default function OrderConfirmation() {
 
               {/* Delivery status bar — only for delivery orders */}
               {order.order_type === 'delivery' && (
-                <DeliveryStatusBar
-                  deliveryStatus={order.delivery_status}
-                  driverName={order.driver_name}
-                  driverPhone={order.driver_phone}
-                  deliveredAt={order.delivered_at}
-                  deliveryFailedReason={order.delivery_failed_reason}
-                  deliveryAddress={order.delivery_address}
-                />
+                <>
+                  <DeliveryStatusBar
+                    deliveryStatus={order.delivery_status}
+                    driverName={order.driver_name}
+                    driverPhone={order.driver_phone}
+                    deliveredAt={order.delivered_at}
+                    deliveryFailedReason={order.delivery_failed_reason}
+                    deliveryAddress={order.delivery_address}
+                  />
+                  {order.cafe_lat && order.delivery_lat && (
+                    <div className="mt-3 rounded-2xl overflow-hidden shadow-sm">
+                      <DeliveryMap
+                        cafeLat={parseFloat(order.cafe_lat)}
+                        cafeLng={parseFloat(order.cafe_lng)}
+                        cafeLabel={cafeInfo?.name || 'Restaurant'}
+                        customerLat={parseFloat(order.delivery_lat)}
+                        customerLng={parseFloat(order.delivery_lng)}
+                        deliveryAddress={order.delivery_address}
+                        driverLat={driverPositions[order.id]?.lat ?? (order.driver_lat ? parseFloat(order.driver_lat) : undefined)}
+                        driverLng={driverPositions[order.id]?.lng ?? (order.driver_lng ? parseFloat(order.driver_lng) : undefined)}
+                        height="260px"
+                      />
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Ready banners — only for non-delivery orders */}

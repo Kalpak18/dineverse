@@ -89,7 +89,7 @@ exports.receiveWebhook = asyncHandler(async (req, res) => {
          delivery_failed_reason     = COALESCE($8, delivery_failed_reason),
          updated_at                 = NOW()
      WHERE id = $9
-     RETURNING id, delivery_status, driver_name, driver_phone, delivered_at`,
+     RETURNING id, delivery_status, driver_name, driver_phone, driver_lat, driver_lng, delivered_at`,
     [
       status,
       partner_order_id || null,
@@ -112,6 +112,8 @@ exports.receiveWebhook = asyncHandler(async (req, res) => {
       delivery_status: status,
       driver_name:     updatedOrder.driver_name,
       driver_phone:    updatedOrder.driver_phone,
+      driver_lat:      updatedOrder.driver_lat,
+      driver_lng:      updatedOrder.driver_lng,
       delivered_at:    updatedOrder.delivered_at,
     });
   }

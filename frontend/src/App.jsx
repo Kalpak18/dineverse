@@ -19,6 +19,7 @@ import CartPage from './pages/customer/CartPage';
 import OrderConfirmation from './pages/customer/OrderConfirmation';
 import MyOrdersPage from './pages/customer/MyOrdersPage';
 import ScanPage from './pages/customer/ScanPage';
+import DriverTracking from './pages/driver/DriverTracking';
 
 // Owner pages
 import LoginPage from './pages/owner/LoginPage';
@@ -141,6 +142,9 @@ export default function App() {
       <Route path="/cafe/:slug/cart" element={<CartPage />} />
       <Route path="/cafe/:slug/confirmation" element={<OrderConfirmation />} />
       <Route path="/cafe/:slug/my-orders"   element={<MyOrdersPage />} />
+
+      {/* Driver GPS tracking page — no auth, authenticated by delivery_token in URL */}
+      <Route path="/driver/:orderId/:token" element={<DriverTracking />} />
 
       {/* SEO-friendly URL aliases — /restaurants/:city/:slug → /cafe/:slug */}
       <Route path="/restaurants/:city/:slug" element={<CitySlugRedirect />} />

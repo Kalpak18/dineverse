@@ -13,6 +13,7 @@ const {
   setKitchenMode, updateItemStatus,
   acceptOrder, rejectOrder, acceptItem, rejectItem,
   cancelItem, reorderItems, generateKot, getKotHistory,
+  updateDriverLocation, getDriverOrderInfo,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -29,6 +30,10 @@ router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 router.post('/cafe/:slug/orders', orderLimiter, validateOrder, createOrder);
 router.get('/cafe/:slug/orders/:id/status', getOrderStatus);
 router.post('/cafe/:slug/orders/:id/cancel', customerCancelOrder);
+
+// Public: driver GPS ping (authenticated by delivery_token UUID in URL)
+router.patch('/driver/:orderId/:token/location', updateDriverLocation);
+router.get('/driver/:orderId/:token/info',       getDriverOrderInfo);
 
 // Public: customer pays for their food order via Razorpay
 router.post('/cafe/:slug/orders/:id/pay', createOrderPayment);

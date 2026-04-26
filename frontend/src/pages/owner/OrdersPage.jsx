@@ -6,6 +6,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import LoadingSpinner from '../../components/LoadingSpinner';
+import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
@@ -637,6 +638,44 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
           ✕ <span>Cancel</span>
         </button>
       </div>
+
+      {/* Delivery section — map + driver link (delivery orders only) */}
+      {order.order_type === 'delivery' && (
+        <div className="border-t border-gray-50 px-3 pt-3 pb-3 space-y-2">
+          {order.delivery_address && (
+            <p className="text-xs text-gray-500">🛵 <span className="font-medium">{order.delivery_address}</span></p>
+          )}
+          {order.delivery_token && (
+            <button
+              onClick={() => {
+                const url = `${window.location.origin}/driver/${order.id}/${order.delivery_token}`;
+                navigator.clipboard.writeText(url).then(
+                  () => toast.success('Driver link copied!'),
+                  () => toast.error('Copy failed')
+                );
+              }}
+              className="w-full py-1.5 rounded-xl border border-orange-200 text-orange-600 text-xs font-semibold hover:bg-orange-50 active:bg-orange-100 transition-colors"
+            >
+              📋 Copy Driver Tracking Link
+            </button>
+          )}
+          {cafe?.latitude && order.delivery_lat && (
+            <div className="rounded-xl overflow-hidden">
+              <DeliveryMap
+                cafeLat={parseFloat(cafe.latitude)}
+                cafeLng={parseFloat(cafe.longitude)}
+                cafeLabel={cafe.name || 'Restaurant'}
+                customerLat={parseFloat(order.delivery_lat)}
+                customerLng={parseFloat(order.delivery_lng)}
+                deliveryAddress={order.delivery_address}
+                driverLat={order.driver_lat ? parseFloat(order.driver_lat) : undefined}
+                driverLng={order.driver_lng ? parseFloat(order.driver_lng) : undefined}
+                height="220px"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Inline chat panel */}
       {chatOpen && (
