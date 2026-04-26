@@ -38,7 +38,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_cafe_unread
 
 -- ── Reservations ────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_reservations_cafe_status
-  ON reservations(cafe_id, status, reserved_at DESC);
+  ON reservations(cafe_id, status, reserved_date DESC);
 
 -- ── Waitlist ─────────────────────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_waitlist_cafe_status
