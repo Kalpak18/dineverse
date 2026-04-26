@@ -910,7 +910,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                 );
                 const servedTotal = bill.orders
                   .filter((o) => o.status === 'served')
-                  .reduce((s, o) => s + parseFloat(o.total_amount), 0);
+                  .reduce((s, o) => s + parseFloat(o.final_amount || o.total_amount), 0);
                 const isExpanded = expandedTable === bill.table_number;
 
                 return (
@@ -1494,7 +1494,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
       <p className="text-xs text-gray-400">
         {dateLabel} · {dateFiltered.length} order{dateFiltered.length !== 1 ? 's' : ''} ·{' '}
         Revenue: <span className="font-semibold text-gray-600">
-          {c(dateFiltered.reduce((s, o) => s + parseFloat(o.total_amount), 0))}
+          {c(dateFiltered.reduce((s, o) => s + parseFloat(o.final_amount || o.total_amount), 0))}
         </span>
       </p>
 
@@ -1553,7 +1553,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                       customerName: order.customer_name,
                       orderNumber: token,
                       table_number: order.table_number,
-                      total: parseFloat(order.total_amount),
+                      total: parseFloat(order.final_amount || order.total_amount),
                       aggregatedItems: (order.items || []).map((i) => ({
                         name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
                       })),
