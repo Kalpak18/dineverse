@@ -314,9 +314,18 @@ export default function ProfilePage() {
             </div>
           </div>
 
+          {/* ── Tax & Compliance ── */}
+          <div className="pt-2 border-t border-gray-100">
+            <p className="text-sm font-semibold text-gray-700 mb-0.5">Tax &amp; Compliance</p>
+            <p className="text-xs text-gray-400 mb-4">
+              These details appear on customer bills and tax invoices. Leave GSTIN blank if you are not GST-registered — tax fields will be hidden from bills.
+            </p>
+          </div>
+
           <div>
             <label className="label">
               GSTIN
+              <span className="ml-1 text-[10px] text-gray-400 font-normal">(GST Identification Number)</span>
               {gCheck.status === 'valid' && <span className="ml-2 text-xs text-green-600 font-semibold bg-green-50 px-2 py-0.5 rounded-full">✓ Valid</span>}
             </label>
             <input
@@ -328,6 +337,7 @@ export default function ProfilePage() {
             {gCheck.status === 'valid'  && <p className="text-xs text-green-600 mt-1">✓ {gCheck.msg}</p>}
             {gCheck.status === 'invalid' && <p className="text-xs text-red-500 mt-1">✕ {gCheck.msg}</p>}
             {gCheck.status === 'short' && form.gst_number && <p className="text-xs text-amber-600 mt-1">{gCheck.msg}</p>}
+            {!form.gst_number && <p className="text-xs text-gray-400 mt-1">No GSTIN? Leave blank — GST will not appear on customer bills.</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -354,22 +364,40 @@ export default function ProfilePage() {
               <label className="label">GST Rate (%)</label>
               <select className="input" value={form.gst_rate} onChange={(e) => setForm((f) => ({ ...f, gst_rate: parseInt(e.target.value) }))}>
                 <option value={0}>0% — Not registered</option>
-                <option value={5}>5% — Standard</option>
-                <option value={12}>12% — Special items</option>
-                <option value={18}>18% — Hotel / Liquor</option>
-                <option value={28}>28% — Luxury</option>
+                <option value={5}>5% — Food &amp; beverages (standard)</option>
+                <option value={12}>12% — Packaged / special items</option>
+                <option value={18}>18% — AC restaurant / alcohol</option>
+                <option value={28}>28% — Luxury / 5-star</option>
               </select>
+              <p className="text-xs text-gray-400 mt-1">
+                This rate is split equally as CGST + SGST on every bill (e.g. 5% = 2.5% Central + 2.5% State).
+              </p>
             </div>
             <div>
               <label className="label">Tax Treatment</label>
               <div className="flex rounded-xl border border-gray-200 overflow-hidden mt-0.5">
-                {[{ v: true, l: 'Inclusive' }, { v: false, l: 'Exclusive' }].map(({ v, l }) => (
+                {[{ v: true, l: 'Tax Inclusive' }, { v: false, l: 'Tax Exclusive' }].map(({ v, l }) => (
                   <button key={l} type="button" onClick={() => setForm((f) => ({ ...f, tax_inclusive: v }))}
                     className={`flex-1 py-2.5 text-xs font-medium transition-colors ${form.tax_inclusive === v ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
                     {l}
                   </button>
                 ))}
               </div>
+              {form.gst_rate > 0 && (
+                <div className={`mt-2 rounded-lg px-3 py-2 text-xs leading-relaxed ${form.tax_inclusive ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                  {form.tax_inclusive ? (
+                    <>
+                      <p className="font-semibold mb-0.5">✓ GST is already inside your menu prices</p>
+                      <p>Example: You set item price ₹100 → customer pays <strong>₹100</strong>. GST ({form.gst_rate}%) is extracted from that ₹100 for your returns.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold mb-0.5">+ GST is added on top of your menu prices</p>
+                      <p>Example: You set item price ₹100 → customer pays <strong>₹{(100 * (1 + form.gst_rate / 100)).toFixed(0)}</strong> (₹100 + {form.gst_rate}% GST added at checkout).</p>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
