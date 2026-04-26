@@ -2,12 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-// Fix Leaflet default marker icon paths broken by bundlers
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+// Custom SVG pin — avoids broken Leaflet default icon in bundled apps
+const PIN_ICON = L.divIcon({
+  className: '',
+  html: `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="44" viewBox="0 0 32 44">
+    <path d="M16 0C7.163 0 0 7.163 0 16c0 10.5 16 28 16 28S32 26.5 32 16C32 7.163 24.837 0 16 0z"
+      fill="#f97316" stroke="#c2410c" stroke-width="1.5"/>
+    <circle cx="16" cy="16" r="6" fill="white"/>
+  </svg>`,
+  iconSize:   [32, 44],
+  iconAnchor: [16, 44],
+  popupAnchor:[0, -44],
 });
 
 // Nominatim reverse geocode (OpenStreetMap, free, no API key)
@@ -83,7 +88,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
   // Default to India center if no coords
   const initLat = parseFloat(lat) || 20.5937;
   const initLng = parseFloat(lng) || 78.9629;
-  const initZoom = parseFloat(lat) ? 15 : 5;
+  const initZoom = parseFloat(lat) ? 17 : 5;
 
   useEffect(() => {
     if (!expanded || mapRef.current) return;
@@ -93,7 +98,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     const tileLayer = L.tileLayer(style.url, style.options).addTo(map);
     tileLayerRef.current = tileLayer;
 
-    const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
+    const marker = L.marker([initLat, initLng], { draggable: true, icon: PIN_ICON }).addTo(map);
     markerRef.current = marker;
     mapRef.current = map;
 
@@ -135,7 +140,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     const fLng = parseFloat(lng);
     if (mapRef.current && markerRef.current && fLat && fLng) {
       markerRef.current.setLatLng([fLat, fLng]);
-      mapRef.current.setView([fLat, fLng], 15);
+      mapRef.current.setView([fLat, fLng], 17);
     }
   }, [lat, lng]);
 
@@ -166,7 +171,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
 
       if (mapRef.current && markerRef.current) {
         markerRef.current.setLatLng([newLat, newLng]);
-        mapRef.current.setView([newLat, newLng], 16);
+        mapRef.current.setView([newLat, newLng], 17);
       }
 
       onChange({ lat: newLat, lng: newLng, address });
@@ -197,7 +202,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
         setLocatingUser(false);
         if (mapRef.current && markerRef.current) {
           markerRef.current.setLatLng([newLat, newLng]);
-          mapRef.current.flyTo([newLat, newLng], 18, { duration: 0.8 });
+          mapRef.current.flyTo([newLat, newLng], 19, { duration: 0.8 });
         }
         const resolvedAddress = await reverseGeocode(newLat, newLng);
         onChange({ lat: newLat, lng: newLng, address: resolvedAddress || address });
@@ -219,7 +224,7 @@ export default function MapPicker({ lat, lng, address, onChange }) {
     setSearch('');
     if (mapRef.current && markerRef.current) {
       markerRef.current.setLatLng([newLat, newLng]);
-      mapRef.current.setView([newLat, newLng], 16);
+      mapRef.current.setView([newLat, newLng], 17);
     }
     onChange({ lat: newLat, lng: newLng, address: s.display_name });
   };
