@@ -263,10 +263,21 @@ export default function OrdersPage() {
 
   const paidOrders = useMemo(() => orders.filter((o) => o.status === 'paid'), [orders]);
 
-  const historyTodayCount = useMemo(() => {
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    return paidOrders.filter((o) => new Date(o.created_at).getTime() >= todayStart.getTime()).length;
-  }, [paidOrders]);
+  const [historyDateRange, setHistoryDateRange] = useState('today');
+
+  const historyFilteredCount = useMemo(() => {
+    if (historyDateRange === 'all') return paidOrders.length;
+    const todayStart     = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(); yesterdayStart.setHours(0, 0, 0, 0); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    return paidOrders.filter((o) => {
+      const t = new Date(o.created_at).getTime();
+      if (historyDateRange === 'today')     return t >= todayStart.getTime();
+      if (historyDateRange === 'yesterday') return t >= yesterdayStart.getTime() && t < todayStart.getTime();
+      if (historyDateRange === '7d')        return t >= Date.now() - 7  * 86400000;
+      if (historyDateRange === '30d')       return t >= Date.now() - 30 * 86400000;
+      return true;
+    }).length;
+  }, [paidOrders, historyDateRange]);
 
   const statusCounts = useMemo(() => {
     const counts = {};
@@ -307,7 +318,7 @@ export default function OrdersPage() {
         {[
           { key: TABS.ORDERS,  label: 'Orders',  count: orders.filter(isOrdersTabVisible).length },
           { key: TABS.BILLS,   label: 'Bills',   count: billsCount },
-          { key: TABS.HISTORY, label: 'History', count: historyTodayCount },
+          { key: TABS.HISTORY, label: 'History', count: historyFilteredCount },
         ].map(({ key, label, count }) => (
           <button
             key={key}
@@ -446,7 +457,7 @@ export default function OrdersPage() {
 
       {/* ── History Tab ── */}
       {activeTab === TABS.HISTORY && (
-        <HistoryView orders={paidOrders} />
+        <HistoryView orders={paidOrders} dateRange={historyDateRange} onDateRangeChange={setHistoryDateRange} />
       )}
 
       {/* ── Billing Modal (shared: Bills tab + OrderCard print) ── */}
@@ -1411,11 +1422,11 @@ const HISTORY_DATE_PRESETS = [
   { key: 'all',       label: 'All time' },
 ];
 
-function HistoryView({ orders }) {
+function HistoryView({ orders, dateRange, onDateRangeChange }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const [search, setSearch] = useState('');
-  const [dateRange, setDateRange] = useState('today');
+  const setDateRange = onDateRangeChange;
 
   const todayStart   = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const yesterdayStart = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-1); return d; }, []);
