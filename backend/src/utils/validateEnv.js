@@ -42,11 +42,6 @@ module.exports = function validateEnv() {
     logger.warn('[STARTUP] AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / S3_BUCKET_NAME not set — image uploads will fail');
   }
 
-  // Twilio SMS: optional, used for SMS notifications
-  if (process.env.TWILIO_ACCOUNT_SID && !process.env.TWILIO_AUTH_TOKEN) {
-    logger.warn('[STARTUP] TWILIO_ACCOUNT_SID set but TWILIO_AUTH_TOKEN missing — SMS will fail');
-  }
-
   // CLIENT_URL sanity check — must not contain a trailing slash or be localhost in production
   const clientUrl = process.env.CLIENT_URL || '';
   if (process.env.NODE_ENV === 'production') {
