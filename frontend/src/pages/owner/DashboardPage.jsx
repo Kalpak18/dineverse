@@ -17,7 +17,7 @@ const ONBOARDING = [
 ];
 
 export default function DashboardPage() {
-  const { cafe } = useAuth();
+  const { cafe, updateCafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const navigate  = useNavigate();
 
@@ -60,6 +60,7 @@ export default function DashboardPage() {
     try {
       const res = await toggleCafeOpen();
       setIsOpen(res.data.is_open);
+      updateCafe({ is_open: res.data.is_open });
       toast.success(res.data.is_open ? 'Café is now Open 🟢' : 'Café is now Closed 🔴');
     } catch {
       toast.error('Failed to update status');

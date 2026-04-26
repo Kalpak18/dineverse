@@ -67,6 +67,9 @@ function OwnerLayoutInner() {
   const [switching, setSwitching]     = useState(false);
   const [isOpen, setIsOpen]           = useState(cafe?.is_open ?? true);
   const [togglingOpen, setTogglingOpen] = useState(false);
+
+  // Sync local isOpen whenever AuthContext cafe.is_open changes (e.g. toggled from Dashboard)
+  useEffect(() => { setIsOpen(cafe?.is_open ?? true); }, [cafe?.is_open]);
   const [collapsed, setCollapsed]     = useState(
     () => localStorage.getItem('dv_sidebar_collapsed') === 'true'
   );
@@ -109,6 +112,7 @@ function OwnerLayoutInner() {
     try {
       const res = await toggleCafeOpen();
       setIsOpen(res.data.is_open);
+      updateCafe({ is_open: res.data.is_open });
       toast.success(res.data.is_open ? 'Café is now Open 🟢' : 'Café is now Closed 🔴');
     } catch {
       toast.error('Failed to update status');
