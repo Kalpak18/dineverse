@@ -69,7 +69,7 @@ export default function CartPage() {
 
   // GST breakdown — supports both inclusive (baked into price) and exclusive (added on top)
   const gstRate     = parseInt(session?.gst_rate ?? 0);
-  const hasGst      = !!(session?.gst_number) && gstRate > 0;
+  const hasGst      = gstRate > 0;
   const taxInclusive = session?.tax_inclusive === true; // default false — add tax on top
 
   let taxableAmt, totalTax, grandTotal;

@@ -581,7 +581,7 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
         onClick={onToggle}
       >
-        <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
+        <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
         <span className="text-xs text-gray-400">{expanded ? '▲ less' : '▼ more'}</span>
       </div>
 
@@ -850,7 +850,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                       </div>
                     </div>
                     <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between">
-                      <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
+                      <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
                     </div>
                     <div className="px-3 pb-3 pt-0">
                       <button
@@ -978,7 +978,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
                                     <span className={`badge text-xs ${STATUS_CONFIG[order.status].color}`}>
                                       {STATUS_CONFIG[order.status].label}
                                     </span>
-                                    <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
+                                    <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
                                   </div>
                                   {order.items?.length > 0 && (
                                     <div className="mt-1.5 pl-1 space-y-0.5">
@@ -1527,7 +1527,7 @@ function HistoryView({ orders }) {
                 </div>
               </div>
               <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between">
-                <span className="font-bold text-gray-900 text-sm">{c(order.total_amount)}</span>
+                <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
                 <button
                   onClick={() => printBill({
                     cafe,
