@@ -535,7 +535,7 @@ export default function LandingPage() {
               <ul className="space-y-2.5 mb-2 flex-1 text-sm text-gray-700">
                 {[
                   ['Item-level kitchen tracking', 'Each dish tracked: Preparing → Ready → Served. Chef owns every ticket.'],
-                  ['Customers see live dish progress', 'Fewer "where's my food?" questions — transparency = happier tables.'],
+                  ['Customers see live dish progress', `Fewer "where's my food?" questions — transparency = happier tables.`],
                   ['Course sequencing', 'Starters fire first, mains hold until the table is ready. Zero cold plates.'],
                   ['Cancel individual items mid-order', 'Remove a dish, customer gets notified instantly — no awkward conversations.'],
                   ['Advanced KDS with category filters', 'Separate hot, cold, beverage queues. Each station sees only their work.'],
