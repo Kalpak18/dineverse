@@ -1074,10 +1074,22 @@ function BillingModal({ bill, onConfirm, onClose }) {
     }
   };
 
+  const isDirty = cashInput !== '' || tipInput !== '' || paymentMode !== 'cash';
+
+  const handleBackdropClick = (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (step === 'receipt') { onClose(); return; }
+    if (isDirty) {
+      if (window.confirm('Discard payment details and close?')) onClose();
+    } else {
+      onClose();
+    }
+  };
+
   const overlay = (children) => (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 px-4 pb-6"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={handleBackdropClick}
     >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden max-h-[90vh] overflow-y-auto">
         <div className="h-1 bg-green-500 rounded-t-2xl" />

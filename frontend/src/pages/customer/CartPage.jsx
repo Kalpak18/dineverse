@@ -23,8 +23,11 @@ export default function CartPage() {
   const navigate = useNavigate();
   const { items, total, itemCount, cafeCurrency, updateQty, clearCart } = useCart();
   const c = (n) => fmtCurrency(n, cafeCurrency);
+  const [sessionTick, setSessionTick] = useState(0); // incremented to re-read localStorage without full reload
   const [loading, setLoading] = useState(false);
   const submittingRef = useRef(false);
+  // Stable per-attempt idempotency key — reset only after successful order so retries reuse the same UUID
+  const orderIdRef = useRef(crypto.randomUUID());
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
@@ -38,7 +41,10 @@ export default function CartPage() {
   const [tableDropOpen, setTableDropOpen] = useState(false);
   const tableInputRef = useRef(null);
 
-  const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null'); // re-read on sessionTick change
+  // sessionTick is referenced here to force re-evaluation when table is re-confirmed
+  void sessionTick;
 
   // Delivery address form state
   const [deliveryForm, setDeliveryForm] = useState({
@@ -137,8 +143,7 @@ export default function CartPage() {
     };
     localStorage.setItem(`session_${slug}`, JSON.stringify(updated));
     setShowTableModal(false);
-    // Force CartPage to re-read session by reloading
-    window.location.reload();
+    setSessionTick((t) => t + 1); // re-read session without destroying cart state
   };
 
   // Debounced offer preview: refetch when cart total changes
@@ -204,8 +209,8 @@ export default function CartPage() {
         order_type:     session.order_type || 'dine-in',
         notes:          notes.trim() || undefined,
         tip_amount:     tip || undefined,
-        // Idempotency key: same key = same order, prevents double-submit on network retry
-        client_order_id: crypto.randomUUID(),
+        // Stable per-attempt key — retries send the same UUID, backend deduplicates
+        client_order_id: orderIdRef.current,
         items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
         ...(isDelivery && {
           delivery_address:      deliveryForm.delivery_address.trim(),
@@ -222,6 +227,7 @@ export default function CartPage() {
         // Save to device so order persists on refresh (session kept for future orders)
         upsertOrder(slug, data.order);
         clearCart(); // only clear after server confirms the order
+        orderIdRef.current = crypto.randomUUID(); // rotate key for next order
         navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
       }
     } catch (err) {
@@ -424,7 +430,8 @@ export default function CartPage() {
               <span>{c(total)}</span>
             </div>
           )}
-          {offerPreview?.applied && taxInclusive && (
+          {/* Discount row: show for inclusive-GST and no-GST paths (exclusive-GST already shows it inline above) */}
+          {offerPreview?.applied && discountAmt > 0 && (!hasGst || taxInclusive) && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
               <span>-{c(discountAmt)}</span>

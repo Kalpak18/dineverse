@@ -536,9 +536,11 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Lock the row to prevent race conditions
+    const { customer_name, customer_phone } = req.body;
+
+    // Lock the row and verify the caller is the actual customer
     const result = await client.query(
-      `SELECT o.id, o.status, o.cafe_id
+      `SELECT o.id, o.status, o.cafe_id, o.customer_name, o.customer_phone
        FROM orders o
        JOIN cafes c ON o.cafe_id = c.id
        WHERE o.id = $1 AND c.slug = $2
@@ -552,6 +554,13 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
     }
 
     const order = result.rows[0];
+    const nameMatch  = customer_name  && order.customer_name  && order.customer_name.trim().toLowerCase()  === customer_name.trim().toLowerCase();
+    const phoneMatch = customer_phone && order.customer_phone && order.customer_phone.trim() === customer_phone.trim();
+    if (!nameMatch && !phoneMatch) {
+      await client.query('ROLLBACK');
+      return fail(res, 'Order not found', 404); // intentionally vague to not leak info
+    }
+
     if (order.status !== 'pending') {
       await client.query('ROLLBACK');
       return fail(res, 'Order can only be cancelled while it is still pending', 400);
@@ -617,6 +626,15 @@ exports.getTableBill = asyncHandler(async (req, res) => {
 
   if (ordersResult.rows.length === 0) {
     return ok(res, { orders: [], combined_total: 0, cafe_name: cafeName });
+  }
+
+  // Verify the requester is one of the customers at this table
+  const { customer_name } = req.query;
+  if (customer_name) {
+    const nameMatch = ordersResult.rows.some(
+      (o) => o.customer_name && o.customer_name.trim().toLowerCase() === customer_name.trim().toLowerCase()
+    );
+    if (!nameMatch) return fail(res, 'Table bill not found', 404);
   }
 
   const orderIds = ordersResult.rows.map((o) => o.id);
@@ -832,7 +850,8 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
       }
     } catch (fetchErr) {
       logger.warn('Could not fetch payment %s for amount check on food order %s: %s', razorpay_payment_id, id, fetchErr.message);
-      // HMAC signature already verified — allow the payment to proceed
+      await payClient.query('ROLLBACK');
+      return fail(res, 'Payment verification temporarily unavailable. Please try again in a moment.', 503);
     }
 
     // Mark paid inside the transaction so the lock is held until commit
@@ -916,6 +935,23 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   const order = orderCheck.rows[0];
   if (order.kitchen_mode !== 'individual') return fail(res, 'Order is not in individual mode');
   if (['paid', 'cancelled'].includes(order.status)) return fail(res, 'Order is already completed');
+
+  // Fetch current item status to enforce forward-only transitions
+  const currentItem = await db.query(
+    'SELECT item_status FROM order_items WHERE id = $1 AND order_id = $2',
+    [itemId, id]
+  );
+  if (currentItem.rows.length === 0) return fail(res, 'Item not found', 404);
+  const currentStatus = currentItem.rows[0].item_status;
+  const ALLOWED_TRANSITIONS = {
+    pending:   ['preparing'],
+    preparing: ['ready', 'pending'],
+    ready:     ['served', 'preparing'],
+    served:    [],
+  };
+  if (!(ALLOWED_TRANSITIONS[currentStatus] || []).includes(status)) {
+    return fail(res, `Cannot change item status from '${currentStatus}' to '${status}'`, 400);
+  }
 
   // Set the relevant timestamp column alongside item_status
   const tsMap = { preparing: 'preparing_at', ready: 'ready_at', served: 'served_at' };

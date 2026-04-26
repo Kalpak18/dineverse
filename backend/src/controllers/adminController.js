@@ -14,18 +14,15 @@ const generateAdminToken = (adminId) =>
 
 // ─── POST /api/admin/setup (one-time, only when no admins exist) ─
 exports.setup = asyncHandler(async (req, res) => {
-  if (process.env.ADMIN_SETUP_ENABLED !== 'true') {
-    return fail(res, 'Setup is disabled. Set ADMIN_SETUP_ENABLED=true to enable.', 403);
+  // Guard: only allowed when no admin account exists yet — env var not required
+  const existing = await db.query('SELECT COUNT(*) FROM developers');
+  if (parseInt(existing.rows[0].count) > 0) {
+    return fail(res, 'Setup already complete. Use /api/admin/login instead.', 409);
   }
 
   const { name, email, password } = req.body;
   if (!name || !email || !password) return fail(res, 'name, email and password are required');
   if (password.length < 8) return fail(res, 'Password must be at least 8 characters');
-
-  const existing = await db.query('SELECT COUNT(*) FROM developers');
-  if (parseInt(existing.rows[0].count) > 0) {
-    return fail(res, 'Admin already exists. Use login instead.', 409);
-  }
 
   const password_hash = await bcrypt.hash(password, 12);
   const result = await db.query(
