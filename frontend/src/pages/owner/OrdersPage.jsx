@@ -110,12 +110,13 @@ export default function OrdersPage() {
         customerName: order.customer_name,
         orderNumber: order.daily_order_number,
         table_number: order.table_number,
-        subtotal:       parseFloat(order.total_amount) || 0,
-        taxAmount:      parseFloat(order.tax_amount)   || 0,
-        taxRate:        parseInt(order.tax_rate)        || 0,
+        subtotal:       parseFloat(order.total_amount)    || 0,
+        taxAmount:      parseFloat(order.tax_amount)      || 0,
+        taxRate:        parseFloat(order.tax_rate)        || 0,
         discountAmount: parseFloat(order.discount_amount) || 0,
-        tipAmount:      parseFloat(order.tip_amount)   || 0,
-        total:          parseFloat(order.final_amount  || order.total_amount) || 0,
+        tipAmount:      parseFloat(order.tip_amount)      || 0,
+        deliveryFee:    parseFloat(order.delivery_fee)    || 0,
+        total:          parseFloat(order.final_amount || order.total_amount) || 0,
         aggregatedItems: (order.items || []).map((i) => ({
           name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
         })),
@@ -232,8 +233,8 @@ export default function OrdersPage() {
           table_number: o.table_number,
           customer_name: o.customer_name,
           orders: [],
-          total: 0, subtotal: 0, taxAmount: 0, discountAmount: 0, tipAmount: 0,
-          taxRate: parseInt(o.tax_rate) || 0,
+          total: 0, subtotal: 0, taxAmount: 0, discountAmount: 0, tipAmount: 0, deliveryFee: 0,
+          taxRate: parseFloat(o.tax_rate) || 0,
           itemMap: {},
         };
       }
@@ -243,6 +244,7 @@ export default function OrdersPage() {
       bill.taxAmount      += parseFloat(o.tax_amount)      || 0;
       bill.discountAmount += parseFloat(o.discount_amount) || 0;
       bill.tipAmount      += parseFloat(o.tip_amount)      || 0;
+      bill.deliveryFee    += parseFloat(o.delivery_fee)    || 0;
       bill.total          += parseFloat(o.final_amount || o.total_amount) || 0;
       o.items?.forEach((item) => {
         if (!bill.itemMap[item.item_name]) {
@@ -763,9 +765,10 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
       table_number: 'Takeaway',
       subtotal:       parseFloat(order.total_amount)    || 0,
       taxAmount:      parseFloat(order.tax_amount)      || 0,
-      taxRate:        parseInt(order.tax_rate)           || 0,
+      taxRate:        parseFloat(order.tax_rate)        || 0,
       discountAmount: parseFloat(order.discount_amount) || 0,
       tipAmount:      parseFloat(order.tip_amount)      || 0,
+      deliveryFee:    parseFloat(order.delivery_fee)    || 0,
       total:          parseFloat(order.final_amount || order.total_amount) || 0,
       aggregatedItems: (order.items || []).map((i) => ({
         name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
@@ -1131,7 +1134,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
   }
 
   // ── Step 1: Collect ───────────────────────────────────────────
-  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || counterTip > 0;
+  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || (bill.deliveryFee > 0) || counterTip > 0;
 
   return overlay(
     <div className="p-5 space-y-4">
@@ -1158,7 +1161,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
             <div className="border-t border-gray-200 pt-2 mt-1 space-y-1">
               <div className="flex justify-between text-gray-500 text-xs">
                 <span>Subtotal</span>
-                <span>{c(bill.subtotal || bill.total)}</span>
+                <span>{c(bill.subtotal)}</span>
               </div>
               {bill.taxAmount > 0 && (
                 <div className="flex justify-between text-gray-500 text-xs">
@@ -1176,6 +1179,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
                 <div className="flex justify-between text-gray-500 text-xs">
                   <span>Tip (customer)</span>
                   <span>{c(bill.tipAmount)}</span>
+                </div>
+              )}
+              {bill.deliveryFee > 0 && (
+                <div className="flex justify-between text-gray-500 text-xs">
+                  <span>🛵 Delivery fee</span>
+                  <span>{c(bill.deliveryFee)}</span>
                 </div>
               )}
               {counterTip > 0 && (

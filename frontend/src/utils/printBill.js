@@ -36,25 +36,25 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   // ── GST calculation ──────────────────────────────────────────────────────
   const gstRate      = parseInt(cafe?.gst_rate ?? 5);
   const hasGst       = !!(cafe?.gst_number) && gstRate > 0;
-  const taxInclusive = cafe?.tax_inclusive !== false; // default true (backward-compat)
+  const taxInclusive = cafe?.tax_inclusive === true; // default false (exclusive) — matches CartPage
 
   const total        = parseFloat(bill.total) || 0;
 
-  // Use stored tax_amount from order snapshot if available; re-derive otherwise
-  const storedTax    = parseFloat(bill.orders?.[0]?.tax_amount ?? -1);
+  // Use stored tax_amount from order snapshot (sum all orders); re-derive only as fallback
+  const storedTax = (bill.orders || []).reduce((sum, o) => {
+    const t = parseFloat(o.tax_amount ?? -1);
+    return t >= 0 ? sum + t : -1; // any missing → fallback
+  }, 0);
   let totalTax, taxableAmt;
 
   if (hasGst) {
     if (storedTax >= 0) {
-      // Use the recorded tax snapshot (most accurate)
-      totalTax   = storedTax * (bill.orders?.length || 1); // sum across orders if aggregated
+      totalTax   = storedTax;
       taxableAmt = total - totalTax;
     } else if (taxInclusive) {
-      // Tax baked into price — extract
       taxableAmt = total / (1 + gstRate / 100);
       totalTax   = total - taxableAmt;
     } else {
-      // Tax was added on top — total is gross = base + tax
       taxableAmt = total / (1 + gstRate / 100);
       totalTax   = total - taxableAmt;
     }
@@ -65,6 +65,11 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 
   const cgst = totalTax / 2;
   const sgst = totalTax / 2;
+
+  // Breakdown fields from bill object (populated by BillingModal/openOrderBilling)
+  const discountAmt  = parseFloat(bill.discountAmount || 0);
+  const tipAmt       = parseFloat(bill.tipAmount || 0);
+  const deliveryFee  = parseFloat(bill.deliveryFee || 0);
 
   const change      = cashReceived != null ? (parseFloat(cashReceived) - total) : null;
 
@@ -269,6 +274,24 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     <tr>
       <td class="lbl indent">SGST @ ${gstRate / 2}%</td>
       <td class="val">${sym}${fmt(sgst)}</td>
+    </tr>
+    ` : ''}
+    ${discountAmt > 0 ? `
+    <tr>
+      <td class="lbl">Discount</td>
+      <td class="val" style="color:#16a34a;">-${sym}${fmt(discountAmt)}</td>
+    </tr>
+    ` : ''}
+    ${tipAmt > 0 ? `
+    <tr>
+      <td class="lbl">Tip</td>
+      <td class="val">${sym}${fmt(tipAmt)}</td>
+    </tr>
+    ` : ''}
+    ${deliveryFee > 0 ? `
+    <tr>
+      <td class="lbl">Delivery Fee</td>
+      <td class="val">${sym}${fmt(deliveryFee)}</td>
     </tr>
     ` : ''}
     <tr class="grand-total">

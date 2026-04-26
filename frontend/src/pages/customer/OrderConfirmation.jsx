@@ -523,12 +523,12 @@ export default function OrderConfirmation() {
                 {parseFloat(order.tax_amount || 0) > 0 && (
                   <>
                     <div className="flex justify-between text-gray-500">
-                      <span>CGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
-                      <span>{c(order.tax_amount / 2)}</span>
+                      <span>CGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
+                      <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
                     </div>
                     <div className="flex justify-between text-gray-500">
-                      <span>SGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
-                      <span>{c(order.tax_amount / 2)}</span>
+                      <span>SGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
+                      <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
                     </div>
                   </>
                 )}

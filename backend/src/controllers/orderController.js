@@ -371,7 +371,8 @@ exports.getOrders = asyncHandler(async (req, res) => {
               COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
               o.customer_name, o.customer_phone, o.table_number,
               o.order_type, o.status, o.kitchen_mode,
-              o.total_amount, o.discount_amount, o.final_amount,
+              o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
+              o.tip_amount, o.delivery_fee, o.final_amount,
               o.payment_verified, o.cancellation_reason,
               o.notes, o.created_at, o.updated_at
        FROM orders o ${whereClause}
@@ -519,7 +520,9 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT o.id, o.order_number,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-            o.status, o.order_type, o.customer_name, o.table_number, o.updated_at
+            o.status, o.order_type, o.customer_name, o.table_number, o.updated_at,
+            o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
+            o.tip_amount, o.delivery_fee, o.final_amount, o.cancellation_reason
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
@@ -676,11 +679,12 @@ async function getOrderWithItems(orderId, cafeId = null) {
               COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
               o.customer_name, o.customer_phone, o.table_number,
               o.order_type, o.status,
-              o.total_amount, o.discount_amount, o.final_amount,
+              o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
+              o.tip_amount, o.delivery_fee, o.final_amount,
               o.payment_verified, o.cancellation_reason,
               o.notes, o.created_at, o.updated_at,
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
-              o.delivery_phone, o.delivery_instructions, o.delivery_fee, o.delivery_status,
+              o.delivery_phone, o.delivery_instructions, o.delivery_status,
               o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason,
               o.kitchen_mode
        FROM orders o WHERE o.id = $1${cafeFilter}`,
