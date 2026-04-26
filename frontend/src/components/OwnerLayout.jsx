@@ -186,10 +186,21 @@ function OwnerLayoutInner() {
                 <button
                   onClick={handleToggleOpen}
                   disabled={togglingOpen}
-                  title={isOpen ? 'Café is Open — click to close' : 'Café is Closed — click to open'}
-                  className={`w-8 h-5 rounded-full relative transition-colors flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`}
+                  role="switch"
+                  aria-checked={isOpen}
+                  title={isOpen ? 'Open — click to close' : 'Closed — click to open'}
+                  style={{ width: 36, height: 20 }}
+                  className={`relative rounded-full transition-colors duration-200 flex-shrink-0 focus:outline-none ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`}
                 >
-                  <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${isOpen ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  <span
+                    style={{
+                      width: 14, height: 14,
+                      transform: isOpen ? 'translateX(18px)' : 'translateX(3px)',
+                      top: 3, position: 'absolute',
+                      transition: 'transform 200ms',
+                    }}
+                    className="rounded-full bg-white shadow block"
+                  />
                 </button>
               )}
             </div>
@@ -230,24 +241,33 @@ function OwnerLayoutInner() {
 
               {/* Open/Closed toggle — owner only */}
               {!isStaff && (
-                <button
-                  onClick={handleToggleOpen}
-                  disabled={togglingOpen}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-semibold transition-colors ${
-                    isOpen
-                      ? 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'
-                      : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'
-                  }`}
-                >
+                <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${isOpen ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-red-500'}`} />
-                    <span>{togglingOpen ? 'Updating…' : isOpen ? 'Café is Open' : 'Café is Closed'}</span>
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-red-400'}`} />
+                    <span className={`text-xs font-semibold ${isOpen ? 'text-green-800' : 'text-red-700'}`}>
+                      {togglingOpen ? 'Updating…' : isOpen ? 'Open' : 'Closed'}
+                    </span>
                   </div>
-                  {/* Toggle pill */}
-                  <div className={`relative w-8 h-4.5 rounded-full transition-colors flex-shrink-0 ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`} style={{ height: '18px', width: '32px' }}>
-                    <span className={`absolute top-0.5 w-3.5 h-3.5 rounded-full bg-white shadow transition-transform ${isOpen ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                  </div>
-                </button>
+                  {/* Toggle switch */}
+                  <button
+                    onClick={handleToggleOpen}
+                    disabled={togglingOpen}
+                    role="switch"
+                    aria-checked={isOpen}
+                    style={{ width: 36, height: 20 }}
+                    className={`relative rounded-full transition-colors duration-200 flex-shrink-0 focus:outline-none ${isOpen ? 'bg-green-500' : 'bg-gray-300'}`}
+                  >
+                    <span
+                      style={{
+                        width: 14, height: 14,
+                        transform: isOpen ? 'translateX(18px)' : 'translateX(3px)',
+                        top: 3, position: 'absolute',
+                        transition: 'transform 200ms',
+                      }}
+                      className="rounded-full bg-white shadow block"
+                    />
+                  </button>
+                </div>
               )}
 
               {/* Outlet dropdown (owner only) */}

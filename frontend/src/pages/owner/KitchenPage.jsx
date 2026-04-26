@@ -410,6 +410,143 @@ function KitchenHint() {
 }
 
 
+function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate, onMoveItem,
+  onAcceptOrder, onRejectOrder, onAcceptItem, onServeSelected, onKotPrint, onKotReprint, onCancelItem, onToggleItem }) {
+  const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+  const nextStatus = getNextStatus(status, order.order_type);
+  const actionLabel = getActionLabel(status, order.order_type);
+  const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  return (
+    <div className={`rounded-xl border-l-4 p-3 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-bold text-white text-lg">{fmtToken(order.daily_order_number, order.order_type)}</span>
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+          {elapsed(order.created_at, now)}
+        </span>
+      </div>
+      <p className="text-sm text-gray-300 mb-0.5">
+        {order.order_type === 'takeaway' ? '🥡 Takeaway' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ ${order.table_number}`}
+      </p>
+      <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
+
+      {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
+        <div className="flex gap-2 mb-2">
+          <button onClick={() => onAcceptOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
+          <button onClick={() => onRejectOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
+        </div>
+      )}
+
+      {order.kitchen_mode === 'individual' ? (
+        <div className="space-y-1.5 mb-3">
+          {sortedItems.map((item, idx) => {
+            const isCancelled = item.item_status === 'cancelled';
+            const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
+            return (
+              <div key={item.id} className={`rounded-lg border p-2 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
+                <div className="flex items-start justify-between gap-1.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      {item.item_status === 'ready' && !isCancelled && (
+                        <input type="checkbox" checked={isSelected} onChange={() => onToggleItem(order.id, item.id)} className="w-3.5 h-3.5 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
+                      )}
+                      <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-800 text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                      <span className={`text-xs font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className={`inline-flex text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
+                        {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
+                      </span>
+                      {isCancelled && item.cancellation_reason && (
+                        <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
+                      )}
+                    </div>
+                  </div>
+                  {!isCancelled && (
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <div className="flex gap-0.5">
+                        <button onClick={() => onMoveItem(order.id, item.id, 'up')} disabled={idx === 0}
+                          className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↑</button>
+                        <button onClick={() => onMoveItem(order.id, item.id, 'down')} disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
+                          className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
+                      </div>
+                      <div className="flex flex-wrap gap-0.5 justify-end">
+                        {!item.accepted && order.accepted && (
+                          <button onClick={() => onAcceptItem(order.id, item.id)} className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-500">Accept</button>
+                        )}
+                        {item.item_status === 'pending' && item.accepted && (
+                          <button onClick={() => onItemUpdate(order.id, item.id, 'preparing')} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-500">Start</button>
+                        )}
+                        {item.item_status === 'preparing' && (
+                          <button onClick={() => onItemUpdate(order.id, item.id, 'ready')} className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-white hover:bg-teal-500">Ready</button>
+                        )}
+                        {item.item_status === 'ready' && (
+                          <button onClick={() => onItemUpdate(order.id, item.id, 'served')} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
+                        )}
+                        {['pending', 'preparing'].includes(item.item_status) && (
+                          <button onClick={() => onCancelItem(order.id, item.id, item.item_name)}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800">✕</button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {(selectedItems[order.id]?.size > 0) && (
+            <button onClick={() => onServeSelected(order.id)} className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors">
+              🍽️ Serve {selectedItems[order.id].size} Item{selectedItems[order.id].size > 1 ? 's' : ''}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-1 mb-3">
+          {(order.items || []).map((item) => {
+            const ist = item.item_status || 'pending';
+            const nextIst = NEXT_ITEM_STATUS[ist];
+            const isCancelled = ist === 'cancelled';
+            return (
+              <div key={item.id}
+                onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
+                className={`flex items-center gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
+                  ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
+                  ${ITEM_ROW_STYLE[ist]}`}
+              >
+                <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>{item.item_name}</span>
+                <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>{ITEM_STATUS_LABEL[ist] || ist}</span>
+                {!isCancelled && nextIst && <span className="text-gray-600 text-xs flex-shrink-0">›</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {order.notes && (
+        <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
+      )}
+
+      {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
+        <button onClick={() => onAdvance(order)} className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}>
+          {actionLabel} →
+        </button>
+      )}
+
+      <div className="mt-1">
+        {order.kitchen_mode === 'individual' ? (
+          <button onClick={() => onKotReprint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
+            📋 Reprint KOT
+          </button>
+        ) : (
+          <button onClick={() => onKotPrint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
+            📋 Print KOT
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function KitchenPage() {
   const { cafe } = useAuth();
   const [orders, setOrders] = useState([]);
@@ -423,6 +560,7 @@ export default function KitchenPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [kotHistory, setKotHistory] = useState({}); // orderId → slips[]
+  const [mobileTab, setMobileTab] = useState('pending');
   const now = useTimer();
 
   const isPremium = cafe?.plan_tier === 'premium';
@@ -719,19 +857,18 @@ export default function KitchenPage() {
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-xl">🍳</span>
-          <h1 className="font-bold text-lg">Kitchen Display</h1>
-          <span className="text-xs text-gray-500">{cafe?.name}</span>
-          {isPremium && <span className="text-[10px] font-bold bg-purple-800 text-purple-300 px-2 py-0.5 rounded-full">PREMIUM</span>}
+      {/* Header — desktop: full row / mobile: compact */}
+      <div className="flex items-center justify-between px-3 md:px-6 py-2.5 md:py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <span className="text-lg md:text-xl">🍳</span>
+          <h1 className="font-bold text-sm md:text-lg truncate">Kitchen</h1>
+          <span className="hidden md:inline text-xs text-gray-500">{cafe?.name}</span>
+          {isPremium && <span className="text-[10px] font-bold bg-purple-800 text-purple-300 px-2 py-0.5 rounded-full">PRO</span>}
+          <span className="text-xs text-gray-500 ml-1">{orders.length} active</span>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">{orders.length} active order{orders.length !== 1 ? 's' : ''}</span>
-
-          {/* View mode toggle */}
-          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+        <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
+          {/* View mode toggle — desktop only */}
+          <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
             {[
               { key: 'individual', label: '☰ Individual' },
               { key: 'combined',   label: '⊞ By Table'   },
@@ -747,24 +884,118 @@ export default function KitchenPage() {
               </button>
             ))}
           </div>
+          {/* View mode — mobile icon toggle */}
+          <button
+            onClick={() => setViewMode((v) => v === 'individual' ? 'combined' : 'individual')}
+            title={viewMode === 'individual' ? 'Switch to By Table' : 'Switch to Individual'}
+            className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300"
+          >
+            {viewMode === 'individual' ? '⊞' : '☰'}
+          </button>
 
-          <button onClick={() => setSoundEnabled((s) => !s)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
-            {soundEnabled ? '🔔 Sound On' : '🔕 Muted'}
+          <button
+            onClick={() => setSoundEnabled((s) => !s)}
+            title={soundEnabled ? 'Mute' : 'Unmute'}
+            className={`px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}
+          >
+            {soundEnabled ? '🔔' : '🔕'}
+            <span className="hidden md:inline ml-1">{soundEnabled ? 'Sound On' : 'Muted'}</span>
           </button>
-          <button onClick={() => fetchOrders(true)} disabled={refreshing} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+          <button
+            onClick={() => fetchOrders(true)}
+            disabled={refreshing}
+            title="Refresh"
+            className="px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+          >
             <span className={refreshing ? 'animate-spin inline-block' : ''}>↻</span>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            <span className="hidden md:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
           </button>
-          <button onClick={toggleFullscreen} className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
-            {fullscreen ? '⛶ Exit' : '⛶ Fullscreen'}
+          <button
+            onClick={toggleFullscreen}
+            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            className="hidden md:block px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
+          >
+            {fullscreen ? '⛶ Exit' : '⛶ Full'}
           </button>
         </div>
       </div>
 
       <KitchenHint />
 
-      {/* 4-column KDS board */}
-      <div className="flex-1 flex gap-0 overflow-hidden min-h-0">
+      {/* ── Mobile: horizontal status tabs + single column ── */}
+      <div className="md:hidden flex-1 flex flex-col overflow-hidden min-h-0">
+        {/* Status tabs */}
+        <div className="flex-shrink-0 flex border-b border-gray-800 bg-gray-900 overflow-x-auto">
+          {KITCHEN_STATUSES.map((status) => {
+            const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
+            const count = byStatus[status].length;
+            const isActive = mobileTab === status;
+            const activeCls = {
+              pending:   'border-yellow-400 text-yellow-300',
+              confirmed: 'border-blue-400 text-blue-300',
+              preparing: 'border-orange-400 text-orange-300',
+              ready:     'border-teal-400 text-teal-300',
+            };
+            const badgeBg = {
+              pending: 'bg-yellow-500', confirmed: 'bg-blue-500',
+              preparing: 'bg-orange-500', ready: 'bg-teal-500',
+            };
+            return (
+              <button
+                key={status}
+                onClick={() => setMobileTab(status)}
+                className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 py-3 px-2 border-b-2 text-xs font-bold uppercase tracking-wide transition-colors whitespace-nowrap ${
+                  isActive ? activeCls[status] : 'border-transparent text-gray-500'
+                }`}
+              >
+                <span>{colIcons[status]}</span>
+                <span>{TAB_LABELS[status]}</span>
+                {count > 0 && (
+                  <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${badgeBg[status]}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Single active column — scrollable */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          {(() => {
+            const colOrders = byStatus[mobileTab];
+            const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
+            if (colOrders.length === 0) return (
+              <div className="flex flex-col items-center justify-center py-24 text-gray-700">
+                <span className="text-5xl mb-3 opacity-20">{colIcons[mobileTab]}</span>
+                <p className="text-sm text-gray-600">No {TAB_LABELS[mobileTab].toLowerCase()} orders</p>
+              </div>
+            );
+            if (viewMode === 'combined') return groupByTable(colOrders).map((group) => (
+              <CombinedTableCard
+                key={group.tableKey || group.orders[0].id}
+                group={group}
+                status={mobileTab}
+                now={now}
+                onAdvance={handleAdvance}
+                onAdvanceAll={handleAdvanceAll}
+                onKotPrint={handleKotPrint}
+                onItemUpdate={handleItemUpdate}
+              />
+            ));
+            return colOrders.map((order) => {
+              const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+              const nextStatus = getNextStatus(mobileTab, order.order_type);
+              const actionLabel = getActionLabel(mobileTab, order.order_type);
+              const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+              return <KDSOrderCard key={order.id} order={order} status={mobileTab} now={now} selectedItems={selectedItems} onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} onMoveItem={handleMoveItem} onAcceptOrder={handleAcceptOrder} onRejectOrder={handleRejectOrder} onAcceptItem={handleAcceptItem} onServeSelected={handleServeSelected} onKotPrint={handleKotPrint} onKotReprint={handleKotReprint} onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }} onToggleItem={toggleItemSelection} />;
+            });
+          })()}
+        </div>
+      </div>
+
+      {/* ── Desktop: 4-column KDS board ── */}
+      <div className="hidden md:flex flex-1 gap-0 overflow-hidden min-h-0">
         {KITCHEN_STATUSES.map((status) => {
           const colOrders = byStatus[status];
           const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
@@ -821,157 +1052,26 @@ export default function KitchenPage() {
                     />
                   ))
                 ) : (
-                  colOrders.map((order) => {
-                    const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-                    const nextStatus = getNextStatus(status, order.order_type);
-                    const actionLabel = getActionLabel(status, order.order_type);
-                    const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-
-                    return (
-                      <div key={order.id} className={`rounded-xl border-l-4 p-3 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
-                        {/* Top row */}
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="font-bold text-white text-lg">{fmtToken(order.daily_order_number, order.order_type)}</span>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-                            {elapsed(order.created_at, now)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-300 mb-0.5">
-                          {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
-                        </p>
-                        <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
-
-                        {/* Accept/reject (premium individual mode) */}
-                        {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
-                          <div className="flex gap-2 mb-2">
-                            <button onClick={() => handleAcceptOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
-                            <button onClick={() => handleRejectOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
-                          </div>
-                        )}
-
-                        {/* Items */}
-                        {order.kitchen_mode === 'individual' ? (
-                          <div className="space-y-1.5 mb-3">
-                            {sortedItems.map((item, idx) => {
-                              const isCancelled = item.item_status === 'cancelled';
-                              const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
-                              return (
-                                <div key={item.id} className={`rounded-lg border p-2 ${isCancelled ? 'border-gray-800 bg-gray-900/40 opacity-50' : 'bg-gray-900/80 border-gray-800'}`}>
-                                  <div className="flex items-start justify-between gap-1.5">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 mb-1">
-                                        {item.item_status === 'ready' && !isCancelled && (
-                                          <input type="checkbox" checked={isSelected} onChange={() => toggleItemSelection(order.id, item.id)} className="w-3.5 h-3.5 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
-                                        )}
-                                        <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-800 text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                                        <span className={`text-xs font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1">
-                                        <span className={`inline-flex text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
-                                          {ITEM_STATUS_LABEL[item.item_status] || item.item_status}
-                                        </span>
-                                        {isCancelled && item.cancellation_reason && (
-                                          <span className="text-[10px] text-red-400 truncate">{item.cancellation_reason}</span>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {!isCancelled && (
-                                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                                        <div className="flex gap-0.5">
-                                          <button onClick={() => handleMoveItem(order.id, item.id, 'up')} disabled={idx === 0}
-                                            className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↑</button>
-                                          <button onClick={() => handleMoveItem(order.id, item.id, 'down')} disabled={idx === sortedItems.filter(i => i.item_status !== 'cancelled').length - 1}
-                                            className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
-                                        </div>
-                                        <div className="flex flex-wrap gap-0.5 justify-end">
-                                          {!item.accepted && order.accepted && (
-                                            <button onClick={() => handleAcceptItem(order.id, item.id)} className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-500">Accept</button>
-                                          )}
-                                          {item.item_status === 'pending' && item.accepted && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'preparing')} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-500">Start</button>
-                                          )}
-                                          {item.item_status === 'preparing' && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'ready')} className="text-[10px] px-1.5 py-0.5 rounded bg-teal-600 text-white hover:bg-teal-500">Ready</button>
-                                          )}
-                                          {item.item_status === 'ready' && (
-                                            <button onClick={() => handleItemUpdate(order.id, item.id, 'served')} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-500">Serve</button>
-                                          )}
-                                          {['pending', 'preparing'].includes(item.item_status) && (
-                                            <button onClick={() => { setCancelModal({ orderId: order.id, itemId: item.id, itemName: item.item_name }); setCancelReason(''); }}
-                                              className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/60 text-red-400 hover:bg-red-800 border border-red-800">✕</button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {(selectedItems[order.id]?.size > 0) && (
-                              <button onClick={() => handleServeSelected(order.id)} className="w-full py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors">
-                                🍽️ Serve {selectedItems[order.id].size} Item{selectedItems[order.id].size > 1 ? 's' : ''}
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="space-y-1 mb-3">
-                            {(order.items || []).map((item) => {
-                              const ist = item.item_status || 'pending';
-                              const nextIst = NEXT_ITEM_STATUS[ist];
-                              const isCancelled = ist === 'cancelled';
-                              return (
-                                <div
-                                  key={item.id}
-                                  onClick={() => !isCancelled && nextIst && handleItemUpdate(order.id, item.id, nextIst)}
-                                  className={`flex items-center gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
-                                    ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
-                                    ${ITEM_ROW_STYLE[ist]}`}
-                                >
-                                  <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
-                                    {item.quantity}
-                                  </span>
-                                  <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
-                                    {item.item_name}
-                                  </span>
-                                  <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
-                                    {ITEM_STATUS_LABEL[ist] || ist}
-                                  </span>
-                                  {!isCancelled && nextIst && (
-                                    <span className="text-gray-600 text-xs flex-shrink-0">›</span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {order.notes && (
-                          <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
-                        )}
-
-                        {/* Advance button */}
-                        {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
-                          <button onClick={() => handleAdvance(order)} className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}>
-                            {actionLabel} →
-                          </button>
-                        )}
-
-                        {/* KOT only */}
-                        <div className="mt-1">
-                          {order.kitchen_mode === 'individual' ? (
-                            <button onClick={() => handleKotReprint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
-                              📋 Reprint KOT
-                            </button>
-                          ) : (
-                            <button onClick={() => handleKotPrint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
-                              📋 Print KOT
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
+                  colOrders.map((order) => (
+                    <KDSOrderCard
+                      key={order.id}
+                      order={order}
+                      status={status}
+                      now={now}
+                      selectedItems={selectedItems}
+                      onAdvance={handleAdvance}
+                      onItemUpdate={handleItemUpdate}
+                      onMoveItem={handleMoveItem}
+                      onAcceptOrder={handleAcceptOrder}
+                      onRejectOrder={handleRejectOrder}
+                      onAcceptItem={handleAcceptItem}
+                      onServeSelected={handleServeSelected}
+                      onKotPrint={handleKotPrint}
+                      onKotReprint={handleKotReprint}
+                      onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
+                      onToggleItem={toggleItemSelection}
+                    />
+                  ))
                 )}
               </div>
             </div>
