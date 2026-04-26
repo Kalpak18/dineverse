@@ -263,6 +263,11 @@ export default function OrdersPage() {
 
   const paidOrders = useMemo(() => orders.filter((o) => o.status === 'paid'), [orders]);
 
+  const historyTodayCount = useMemo(() => {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    return paidOrders.filter((o) => new Date(o.created_at).getTime() >= todayStart.getTime()).length;
+  }, [paidOrders]);
+
   const statusCounts = useMemo(() => {
     const counts = {};
     orders.forEach((o) => { counts[o.status] = (counts[o.status] || 0) + 1; });
@@ -302,7 +307,7 @@ export default function OrdersPage() {
         {[
           { key: TABS.ORDERS,  label: 'Orders',  count: orders.filter(isOrdersTabVisible).length },
           { key: TABS.BILLS,   label: 'Bills',   count: billsCount },
-          { key: TABS.HISTORY, label: 'History', count: paidOrders.length },
+          { key: TABS.HISTORY, label: 'History', count: historyTodayCount },
         ].map(({ key, label, count }) => (
           <button
             key={key}
