@@ -652,7 +652,7 @@ exports.updateProfile = asyncHandler(async (req, res) => {
        req.cafeId]
     );
   }
-  cache.del(`cafe:${result.rows[0].slug}`);
+  await cache.del(`cafe:${result.rows[0].slug}`);
   ok(res, { cafe: { ...result.rows[0], root_cafe_id: req.rootCafeId } });
 });
 

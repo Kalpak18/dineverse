@@ -274,7 +274,10 @@ server.listen(PORT, () => {
   db.query('SELECT 1')
     .then(() => {
       logger.info('Database connected successfully');
-      if (process.env.INSTANCE_ROLE !== 'worker') {
+      // In PM2 cluster mode NODE_APP_INSTANCE is set per worker (0, 1, 2…).
+      // Only the first worker (index 0) runs scheduled jobs — prevents N cron duplicates.
+      const instanceId = parseInt(process.env.NODE_APP_INSTANCE ?? '0', 10);
+      if (process.env.INSTANCE_ROLE !== 'worker' && instanceId === 0) {
         initReportScheduler();
       }
     })

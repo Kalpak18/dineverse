@@ -4,7 +4,7 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
 
-const bustMenuCache = (cafeId) => cache.del(`menu:${cafeId}`);
+const bustMenuCache = (cafeId) => cache.del(`menu:${cafeId}`); // returns Promise — callers await it
 
 // ─── CATEGORIES ───────────────────────────────────────────────
 
@@ -29,7 +29,7 @@ exports.createCategory = asyncHandler(async (req, res) => {
     'INSERT INTO categories (cafe_id, name, display_order) VALUES ($1, $2, $3) RETURNING *',
     [req.cafeId, name, display_order || 0]
   );
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { category: result.rows[0] }, 'Category created', 201);
 });
 
@@ -45,7 +45,7 @@ exports.updateCategory = asyncHandler(async (req, res) => {
     [name, display_order, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { category: result.rows[0] });
 });
 
@@ -56,7 +56,7 @@ exports.deleteCategory = asyncHandler(async (req, res) => {
     [id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, {}, 'Category deleted');
 });
 
@@ -113,7 +113,7 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
       tagsArr,
     ]
   );
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { item: result.rows[0] }, 'Menu item created', 201);
 });
 
@@ -144,7 +144,7 @@ exports.updateMenuItem = asyncHandler(async (req, res) => {
      id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { item: result.rows[0] });
 });
 
@@ -182,7 +182,7 @@ exports.updateStock = asyncHandler(async (req, res) => {
     [parseInt(stock_quantity), track_stock != null ? track_stock : null, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { item: result.rows[0] });
 });
 
@@ -193,7 +193,7 @@ exports.deleteMenuItem = asyncHandler(async (req, res) => {
     [id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, {}, 'Item deleted');
 });
 
@@ -206,6 +206,6 @@ exports.toggleAvailability = asyncHandler(async (req, res) => {
     [id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
-  bustMenuCache(req.cafeId);
+  await bustMenuCache(req.cafeId);
   ok(res, { item: result.rows[0] });
 });
