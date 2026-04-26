@@ -4,6 +4,18 @@ export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
     this.state = { hasError: false, error: null };
+    this._onUnhandledRejection = (event) => {
+      if (import.meta.env.DEV) console.error('[Unhandled rejection]', event.reason);
+      event.preventDefault(); // suppress browser console noise in prod
+    };
+  }
+
+  componentDidMount() {
+    window.addEventListener('unhandledrejection', this._onUnhandledRejection);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('unhandledrejection', this._onUnhandledRejection);
   }
 
   static getDerivedStateFromError(error) {

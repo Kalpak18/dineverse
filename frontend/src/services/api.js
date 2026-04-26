@@ -17,6 +17,7 @@ api.interceptors.request.use((config) => {
 });
 
 // On 401 → clear token and logout. On subscription_expired → redirect to billing.
+// On network error (no response) → retry GET requests once (safe, idempotent).
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -26,6 +27,11 @@ api.interceptors.response.use(
     }
     if (err.response?.data?.error === 'subscription_expired') {
       window.dispatchEvent(new Event('subscription:expired'));
+    }
+    // Single retry for GET requests on network failure (no response received)
+    if (!err.response && err.config && !err.config._retry && err.config.method === 'get') {
+      err.config._retry = true;
+      return api(err.config);
     }
     return Promise.reject(err);
   }
