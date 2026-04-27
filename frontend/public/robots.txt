@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Owner dashboard requires login — no value in indexing
+Disallow: /owner/
+# Admin console — private
+Disallow: /admin/
+# Driver tracking links are single-use and token-scoped
+Disallow: /driver/
+
+Sitemap: https://dine-verse.com/sitemap.xml
