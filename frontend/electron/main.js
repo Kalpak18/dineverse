@@ -1,7 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, Notification, shell } = require('electron');
 const path = require('path');
 
-const PROD_URL = 'https://dine-verse.com/owner/login';
+const PROD_URL = 'https://www.dine-verse.com/.owner/login';
 const DEV_URL  = 'http://localhost:5173/owner/login';
 const IS_DEV   = !app.isPackaged;
 const APP_URL  = IS_DEV ? DEV_URL : PROD_URL;

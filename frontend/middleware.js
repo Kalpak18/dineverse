@@ -36,8 +36,8 @@ export default async function middleware(req) {
 
   const title = `${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''} | Order Online | DineVerse`;
   const desc = `Order food online from ${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''}. Browse the menu and order in real-time.`;
-  const image = cafe.cover_image_url || 'https://dine-verse.com/preview.png';
-  const url = `https://dine-verse.com/cafe/${slug}`;
+  const image = cafe.cover_image_url || 'https://www.dine-verse.com/.preview.png';
+  const url = `https://www.dine-verse.com/.cafe/${slug}`;
 
   const ld = JSON.stringify({
     '@context': 'https://schema.org',

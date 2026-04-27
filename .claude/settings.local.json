@@ -24,7 +24,8 @@
       "Bash(git add *)",
       "Bash(git push *)",
       "Bash(git commit -m ' *)",
-      "Bash(grep -r \"SELECT.*FROM.*WHERE.*\\\\$\" \"c:\\\\Users\\\\kalpa\\\\Desktop\\\\foodie\\\\backend\\\\src\\\\controllers\")"
+      "Bash(grep -r \"SELECT.*FROM.*WHERE.*\\\\$\" \"c:\\\\Users\\\\kalpa\\\\Desktop\\\\foodie\\\\backend\\\\src\\\\controllers\")",
+      "Bash(git commit *)"
     ]
   }
 }

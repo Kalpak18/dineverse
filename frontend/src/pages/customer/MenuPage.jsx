@@ -212,7 +212,7 @@ export default function MenuPage() {
           <meta property="og:description" content={`Browse the menu and order from ${cafe.name}${cafe.city ? `, ${cafe.city}` : ''}.`} />
           {cafe.cover_image_url && <meta property="og:image" content={cafe.cover_image_url} />}
           <meta property="og:type" content="restaurant" />
-          <meta property="og:url" content={`https://dine-verse.com/cafe/${cafe.slug}`} />
+          <meta property="og:url" content={`https://www.dine-verse.com/.cafe/${cafe.slug}`} />
           <meta name="twitter:card" content="summary_large_image" />
           <meta name="twitter:title" content={`${cafe.name} — Order Online | DineVerse`} />
           {cafe.cover_image_url && <meta name="twitter:image" content={cafe.cover_image_url} />}
@@ -220,12 +220,12 @@ export default function MenuPage() {
             '@context': 'https://schema.org',
             '@type': 'Restaurant',
             name: cafe.name,
-            url: `https://dine-verse.com/cafe/${cafe.slug}`,
+            url: `https://www.dine-verse.com/.cafe/${cafe.slug}`,
             ...(cafe.address && { address: { '@type': 'PostalAddress', streetAddress: cafe.address, addressLocality: cafe.city || '' } }),
             ...(cafe.cover_image_url && { image: cafe.cover_image_url }),
             ...(cafe.description && { description: cafe.description }),
             servesCuisine: 'Various',
-            hasMenu: `https://dine-verse.com/cafe/${cafe.slug}`,
+            hasMenu: `https://www.dine-verse.com/.cafe/${cafe.slug}`,
           })}</script>
         </Helmet>
       )}

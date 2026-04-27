@@ -65,12 +65,12 @@ function hoursToSchema(hours) {
 }
 
 function CafeSeoHead({ cafe, slug }) {
-  const pageUrl     = `https://dine-verse.com/cafe/${slug}`;
+  const pageUrl     = `https://www.dine-verse.com/.cafe/${slug}`;
   const title       = `${cafe.name} — Order Online | DineVerse`;
   const description = cafe.description
     ? `${cafe.description.slice(0, 140)}…`
     : `Order food from ${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''}. Place your order online via DineVerse.`;
-  const image = cafe.cover_image_url || cafe.logo_url || 'https://dine-verse.com/preview.png';
+  const image = cafe.cover_image_url || cafe.logo_url || 'https://www.dine-verse.com/.preview.png';
 
   const schemaType = SCHEMA_TYPE[cafe.business_type] || 'FoodEstablishment';
 
@@ -79,7 +79,7 @@ function CafeSeoHead({ cafe, slug }) {
     '@type':    schemaType,
     name:       cafe.name,
     url:        pageUrl,
-    ...(image !== 'https://dine-verse.com/preview.png' && { image }),
+    ...(image !== 'https://www.dine-verse.com/.preview.png' && { image }),
     ...(cafe.phone     && { telephone: cafe.phone }),
     ...(cafe.address   && {
       address: {
