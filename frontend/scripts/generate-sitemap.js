@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const BASE_URL  = 'https://dine-verse.com';
+const BASE_URL  = 'https://www.dine-verse.com';
 const API_BASE  = 'https://dineverse.onrender.com/api';
 
 const STATIC_PAGES = [
