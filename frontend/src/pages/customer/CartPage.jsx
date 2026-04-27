@@ -240,6 +240,7 @@ export default function CartPage() {
         tip_amount:     tip || undefined,
         // Stable per-attempt key — retries send the same UUID, backend deduplicates
         client_order_id: orderIdRef.current,
+        coupon_code: couponApplied ? couponInput.trim() : null,
         items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
         ...(isDelivery && {
           delivery_address:      deliveryForm.delivery_address.trim(),
