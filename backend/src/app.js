@@ -212,6 +212,44 @@ app.use('/api/customers',      customerRoutes);
 app.use('/api/notifications',  require('./routes/notifications'));
 app.use('/api/delivery',       require('./routes/delivery'));
 
+// ─── SEO: dynamic café sitemap ────────────────────────────────
+// Returns one <url> per active public café so Google indexes /cafe/:slug pages.
+// Cached for 6 hours — café list changes slowly.
+let cafeSitemapCache = null;
+let cafeSitemapCachedAt = 0;
+const SITEMAP_TTL_MS = 6 * 60 * 60 * 1000;
+
+app.get('/api/sitemap-cafes.xml', async (_req, res) => {
+  try {
+    if (!cafeSitemapCache || Date.now() - cafeSitemapCachedAt > SITEMAP_TTL_MS) {
+      const result = await db.query(
+        `SELECT slug, updated_at
+         FROM cafes
+         WHERE is_active = true AND setup_completed = true
+         ORDER BY slug`
+      );
+      const urls = result.rows.map((c) => {
+        const lastmod = c.updated_at
+          ? new Date(c.updated_at).toISOString().slice(0, 10)
+          : '';
+        return `  <url>
+    <loc>https://dine-verse.com/cafe/${c.slug}</loc>${lastmod ? `\n    <lastmod>${lastmod}</lastmod>` : ''}
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>`;
+      }).join('\n');
+      cafeSitemapCache = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`;
+      cafeSitemapCachedAt = Date.now();
+    }
+    res.setHeader('Content-Type', 'application/xml');
+    res.setHeader('Cache-Control', 'public, max-age=21600');
+    res.send(cafeSitemapCache);
+  } catch (err) {
+    logger.error('Failed to generate café sitemap: %s', err.message);
+    res.status(500).send('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>');
+  }
+});
+
 // Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));
 app.get('/health', healthLimiter, async (_req, res) => {
