@@ -200,7 +200,28 @@ exports.createOrder = asyncHandler(async (req, res) => {
     });
 
     // Apply best active offer
-    const { offerId, discountAmount, finalAmount } = await applyBestOffer(cafeId, items, total);
+    // Apply offer
+    let offerId = null;
+    let discountAmount = 0;
+    let finalAmount = total;
+
+    if (req.body.coupon_code) {
+      const result = await applyCoupon(cafeId, req.body.coupon_code, items, total);
+      offerId = result.offerId;
+      discountAmount = result.discountAmount;
+      finalAmount = result.finalAmount;
+    } else {
+      const result = await applyBestOffer(cafeId, items, total);
+      offerId = result.offerId;
+      discountAmount = result.discountAmount;
+      finalAmount = result.finalAmount;
+    }
+
+    // 🔒 SAFETY FIX — ADD HERE
+    if (offerId && typeof offerId === 'string' && offerId.length > 20) {
+      logger.error('❌ offerId too long:', offerId);
+      offerId = offerId.slice(0, 20);
+    }
 
     // ── Tax calculation ────────────────────────────────────────
     // tax_inclusive = true  → prices already include GST; extract tax from total
