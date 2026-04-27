@@ -11,17 +11,23 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   if (cached) return ok(res, { cafe: cached });
 
   const result = await db.query(
-    `SELECT id, name, slug, description, address, phone, logo_url, cover_image_url,
-            name_style, latitude, longitude, city, is_open,
-            gst_rate, gst_number, fssai_number,
-            COALESCE(tax_inclusive, false) AS tax_inclusive,
-            COALESCE(business_type, 'restaurant') AS business_type,
-            COALESCE(country, 'India') AS country,
-            COALESCE(currency, 'INR') AS currency,
-            opening_hours,
-            COALESCE(timezone, 'Asia/Kolkata') AS timezone,
-            COALESCE(razorpay_route_enabled, false) AS razorpay_route_enabled
-     FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true`,
+    `SELECT c.id, c.name, c.slug, c.description, c.address, c.phone, c.logo_url, c.cover_image_url,
+            c.name_style, c.latitude, c.longitude, c.city, c.is_open,
+            c.gst_rate, c.gst_number, c.fssai_number,
+            COALESCE(c.tax_inclusive, false)          AS tax_inclusive,
+            COALESCE(c.business_type, 'restaurant')   AS business_type,
+            COALESCE(c.country, 'India')              AS country,
+            COALESCE(c.currency, 'INR')               AS currency,
+            c.opening_hours,
+            COALESCE(c.timezone, 'Asia/Kolkata')      AS timezone,
+            COALESCE(c.razorpay_route_enabled, false) AS razorpay_route_enabled,
+            c.plan_tier,
+            ROUND(AVG(r.rating)::numeric, 1)          AS avg_rating,
+            COUNT(r.id)::int                          AS rating_count
+     FROM cafes c
+     LEFT JOIN order_ratings r ON r.cafe_id = c.id
+     WHERE c.slug = $1 AND c.is_active = true AND c.setup_completed = true
+     GROUP BY c.id`,
     [slug]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);

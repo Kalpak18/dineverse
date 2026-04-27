@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Helmet } from 'react-helmet-async';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
@@ -41,6 +42,111 @@ function nowParts() {
   const date = d.toLocaleDateString('en-CA'); // YYYY-MM-DD
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   return { date, time };
+}
+
+// Map DB business_type → Schema.org @type
+const SCHEMA_TYPE = {
+  restaurant:    'Restaurant',
+  cafe:          'CafeOrCoffeeShop',
+  coffee_shop:   'CafeOrCoffeeShop',
+  bakery:        'Bakery',
+  bar:           'BarOrPub',
+  food_truck:    'FoodEstablishment',
+};
+
+// Convert opening_hours JSONB { mon: { open, close, closed }, … } → Schema.org strings
+// e.g. "Mo-Fr 09:00-21:00"
+function hoursToSchema(hours) {
+  if (!hours || typeof hours !== 'object') return [];
+  const DAY = { mon: 'Mo', tue: 'Tu', wed: 'We', thu: 'Th', fri: 'Fr', sat: 'Sa', sun: 'Su' };
+  return Object.entries(hours)
+    .filter(([, v]) => !v?.closed && v?.open && v?.close)
+    .map(([day, v]) => `${DAY[day] || day} ${v.open}-${v.close}`);
+}
+
+function CafeSeoHead({ cafe, slug }) {
+  const pageUrl     = `https://dine-verse.com/cafe/${slug}`;
+  const title       = `${cafe.name} — Order Online | DineVerse`;
+  const description = cafe.description
+    ? `${cafe.description.slice(0, 140)}…`
+    : `Order food from ${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''}. Place your order online via DineVerse.`;
+  const image = cafe.cover_image_url || cafe.logo_url || 'https://dine-verse.com/preview.png';
+
+  const schemaType = SCHEMA_TYPE[cafe.business_type] || 'FoodEstablishment';
+
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type':    schemaType,
+    name:       cafe.name,
+    url:        pageUrl,
+    ...(image !== 'https://dine-verse.com/preview.png' && { image }),
+    ...(cafe.phone     && { telephone: cafe.phone }),
+    ...(cafe.address   && {
+      address: {
+        '@type':         'PostalAddress',
+        streetAddress:   cafe.address,
+        ...(cafe.city   && { addressLocality: cafe.city }),
+        addressCountry:  cafe.country || 'IN',
+      },
+    }),
+    ...(cafe.latitude && cafe.longitude && {
+      geo: {
+        '@type':    'GeoCoordinates',
+        latitude:   parseFloat(cafe.latitude),
+        longitude:  parseFloat(cafe.longitude),
+      },
+    }),
+    ...(cafe.avg_rating && parseInt(cafe.rating_count) > 0 && {
+      aggregateRating: {
+        '@type':       'AggregateRating',
+        ratingValue:   String(cafe.avg_rating),
+        reviewCount:   String(cafe.rating_count),
+        bestRating:    '5',
+        worstRating:   '1',
+      },
+    }),
+    hasMenu: `${pageUrl}/menu`,
+    menu:    `${pageUrl}/menu`,
+    ...(cafe.opening_hours && {
+      openingHours: hoursToSchema(
+        typeof cafe.opening_hours === 'string'
+          ? JSON.parse(cafe.opening_hours)
+          : cafe.opening_hours
+      ),
+    }),
+    servesCuisine: 'Indian',
+    potentialAction: {
+      '@type':  'ViewAction',
+      target:   pageUrl,
+    },
+  };
+
+  return (
+    <Helmet>
+      <title>{title}</title>
+      <meta name="description" content={description} />
+      <link rel="canonical" href={pageUrl} />
+
+      {/* Open Graph */}
+      <meta property="og:type"        content="restaurant" />
+      <meta property="og:url"         content={pageUrl} />
+      <meta property="og:title"       content={title} />
+      <meta property="og:description" content={description} />
+      <meta property="og:image"       content={image} />
+      <meta property="og:site_name"   content="DineVerse" />
+
+      {/* Twitter */}
+      <meta name="twitter:card"        content="summary_large_image" />
+      <meta name="twitter:title"       content={title} />
+      <meta name="twitter:description" content={description} />
+      <meta name="twitter:image"       content={image} />
+
+      {/* JSON-LD structured data */}
+      <script type="application/ld+json">
+        {JSON.stringify(jsonLd)}
+      </script>
+    </Helmet>
+  );
 }
 
 export default function CafeEntry() {
@@ -214,6 +320,7 @@ export default function CafeEntry() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
+      <CafeSeoHead cafe={cafe} slug={slug} />
       <Link to="/" className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-white/80 hover:bg-white border border-gray-200 text-gray-600 hover:text-brand-600 text-sm font-medium px-3 py-2 rounded-xl shadow-sm backdrop-blur-sm transition-colors">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
         Home
