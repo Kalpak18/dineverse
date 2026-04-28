@@ -67,6 +67,11 @@ export const getRouteStatus  = () => api.get('/payments/route/status');
 export const connectRoute    = (data) => api.post('/payments/route/connect', data);
 export const enableRoute     = () => api.post('/payments/route/enable');
 
+// ─── Platform Testimonials ────────────────────────────────────
+export const getPublicTestimonials = () => api.get('/testimonials/public');
+export const submitTestimonial     = (data) => api.post('/testimonials', data);
+export const getMyTestimonial      = () => api.get('/testimonials/mine');
+
 // ─── Support Tickets (Owner) ──────────────────────────────────
 export const getMyTickets = () => api.get('/support');
 export const createTicket = (data) => api.post('/support', data);

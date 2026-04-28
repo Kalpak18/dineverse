@@ -1,39 +1,41 @@
 import { useNavigate, Link } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import DineLogo from '../components/DineLogo';
 
-// ── Pricing data ──────────────────────────────────────────────
+// ── Pricing data ─────────────────────────────────────────────
+// Index: 0=1mo · 1=3mo · 2=6mo · 3=1yr · 4=2yr · 5=3yr
 const PRICING = {
   INR: {
     essential: {
-      perMonth: ['₹499', '₹449', '₹444'],
-      total:    ['₹5,988', '₹10,788', '₹15,999'],
-      save:     [null, 'Save ₹1,188', 'Save ₹1,965'],
+      perMonth: ['₹699', '₹599', '₹549', '₹499', '₹449', '₹444'],
+      total:    ['₹699', '₹1,797', '₹3,294', '₹5,988', '₹10,788', '₹15,999'],
+      save:     [null, 'Save ₹300', 'Save ₹900', 'Save ₹2,400', 'Save ₹5,988', 'Save ₹9,165'],
     },
     pro: {
-      perMonth: ['₹999', '₹899', '₹888'],
-      total:    ['₹11,988', '₹21,576', '₹31,968'],
-      save:     [null, 'Save ₹2,400', 'Save ₹3,996'],
+      perMonth: ['₹1,299', '₹1,199', '₹1,099', '₹999', '₹899', '₹888'],
+      total:    ['₹1,299', '₹3,597', '₹6,594', '₹11,988', '₹21,576', '₹31,968'],
+      save:     [null, 'Save ₹300', 'Save ₹1,200', 'Save ₹3,600', 'Save ₹9,600', 'Save ₹14,796'],
     },
-    footer: 'All prices include GST · Razorpay secured · Instant activation',
+    footer: 'All prices include GST · Secured by Razorpay · Instant activation',
   },
   USD: {
     essential: {
-      perMonth: ['$6', '$5.50', '$5'],
-      total:    ['$72', '$132', '$180'],
-      save:     [null, 'Save $12', 'Save $36'],
+      perMonth: ['$8', '$7', '$6.50', '$6', '$5.30', '$5.25'],
+      total:    ['$8', '$21', '$39', '$72', '$127', '$189'],
+      save:     [null, 'Save $3', 'Save $9', 'Save $24', 'Save $69', 'Save $108'],
     },
     pro: {
-      perMonth: ['$12', '$10.80', '$10'],
-      total:    ['$144', '$259', '$360'],
-      save:     [null, 'Save $29', 'Save $72'],
+      perMonth: ['$15', '$14', '$13', '$12', '$10.80', '$10.50'],
+      total:    ['$15', '$42', '$78', '$144', '$259', '$378'],
+      save:     [null, 'Save $3', 'Save $12', 'Save $36', 'Save $101', 'Save $162'],
     },
     footer: 'Prices include applicable taxes · Secure payment · Instant activation',
   },
 };
 
-const DURATION_LABELS = ['1 Year', '2 Years', '3 Years'];
-const DURATION_BADGES = [null, '10% OFF', 'BEST VALUE'];
+// Index: 0=1mo · 1=3mo · 2=6mo · 3=1yr · 4=2yr · 5=3yr
+const DURATION_LABELS = ['1 Month', '3 Months', '6 Months', '1 Year', '2 Years', '3 Years'];
+const DURATION_BADGES = [null, 'Save 14%', 'Save 21%', 'Save 29%', 'Save 36%', 'Best Value'];
 
 async function detectCurrency() {
   const cached = sessionStorage.getItem('dv_pricing_currency');
@@ -55,10 +57,180 @@ function CheckIcon({ cls = 'text-green-500' }) {
   );
 }
 
+// ── Star row helper ───────────────────────────────────────────
+function Stars({ rating }) {
+  return (
+    <div className="flex gap-0.5">
+      {[1,2,3,4,5].map((i) => (
+        <svg key={i} className={`w-3.5 h-3.5 ${i <= rating ? 'text-amber-400 fill-amber-400' : 'text-gray-200 fill-gray-200'}`} viewBox="0 0 20 20">
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+        </svg>
+      ))}
+    </div>
+  );
+}
+
+// ── Testimonials section — shows only when real reviews exist ────
+function TestimonialsSection() {
+  const [reviews, setReviews]   = useState(null);  // null = loading
+  const [stats, setStats]       = useState(null);
+  const trackRef                = useRef(null);
+  const pauseRef                = useRef(false);
+
+  useEffect(() => {
+    const base = import.meta.env.VITE_API_URL || '/api';
+    fetch(`${base}/testimonials/public`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success) {
+          setReviews(d.reviews || []);
+          setStats(d.stats || null);
+        } else {
+          setReviews([]);
+        }
+      })
+      .catch(() => setReviews([]));
+  }, []);
+
+  // Auto-scroll the track: translate X slowly, loop by resetting when halfway
+  useEffect(() => {
+    if (!reviews?.length || !trackRef.current) return;
+    let pos = 0;
+    const track = trackRef.current;
+    const step = () => {
+      if (!pauseRef.current) {
+        pos += 0.4;
+        const halfWidth = track.scrollWidth / 2;
+        if (pos >= halfWidth) pos = 0;
+        track.style.transform = `translateX(-${pos}px)`;
+      }
+      rafRef.current = requestAnimationFrame(step);
+    };
+    const rafRef = { current: null };
+    rafRef.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [reviews]);
+
+  // Hidden until data loaded; hidden if no reviews at all
+  if (reviews === null) return null;
+  if (!reviews.length)  return null;
+
+  const displayReviews = reviews.length >= 3 ? reviews : [...reviews, ...reviews, ...reviews];
+  const doubled = [...displayReviews, ...displayReviews]; // duplicate for seamless loop
+
+  const avg  = parseFloat(stats?.avg_rating || 0);
+  const total = parseInt(stats?.total || 0, 10);
+  const bars  = [
+    { label: '5 ★', count: parseInt(stats?.five_star  || 0, 10), color: 'bg-green-500'  },
+    { label: '4 ★', count: parseInt(stats?.four_star  || 0, 10), color: 'bg-lime-400'   },
+    { label: '3 ★', count: parseInt(stats?.three_star || 0, 10), color: 'bg-yellow-400' },
+    { label: '1-2★', count: parseInt(stats?.low_star  || 0, 10), color: 'bg-red-400'    },
+  ];
+
+  return (
+    <section className="py-20 bg-gray-50 overflow-hidden">
+      <div className="max-w-6xl mx-auto px-6">
+        {/* Section header */}
+        <div className="text-center mb-12">
+          <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">From Our Customers</span>
+          <h2 className="text-3xl font-extrabold text-gray-900 mt-2">What restaurant owners say</h2>
+          <p className="text-gray-500 text-sm mt-2">Honest reviews from café owners using DineVerse every day.</p>
+        </div>
+
+        {/* Grid: 2/3 scrolling cards + 1/3 stats */}
+        <div className="grid lg:grid-cols-3 gap-8 items-start">
+
+          {/* ── Scrolling testimonials (2/3) ── */}
+          <div className="lg:col-span-2 overflow-hidden relative">
+            {/* Left/right fade masks */}
+            <div className="absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-gray-50 to-transparent z-10 pointer-events-none" />
+            <div className="absolute right-0 top-0 bottom-0 w-10 bg-gradient-to-l from-gray-50 to-transparent z-10 pointer-events-none" />
+
+            <div
+              ref={trackRef}
+              className="flex gap-4 will-change-transform"
+              style={{ width: 'max-content' }}
+              onMouseEnter={() => { pauseRef.current = true; }}
+              onMouseLeave={() => { pauseRef.current = false; }}
+            >
+              {doubled.map((review, idx) => (
+                <div
+                  key={`${review.id}-${idx}`}
+                  className="w-72 flex-shrink-0 bg-white border border-gray-100 rounded-2xl p-5 flex flex-col shadow-sm"
+                >
+                  <Stars rating={review.rating} />
+                  {review.title && (
+                    <p className="font-semibold text-gray-900 text-sm mt-2 leading-snug">{review.title}</p>
+                  )}
+                  <p className="text-sm text-gray-600 leading-relaxed mt-2 flex-1 line-clamp-4">
+                    "{review.review_text}"
+                  </p>
+                  <div className="flex items-center gap-2.5 mt-4 pt-3 border-t border-gray-100">
+                    <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                      {review.owner_name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{review.owner_name}</p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {review.cafe_name}
+                        {review.city ? ` · ${review.city}` : ''}
+                        {review.state ? `, ${review.state}` : ''}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Stats panel (1/3) ── */}
+          <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Overall Rating</p>
+
+            {/* Big average */}
+            <div className="flex items-end gap-2 mb-2">
+              <span className="text-5xl font-black text-gray-900 leading-none">{avg.toFixed(1)}</span>
+              <span className="text-gray-400 text-sm mb-1">/ 5</span>
+            </div>
+            <Stars rating={Math.round(avg)} />
+            <p className="text-xs text-gray-400 mt-1">{total} verified review{total !== 1 ? 's' : ''}</p>
+
+            {/* Rating breakdown bars */}
+            <div className="mt-5 space-y-2">
+              {bars.map(({ label, count }) => {
+                const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+                return (
+                  <div key={label} className="flex items-center gap-2 text-xs">
+                    <span className="w-8 text-gray-500 flex-shrink-0">{label}</span>
+                    <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="w-7 text-right text-gray-400">{pct}%</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Trust line */}
+            <div className="mt-6 pt-4 border-t border-gray-100">
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Reviews come directly from verified café owners on the DineVerse platform.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const [currency, setCurrency] = useState('INR');
-  const [durIdx, setDurIdx]     = useState(1); // default: 2 years (most popular billing)
+  const [durIdx, setDurIdx]     = useState(3); // default: 1 year
 
   useEffect(() => { detectCurrency().then(setCurrency); }, []);
 
@@ -93,15 +265,15 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-6 py-20 md:py-28 flex flex-col md:flex-row items-center gap-12">
           <div className="flex-1 text-center md:text-left">
             <span className="inline-block text-xs font-semibold bg-brand-100 text-brand-700 px-3 py-1 rounded-full mb-5 tracking-wide uppercase">
-              Built for Indian Restaurants & Cafés
+              Restaurant Management · Made in India
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-gray-900 leading-tight mb-5">
               Stop losing orders.<br />
               <span className="text-brand-500">Start growing revenue.</span>
             </h1>
             <p className="text-lg text-gray-500 mb-8 max-w-md mx-auto md:mx-0">
-              QR ordering, live kitchen display, and GST-ready billing — one platform
-              that pays for itself in the first week. No hardware. No app downloads.
+              QR ordering, live kitchen display, and GST-ready billing — all in one
+              platform. No hardware. No app download for customers. Live in one afternoon.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center md:justify-start">
               <button
@@ -140,7 +312,7 @@ export default function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · From {p.essential.perMonth[0]}/month after trial</p>
+            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · From {p.essential.perMonth[3]}/month after trial</p>
           </div>
 
           {/* Phone mockup */}
@@ -206,10 +378,10 @@ export default function LandingPage() {
       <section className="bg-gray-50 border-y border-gray-100 py-8">
         <div className="max-w-4xl mx-auto px-6 flex flex-wrap justify-center gap-8 text-center">
           {[
-            { value: '500+', label: 'Cafés & Restaurants' },
-            { value: '1L+',  label: 'Orders Processed' },
-            { value: '4.9★', label: 'Average Rating' },
-            { value: '30 days', label: 'Free Trial — No Card' },
+            { value: 'QR-first', label: 'No app download for customers' },
+            { value: 'GST-ready', label: 'Legal tax invoices, one tap' },
+            { value: '30 days', label: 'Free trial — no card needed' },
+            { value: '< 1 hour', label: 'Setup to first live order' },
           ].map((stat) => (
             <div key={stat.label}>
               <p className="text-2xl font-extrabold text-brand-600">{stat.value}</p>
@@ -364,75 +536,35 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Testimonials ── */}
-      <section className="py-20 px-6 bg-white">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-12">
-            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Real Owners, Real Results</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">They switched. Here's what happened.</h2>
-          </div>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                name: 'Priya Nair', role: 'Owner · Spice Garden Café', city: 'Kochi, Kerala', avatar: 'PN', color: 'bg-orange-100 text-orange-700',
-                text: 'We used to lose 2–3 orders daily to kitchen confusion. Now every order hits the screen instantly. Rush hour is actually manageable.',
-              },
-              {
-                name: 'Rahul Sharma', role: 'Manager · The Brew Bar', city: 'Pune, Maharashtra', avatar: 'RS', color: 'bg-blue-100 text-blue-700',
-                text: 'Customers love the QR ordering — no waiting, no wrong orders. The GST billing alone saves us 20 minutes every night. Genuinely worth it.',
-              },
-              {
-                name: 'Anita Mehta', role: 'Owner · Chai & Chat', city: 'Ahmedabad, Gujarat', avatar: 'AM', color: 'bg-green-100 text-green-700',
-                text: 'Setup took one afternoon. We went live that evening. We haven\'t missed an order since. The analytics showed us our real bestseller — it wasn\'t what I expected.',
-              },
-            ].map((t) => (
-              <div key={t.name} className="bg-gray-50 border border-gray-100 rounded-2xl p-6 flex flex-col">
-                <div className="flex gap-1 mb-4">
-                  {[1,2,3,4,5].map((i) => (
-                    <svg key={i} className="w-4 h-4 text-amber-400 fill-amber-400" viewBox="0 0 20 20">
-                      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                    </svg>
-                  ))}
-                </div>
-                <p className="text-sm text-gray-700 leading-relaxed flex-1">"{t.text}"</p>
-                <div className="flex items-center gap-3 mt-5 pt-4 border-t border-gray-200">
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${t.color}`}>{t.avatar}</div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{t.name}</p>
-                    <p className="text-xs text-gray-400">{t.role}</p>
-                    <p className="text-xs text-gray-400">{t.city}</p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* ── Testimonials (real, from DB) ── */}
+      <TestimonialsSection />
 
       {/* ── Pricing ── */}
       <section id="pricing" className="py-20 px-6 bg-gray-50">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-10">
             <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Simple, Honest Pricing</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">One price. Everything included. No surprises.</h2>
-            <p className="text-gray-500 mt-3 text-sm">30-day free trial on every plan — full access, no card needed.</p>
+            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Pay for what you need. No hidden fees.</h2>
+            <p className="text-gray-500 mt-3 text-sm">Every plan starts with a 30-day free trial — full access, no card required.</p>
           </div>
 
           {/* Billing period toggle */}
           <div className="flex justify-center mb-10">
-            <div className="inline-flex bg-white border border-gray-200 rounded-xl p-1 gap-1">
+            <div className="flex flex-wrap justify-center gap-2">
               {DURATION_LABELS.map((label, i) => (
                 <button
                   key={label}
                   onClick={() => setDurIdx(i)}
-                  className={`relative px-4 py-2 rounded-lg text-sm font-semibold transition-all ${
-                    durIdx === i ? 'bg-brand-500 text-white shadow' : 'text-gray-500 hover:text-gray-800'
+                  className={`relative px-3 py-2 rounded-lg text-sm font-semibold transition-all border ${
+                    durIdx === i
+                      ? 'bg-brand-500 text-white border-brand-500 shadow'
+                      : 'bg-white text-gray-500 border-gray-200 hover:border-brand-300 hover:text-gray-800'
                   }`}
                 >
                   {label}
                   {DURATION_BADGES[i] && (
                     <span className={`absolute -top-2.5 -right-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                      i === 2 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
+                      i === 5 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
                     }`}>
                       {DURATION_BADGES[i]}
                     </span>
@@ -479,7 +611,7 @@ export default function LandingPage() {
                 <p className="text-4xl font-extrabold text-gray-900">{p.essential.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">{p.essential.total[durIdx]} billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{p.essential.total[durIdx]} total · billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
               {p.essential.save[durIdx] && (
                 <p className="text-xs font-semibold text-green-600 mt-0.5">{p.essential.save[durIdx]}</p>
               )}
@@ -517,15 +649,15 @@ export default function LandingPage() {
             {/* Pro */}
             <div className="relative bg-white border-2 border-purple-400 rounded-2xl p-6 flex flex-col">
               <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
-                🚀 FOR GROWING RESTAURANTS
+                👨‍🍳 FOR RESTAURANT TEAMS
               </span>
-              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">Pro</p>
-              <p className="text-xs text-gray-400 mb-3">Built for busy kitchens and multi-staff operations</p>
+              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">Kitchen Pro</p>
+              <p className="text-xs text-gray-400 mb-3">Full kitchen control for busy restaurants and multi-staff teams</p>
               <div className="flex items-baseline gap-1 mb-1">
                 <p className="text-4xl font-extrabold text-gray-900">{p.pro.perMonth[durIdx]}</p>
                 <span className="text-base text-gray-400">/mo</span>
               </div>
-              <p className="text-xs text-gray-400 mt-0.5">{p.pro.total[durIdx]} billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{p.pro.total[durIdx]} total · billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
               {p.pro.save[durIdx] && (
                 <p className="text-xs font-semibold text-green-600 mt-0.5">{p.pro.save[durIdx]}</p>
               )}
@@ -555,7 +687,7 @@ export default function LandingPage() {
                 💡 At 50+ covers/day, one avoided remake or wrong order covers the monthly cost.
               </p>
               <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors text-sm">
-                Get Pro →
+                Get Kitchen Pro →
               </button>
             </div>
 
@@ -575,7 +707,7 @@ export default function LandingPage() {
                     <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase">Feature</th>
                     <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Trial</th>
                     <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Essential</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Pro</th>
+                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Kitchen Pro</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -701,8 +833,8 @@ export default function LandingPage() {
         <div className="max-w-2xl mx-auto text-center">
           <h2 className="text-3xl font-extrabold text-white mb-4">Your café is losing orders right now.</h2>
           <p className="text-white/80 mb-8">
-            Every wrong order, every missed ticket, every manual bill — it adds up.
-            Join 500+ restaurants who fixed it in an afternoon.
+            Every wrong order, every missed ticket, every manual bill adds up.
+            DineVerse fixes all of it — and you'll be live before the dinner rush.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button

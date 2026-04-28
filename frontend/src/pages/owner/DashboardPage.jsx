@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getDashboardStats, getPublicSetting, toggleCafeOpen } from '../../services/api';
+import { getDashboardStats, getPublicSetting, toggleCafeOpen, submitTestimonial, getMyTestimonial } from '../../services/api';
 import CafeQRCard from '../../components/CafeQRCard';
 import { Link, useNavigate } from 'react-router-dom';
 import { STATUS_CONFIG } from '../../constants/statusConfig';
@@ -115,11 +115,11 @@ export default function DashboardPage() {
             }`}>
               <span>
                 {expired
-                  ? '🔴 Your subscription has expired. Renew to continue using all features.'
-                  : `⚠️ Your ${cafe.plan_type === 'free_trial' ? 'free trial' : 'plan'} expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}.`
+                  ? '🔴 Your subscription has expired. Renew now to keep accepting orders.'
+                  : `⚠️ Your ${cafe.plan_type === 'free_trial' ? 'free trial' : 'plan'} expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Renew to avoid any interruption.`
                 }
               </span>
-              <Link to="/owner/billing" className="flex-shrink-0 underline font-semibold">Renew →</Link>
+              <Link to="/owner/billing" className="flex-shrink-0 underline font-semibold whitespace-nowrap">{expired ? 'Renew Now →' : 'Renew →'}</Link>
             </div>
           );
         })()}
@@ -140,8 +140,8 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-xl bg-brand-500 flex items-center justify-center text-white text-sm flex-shrink-0">🚀</div>
                   <div>
-                    <p className="font-semibold text-gray-900 text-sm">Finish setting up your café</p>
-                    <p className="text-xs text-gray-500">{doneCount} of {steps.length} steps done</p>
+                    <p className="font-semibold text-gray-900 text-sm">Complete your café setup</p>
+                    <p className="text-xs text-gray-500">{doneCount} of {steps.length} done — almost there!</p>
                   </div>
                 </div>
                 <button
@@ -189,13 +189,13 @@ export default function DashboardPage() {
             <h1 className="text-xl font-bold text-gray-900 truncate">{cafe?.name}</h1>
             <p className="text-xs text-gray-400 mt-0.5">/{cafe?.slug}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
-                cafe?.plan_type === 'free_trial'
-                  ? 'bg-blue-100 text-blue-700'
-                  : 'bg-green-100 text-green-700'
-              }`}>
-                {cafe?.plan_type === 'free_trial' ? '🧪 Free Trial' : '✅ Pro Plan'}
-              </span>
+              {(() => {
+                const isTrial   = cafe?.plan_type === 'free_trial';
+                const isPremium = cafe?.plan_tier === 'premium';
+                const label = isTrial ? '🧪 Free Trial' : isPremium ? '✅ Kitchen Pro' : '✅ Essential';
+                const cls   = isTrial ? 'bg-blue-100 text-blue-700' : isPremium ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700';
+                return <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
+              })()}
               {cafe?.city && (
                 <span className="text-xs text-gray-500">📍 {cafe.city}{cafe.state ? `, ${cafe.state}` : ''}</span>
               )}
@@ -225,8 +225,8 @@ export default function DashboardPage() {
         {/* Welcome */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-bold text-gray-900">Good day!</h2>
-            <p className="text-gray-500 text-sm mt-0.5">Here's how you're doing today.</p>
+            <h2 className="text-xl font-bold text-gray-900">Today's Overview</h2>
+            <p className="text-gray-500 text-sm mt-0.5">Live stats for {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}.</p>
           </div>
           <button
             onClick={() => { localStorage.removeItem(`dv_ob_done_${cafe?.id}`); setOnboardingDismissed(false); }}
@@ -269,8 +269,8 @@ export default function DashboardPage() {
             {stats?.recentOrders?.length === 0 ? (
               <div className="text-center py-6">
                 <p className="text-3xl mb-2">📋</p>
-                <p className="text-gray-400 text-sm">No orders yet today.</p>
-                <p className="text-xs text-gray-400 mt-1">Share your café link to start receiving orders.</p>
+                <p className="text-gray-400 text-sm">No orders yet today</p>
+                <p className="text-xs text-gray-400 mt-1">Share your café QR code or link to start receiving orders.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -316,8 +316,141 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Testimonial widget */}
+        <TestimonialWidget />
+
       </div>
     </>
+  );
+}
+
+// ── Leave a review for DineVerse ─────────────────────────────────
+function TestimonialWidget() {
+  const { cafe } = useAuth();
+  const [existing, setExisting]   = useState(undefined); // undefined = loading
+  const [rating, setRating]       = useState(0);
+  const [hovered, setHovered]     = useState(0);
+  const [ownerName, setOwnerName] = useState('');
+  const [title, setTitle]         = useState('');
+  const [text, setText]           = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  useEffect(() => {
+    getMyTestimonial()
+      .then((r) => {
+        const rev = r.data.review;
+        setExisting(rev);
+        if (rev) {
+          setRating(rev.rating);
+          setOwnerName(rev.owner_name || '');
+          setTitle(rev.title || '');
+          setText(rev.review_text || '');
+        }
+      })
+      .catch(() => setExisting(null));
+  }, []);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!rating) { toast.error('Please select a star rating'); return; }
+    if (text.trim().length < 10) { toast.error('Please write at least 10 characters'); return; }
+    setSubmitting(true);
+    try {
+      const res = await submitTestimonial({ rating, owner_name: ownerName.trim() || undefined, title: title.trim(), review_text: text.trim() });
+      setExisting(res.data.review);
+      setSubmitted(true);
+      toast.success('Thank you! Your review is now on our homepage.');
+    } catch {
+      toast.error('Failed to save review — please try again');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Still loading
+  if (existing === undefined) return null;
+
+  return (
+    <div className="card border border-brand-100 bg-gradient-to-br from-brand-50 to-orange-50">
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h2 className="font-semibold text-gray-900 text-sm">How's DineVerse working for you?</h2>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {existing
+              ? 'Your review is live on our homepage — edit it anytime.'
+              : 'Your experience helps other restaurant owners discover us.'}
+          </p>
+        </div>
+        <span className="text-2xl">⭐</span>
+      </div>
+
+      {submitted && (
+        <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 text-sm text-green-800 font-medium mb-4">
+          ✓ Review saved and published on the DineVerse homepage!
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Star rating */}
+        <div className="flex items-center gap-1">
+          {[1, 2, 3, 4, 5].map((s) => (
+            <button
+              key={s}
+              type="button"
+              onMouseEnter={() => setHovered(s)}
+              onMouseLeave={() => setHovered(0)}
+              onClick={() => setRating(s)}
+              className="text-2xl leading-none transition-transform hover:scale-110"
+            >
+              <span className={(hovered || rating) >= s ? 'text-amber-400' : 'text-gray-200'}>★</span>
+            </button>
+          ))}
+          {(hovered || rating) > 0 && (
+            <span className="text-xs text-gray-500 ml-1">
+              {['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent!'][(hovered || rating)]}
+            </span>
+          )}
+        </div>
+
+        <input
+          className="input text-sm"
+          placeholder={`Your name (default: ${cafe?.name || 'your café name'})`}
+          value={ownerName}
+          onChange={(e) => setOwnerName(e.target.value)}
+          maxLength={60}
+        />
+
+        <input
+          className="input text-sm"
+          placeholder="Short headline (optional) — e.g. 'Saved us an hour every night'"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={100}
+        />
+
+        <textarea
+          className="input resize-none text-sm"
+          rows={3}
+          placeholder="Tell other owners what you love about DineVerse — or what we can improve…"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          maxLength={600}
+          required
+        />
+
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-400">{text.length}/600</span>
+          <button
+            type="submit"
+            disabled={submitting || !rating || text.trim().length < 10}
+            className="btn-primary text-sm px-5 py-2 disabled:opacity-50"
+          >
+            {submitting ? 'Saving…' : existing ? 'Update Review' : 'Publish Review'}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 

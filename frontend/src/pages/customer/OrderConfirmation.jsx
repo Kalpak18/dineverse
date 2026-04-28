@@ -381,9 +381,9 @@ export default function OrderConfirmation() {
             </div>
             <h2 className="text-2xl font-black text-gray-900 mb-1">Order Placed!</h2>
             <p className="text-gray-500 text-sm">
-              {cafeInfo?.name ? `Your order is with ${cafeInfo.name}` : 'Your order is with the kitchen'}
+              {cafeInfo?.name ? `Your order is now with ${cafeInfo.name}` : 'Your order is on its way to the kitchen'}
             </p>
-            <p className="text-xs text-gray-400 mt-3">Tap anywhere to continue</p>
+            <p className="text-xs text-gray-400 mt-3">Tap anywhere to track your order</p>
           </div>
         </div>
       )}
@@ -416,7 +416,7 @@ export default function OrderConfirmation() {
             <>
               <div className="text-5xl mb-2">🙏</div>
               <h1 className="text-xl font-bold text-gray-900">Thank You!</h1>
-              <p className="text-gray-500 text-sm mt-1">All orders are complete. Hope you enjoyed your meal!</p>
+              <p className="text-gray-500 text-sm mt-1">All done! We hope you had a great experience.</p>
               <button
                 onClick={startNewOrder}
                 className="mt-4 w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold text-sm transition-colors"

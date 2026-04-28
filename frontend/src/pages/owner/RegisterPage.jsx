@@ -412,7 +412,7 @@ export default function RegisterPage() {
       setEmailVerifiedToken('');
       clearDraft();
       setStep(2);
-      toast.success('Account created! Now finish your café setup.');
+      toast.success("Account created! Now let's set up your café.");
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       const msg = getApiError(err);
@@ -447,7 +447,7 @@ export default function RegisterPage() {
       await completeSetup(form);
       registeredRef.current = true;
       clearDraft();
-      toast.success('Cafe setup completed successfully!');
+      toast.success('Welcome to DineVerse! Your café is ready.');
       navigate('/owner/dashboard');
     } catch (err) {
       const errors = err.response?.data?.errors;
@@ -482,8 +482,8 @@ export default function RegisterPage() {
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4"><DineLogo size="xl" /></div>
-          <h1 className="text-2xl font-bold text-gray-900">Register your Café</h1>
-          <p className="text-gray-500 text-sm mt-1">Start accepting orders in minutes</p>
+          <h1 className="text-2xl font-bold text-gray-900">Start Your Free Trial</h1>
+          <p className="text-gray-500 text-sm mt-1">30 days free · No card required · Be live in under an hour</p>
         </div>
 
         {/* Step indicator */}
@@ -498,7 +498,7 @@ export default function RegisterPage() {
                 {step > s ? '✓' : s}
               </div>
               <span className={`text-xs font-medium ${step === s ? 'text-gray-800' : 'text-gray-400'}`}>
-                {s === 1 ? 'Create Account' : 'Cafe Details'}
+                {s === 1 ? 'Your Account' : 'Your Café'}
               </span>
               {s < 2 && <div className={`w-8 h-px ${step > s ? 'bg-green-400' : 'bg-gray-200'}`} />}
             </div>
@@ -511,7 +511,7 @@ export default function RegisterPage() {
           {step === 1 && (
             <form id="reg-form-1" onSubmit={handleStep1Continue} className="space-y-5">
               <p className="text-sm font-semibold text-gray-700">
-                {otpSent ? 'Enter the code we sent to your email.' : 'Create your owner account.'}
+                {otpSent ? 'Enter the verification code sent to your email.' : 'Create your account to get started.'}
               </p>
 
               <div className="space-y-3">
@@ -632,7 +632,7 @@ export default function RegisterPage() {
 
               {/* Brand Info */}
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Brand Info</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Café Details</p>
                 <div className="space-y-3">
 
                   <div>
@@ -715,7 +715,7 @@ export default function RegisterPage() {
 
               {/* Contact */}
               <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contact</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Contact Details</p>
                 <div>
                   <label className="label">Phone Number *</label>
                   <PhoneInput
@@ -822,7 +822,7 @@ export default function RegisterPage() {
                   disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
                   className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Saving cafe setup…' : 'Finish Cafe Setup'}
+                  {loading ? 'Setting up your café…' : 'Complete Setup →'}
                 </button>
               </div>
 
@@ -871,7 +871,7 @@ export default function RegisterPage() {
             disabled={loading || !agreedToTerms || slugStatus === 'taken' || slugStatus === 'checking'}
             className="btn-primary flex-1 disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {loading ? 'Saving cafe setup…' : 'Finish Cafe Setup'}
+            {loading ? 'Setting up your café…' : 'Complete Setup →'}
           </button>
         </div>
       </div>

@@ -406,7 +406,7 @@ export default function CafeEntry() {
 
         {/* Entry form */}
         <div className="card shadow-lg">
-          <h2 className="text-lg font-semibold text-gray-800 mb-5">Welcome! Let's get started</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-5">How would you like to order?</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
 
             {/* Order type */}

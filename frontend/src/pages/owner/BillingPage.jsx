@@ -389,8 +389,8 @@ export default function BillingPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Feature</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Basic</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Premium</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Essential</th>
+                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Kitchen Pro</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
