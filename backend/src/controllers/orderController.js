@@ -631,11 +631,18 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
     }
 
     const order = result.rows[0];
-    const nameMatch  = customer_name  && order.customer_name  && order.customer_name.trim().toLowerCase()  === customer_name.trim().toLowerCase();
-    const phoneMatch = customer_phone && order.customer_phone && order.customer_phone.trim() === customer_phone.trim();
-    if (!nameMatch && !phoneMatch) {
-      await client.query('ROLLBACK');
-      return fail(res, 'Order not found', 404); // intentionally vague to not leak info
+    // Only verify identity when the order has stored customer info.
+    // If the DB has a name, the sent name must match; same for phone.
+    // If neither is stored (anonymous order), allow cancel without check.
+    const hasStoredName  = !!order.customer_name?.trim();
+    const hasStoredPhone = !!order.customer_phone?.trim();
+    if (hasStoredName || hasStoredPhone) {
+      const nameMatch  = hasStoredName  && customer_name  && order.customer_name.trim().toLowerCase() === customer_name.trim().toLowerCase();
+      const phoneMatch = hasStoredPhone && customer_phone && order.customer_phone.trim() === customer_phone.trim();
+      if (!nameMatch && !phoneMatch) {
+        await client.query('ROLLBACK');
+        return fail(res, 'Order not found', 404);
+      }
     }
 
     if (order.status !== 'pending') {
