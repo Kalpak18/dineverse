@@ -9,26 +9,29 @@ const cache = require('../utils/cache');
 // ─── Pricing config ───────────────────────────────────────────
 // Basic: ₹499/mo base | Premium (KDS + KOT): ₹999/mo base
 // Longer commitments get a discount (~10% at 2yr, ~11% at 3yr).
+// ── TESTING MODE — all plans set to ₹10 ─────────────────────
+// TODO: restore real prices before go-live
+const TEST_PRICE = 1000; // ₹10 in paise
 const PLANS = {
   // ── Basic (Essential) tier ───────────────────────────────────
-  'basic_1month':  { label: 'Essential · 1 Month',   price_paise:   69900, months:  1, tier: 'basic' }, // ₹699
-  'basic_3month':  { label: 'Essential · 3 Months',  price_paise:  179700, months:  3, tier: 'basic' }, // ₹599 × 3
-  'basic_6month':  { label: 'Essential · 6 Months',  price_paise:  329400, months:  6, tier: 'basic' }, // ₹549 × 6
-  'basic_1year':   { label: 'Essential · 1 Year',    price_paise:  598800, months: 12, tier: 'basic' }, // ₹499 × 12
-  'basic_2year':   { label: 'Essential · 2 Years',   price_paise: 1078800, months: 24, tier: 'basic' }, // ₹449 × 24
-  'basic_3year':   { label: 'Essential · 3 Years',   price_paise: 1599900, months: 36, tier: 'basic' }, // ₹444 × 36
+  'basic_1month':  { label: 'Essential · 1 Month',   price_paise: TEST_PRICE, months:  1, tier: 'basic' },
+  'basic_3month':  { label: 'Essential · 3 Months',  price_paise: TEST_PRICE, months:  3, tier: 'basic' },
+  'basic_6month':  { label: 'Essential · 6 Months',  price_paise: TEST_PRICE, months:  6, tier: 'basic' },
+  'basic_1year':   { label: 'Essential · 1 Year',    price_paise: TEST_PRICE, months: 12, tier: 'basic' },
+  'basic_2year':   { label: 'Essential · 2 Years',   price_paise: TEST_PRICE, months: 24, tier: 'basic' },
+  'basic_3year':   { label: 'Essential · 3 Years',   price_paise: TEST_PRICE, months: 36, tier: 'basic' },
   // ── Premium (Kitchen Pro) tier ──────────────────────────────
-  'premium_1month':  { label: 'Kitchen Pro · 1 Month',   price_paise:  129900, months:  1, tier: 'premium' }, // ₹1,299
-  'premium_3month':  { label: 'Kitchen Pro · 3 Months',  price_paise:  359700, months:  3, tier: 'premium' }, // ₹1,199 × 3
-  'premium_6month':  { label: 'Kitchen Pro · 6 Months',  price_paise:  659400, months:  6, tier: 'premium' }, // ₹1,099 × 6
-  'premium_1year':   { label: 'Kitchen Pro · 1 Year',    price_paise: 1198800, months: 12, tier: 'premium' }, // ₹999 × 12
-  'premium_2year':   { label: 'Kitchen Pro · 2 Years',   price_paise: 2157600, months: 24, tier: 'premium' }, // ₹899 × 24
-  'premium_3year':   { label: 'Kitchen Pro · 3 Years',   price_paise: 3196800, months: 36, tier: 'premium' }, // ₹888 × 36
+  'premium_1month':  { label: 'Kitchen Pro · 1 Month',   price_paise: TEST_PRICE, months:  1, tier: 'premium' },
+  'premium_3month':  { label: 'Kitchen Pro · 3 Months',  price_paise: TEST_PRICE, months:  3, tier: 'premium' },
+  'premium_6month':  { label: 'Kitchen Pro · 6 Months',  price_paise: TEST_PRICE, months:  6, tier: 'premium' },
+  'premium_1year':   { label: 'Kitchen Pro · 1 Year',    price_paise: TEST_PRICE, months: 12, tier: 'premium' },
+  'premium_2year':   { label: 'Kitchen Pro · 2 Years',   price_paise: TEST_PRICE, months: 24, tier: 'premium' },
+  'premium_3year':   { label: 'Kitchen Pro · 3 Years',   price_paise: TEST_PRICE, months: 36, tier: 'premium' },
   // ── Legacy keys — old payment records still resolve correctly
-  '1year':  { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
-  '2year':  { label: '2 Year Plan',  price_paise: 1078800, months: 24, tier: 'basic' },
-  '3year':  { label: '3 Year Plan',  price_paise: 1599900, months: 36, tier: 'basic' },
-  yearly:   { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
+  '1year':  { label: '1 Year Plan',  price_paise: TEST_PRICE, months: 12, tier: 'basic' },
+  '2year':  { label: '2 Year Plan',  price_paise: TEST_PRICE, months: 24, tier: 'basic' },
+  '3year':  { label: '3 Year Plan',  price_paise: TEST_PRICE, months: 36, tier: 'basic' },
+  yearly:   { label: '1 Year Plan',  price_paise: TEST_PRICE, months: 12, tier: 'basic' },
 };
 
 // Support both RAZORPAY_KEY_ID (production) and RAZORPAY_TEST_KEY_ID (legacy/dev)
