@@ -154,7 +154,7 @@ export default function MyOrdersPage() {
 
   const handleCancel = async (order) => {
     try {
-      const { data } = await cancelOrder(slug, order.id);
+      const { data } = await cancelOrder(slug, order.id, order.customer_name, order.customer_phone);
       upsertOrder(slug, data.order);
       refreshOrders();
       toast.success('Order cancelled');

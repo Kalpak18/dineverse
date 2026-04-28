@@ -132,7 +132,8 @@ export const deleteTable      = (id)           => api.delete(`/tables/${id}`);
 export const getCafeMenu = (slug) => api.get(`/cafes/${slug}/menu`);
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
 export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`);
-export const cancelOrder = (slug, id) => api.post(`/orders/cafe/${slug}/orders/${id}/cancel`);
+export const cancelOrder = (slug, id, customer_name, customer_phone) =>
+  api.post(`/orders/cafe/${slug}/orders/${id}/cancel`, { customer_name, customer_phone });
 export const updateDriverLocation = (orderId, token, lat, lng) => api.patch(`/orders/driver/${orderId}/${token}/location`, { lat, lng });
 export const getDriverOrderInfo   = (orderId, token) => api.get(`/orders/driver/${orderId}/${token}/info`);
 export const createOrderPayment = (slug, id) => api.post(`/orders/cafe/${slug}/orders/${id}/pay`);

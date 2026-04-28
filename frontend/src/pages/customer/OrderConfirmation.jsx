@@ -252,7 +252,7 @@ export default function OrderConfirmation() {
   const handleCancel = async (order) => {
     setCancelling(order.id);
     try {
-      const { data } = await cancelOrder(slug, order.id);
+      const { data } = await cancelOrder(slug, order.id, order.customer_name, order.customer_phone);
       upsertOrder(slug, data.order);
       refresh();
       toast.success('Order cancelled');
