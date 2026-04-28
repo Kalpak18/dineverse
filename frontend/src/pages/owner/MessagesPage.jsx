@@ -1,15 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getConversations, getOwnerMessages, postOwnerMessage } from '../../services/api';
+import { getConversations, getOwnerMessages, postOwnerMessage, deleteOwnerMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
-// localStorage key for last-read timestamps per order
 const LAST_READ_KEY = 'dv_msg_last_read';
-
 function getLastRead() {
   try { return JSON.parse(localStorage.getItem(LAST_READ_KEY) || '{}'); } catch { return {}; }
 }
@@ -18,10 +16,16 @@ function setLastRead(orderId) {
   map[orderId] = new Date().toISOString();
   localStorage.setItem(LAST_READ_KEY, JSON.stringify(map));
 }
+function markAllRead(conversations) {
+  const map = getLastRead();
+  const now = new Date().toISOString();
+  conversations.forEach((c) => { map[c.order_id] = now; });
+  localStorage.setItem(LAST_READ_KEY, JSON.stringify(map));
+}
 
 function timeAgo(dateStr) {
   const diff = Date.now() - new Date(dateStr).getTime();
-  const mins  = Math.floor(diff / 60000);
+  const mins = Math.floor(diff / 60000);
   if (mins < 1)  return 'just now';
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
@@ -42,26 +46,39 @@ function statusColor(status) {
   return map[status] || 'bg-gray-100 text-gray-600';
 }
 
+// ✓ sent  ✓✓ seen by customer
+function SeenTick({ msg, customerReadAt }) {
+  if (msg.sender_type !== 'owner' || msg.is_deleted) return null;
+  const seen = customerReadAt && new Date(customerReadAt) >= new Date(msg.created_at);
+  return (
+    <span className={`text-[10px] ml-1 select-none ${seen ? 'text-blue-400' : 'text-white/60'}`}>
+      {seen ? '✓✓' : '✓'}
+    </span>
+  );
+}
+
 export default function MessagesPage() {
   const { cafe } = useAuth();
   const { setBadge } = useBadges();
 
-  const [conversations, setConversations] = useState([]);
-  const [loadingConvs, setLoadingConvs] = useState(true);
-  const [selectedId, setSelectedId] = useState(null); // order_id
-  const [messages, setMessages] = useState({}); // { orderId: Message[] }
-  const [loadingMsgs, setLoadingMsgs] = useState(false);
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [lastRead, setLastReadState] = useState(getLastRead);
-  const [showList, setShowList] = useState(true); // mobile: show list vs chat
-  const [search, setSearch] = useState('');
+  const [conversations,  setConversations]  = useState([]);
+  const [loadingConvs,   setLoadingConvs]   = useState(true);
+  const [selectedId,     setSelectedId]     = useState(null);
+  const [messages,       setMessages]       = useState({});       // { orderId: Message[] }
+  const [customerReadAt, setCustomerReadAt] = useState({});       // { orderId: ISOString }
+  const [loadingMsgs,    setLoadingMsgs]    = useState(false);
+  const [text,           setText]           = useState('');
+  const [sending,        setSending]        = useState(false);
+  const [lastRead,       setLastReadState]  = useState(getLastRead);
+  const [showList,       setShowList]       = useState(true);     // mobile: list vs chat
+  const [search,         setSearch]         = useState('');
+  const [menuMsgId,      setMenuMsgId]      = useState(null);     // message context-menu open
 
-  const bottomRef = useRef(null);
-  const socketRef = useRef(null);
-  const inputRef  = useRef(null);
+  const bottomRef  = useRef(null);
+  const socketRef  = useRef(null);
+  const inputRef   = useRef(null);
 
-  // ── Load conversation list ────────────────────────────────────
+  // ── Load conversations ────────────────────────────────────────
   const loadConversations = useCallback(async () => {
     try {
       const { data } = await getConversations();
@@ -84,40 +101,36 @@ export default function MessagesPage() {
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));
 
     socket.on('order_message', (msg) => {
-      // Update messages cache for open thread
       setMessages((prev) => {
         const existing = prev[msg.order_id] || [];
         if (existing.find((m) => m.id === msg.id)) return prev;
         return { ...prev, [msg.order_id]: [...existing, msg] };
       });
-
-      // Update conversation list: bump last_message + last_message_at
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.order_id === msg.order_id);
-        if (idx === -1) {
-          // New conversation — reload list to get full order details
-          loadConversations();
-          return prev;
-        }
+        if (idx === -1) { loadConversations(); return prev; }
         const updated = { ...prev[idx],
           last_message:     msg.message,
           last_sender_type: msg.sender_type,
           last_message_at:  msg.created_at,
           total_messages:   (prev[idx].total_messages || 0) + 1,
         };
-        const rest = prev.filter((_, i) => i !== idx);
-        return [updated, ...rest]; // bump to top
+        return [updated, ...prev.filter((_, i) => i !== idx)];
       });
-
-      // Toast for incoming customer messages when chat is not open
       if (msg.sender_type === 'customer') {
         setSelectedId((curr) => {
-          if (curr !== msg.order_id) {
-            toast(`💬 New message from customer`, { duration: 4000, icon: '🔔' });
-          }
+          if (curr !== msg.order_id) toast(`💬 New message from customer`, { duration: 4000, icon: '🔔' });
           return curr;
         });
       }
+    });
+
+    socket.on('order_message_deleted', ({ order_id, msg_id }) => {
+      setMessages((prev) => {
+        const thread = prev[order_id];
+        if (!thread) return prev;
+        return { ...prev, [order_id]: thread.map((m) => m.id === msg_id ? { ...m, is_deleted: true } : m) };
+      });
     });
 
     return () => { socket.disconnect(); socketRef.current = null; };
@@ -139,23 +152,23 @@ export default function MessagesPage() {
     return () => setBadge('/owner/messages', 0);
   }, [unreadCount, setBadge]);
 
-  // ── Open a conversation ───────────────────────────────────────
+  // ── Open conversation ─────────────────────────────────────────
   const openConversation = useCallback(async (orderId) => {
     setSelectedId(orderId);
     setShowList(false);
     setText('');
+    setMenuMsgId(null);
     setTimeout(() => inputRef.current?.focus(), 100);
-
-    // Mark as read
     setLastRead(orderId);
     setLastReadState(getLastRead());
-
-    // Load messages if not already cached
     if (messages[orderId]) return;
     setLoadingMsgs(true);
     try {
       const { data } = await getOwnerMessages(orderId);
       setMessages((prev) => ({ ...prev, [orderId]: data.messages }));
+      if (data.customer_read_at) {
+        setCustomerReadAt((prev) => ({ ...prev, [orderId]: data.customer_read_at }));
+      }
     } catch {
       toast.error('Could not load messages');
     } finally {
@@ -163,12 +176,12 @@ export default function MessagesPage() {
     }
   }, [messages]);
 
-  // ── Auto-scroll when messages change ─────────────────────────
+  // ── Auto-scroll ───────────────────────────────────────────────
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, selectedId]);
 
-  // ── Send reply ────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────
   const handleSend = async () => {
     const trimmed = text.trim();
     if (!trimmed || !selectedId || sending) return;
@@ -176,6 +189,7 @@ export default function MessagesPage() {
     try {
       await postOwnerMessage(selectedId, trimmed);
       setText('');
+      if (inputRef.current) { inputRef.current.style.height = 'auto'; }
     } catch {
       toast.error('Failed to send message');
     } finally {
@@ -183,22 +197,41 @@ export default function MessagesPage() {
     }
   };
 
-  // ── Filtered conversation list ────────────────────────────────
+  // ── Delete message ────────────────────────────────────────────
+  const handleDelete = async (msgId) => {
+    setMenuMsgId(null);
+    try {
+      await deleteOwnerMessage(selectedId, msgId);
+      // Optimistic update (socket also fires)
+      setMessages((prev) => ({
+        ...prev,
+        [selectedId]: prev[selectedId].map((m) => m.id === msgId ? { ...m, is_deleted: true } : m),
+      }));
+    } catch {
+      toast.error('Could not delete message');
+    }
+  };
+
+  // ── Mark all read ─────────────────────────────────────────────
+  const handleMarkAllRead = () => {
+    markAllRead(conversations);
+    setLastReadState(getLastRead());
+    toast.success('All conversations marked as read');
+  };
+
+  // ── Filtered list ─────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return conversations;
     return conversations.filter((c) => {
       const token = fmtToken(c.daily_order_number, c.order_type).toLowerCase();
-      return (
-        token.includes(q) ||
-        c.customer_name.toLowerCase().includes(q) ||
-        (c.last_message || '').toLowerCase().includes(q)
-      );
+      return token.includes(q) || c.customer_name.toLowerCase().includes(q) || (c.last_message || '').toLowerCase().includes(q);
     });
   }, [conversations, search]);
 
-  const selectedConv = conversations.find((c) => c.order_id === selectedId);
-  const activeMessages = (messages[selectedId] || []);
+  const selectedConv  = conversations.find((c) => c.order_id === selectedId);
+  const activeMessages = messages[selectedId] || [];
+  const convReadAt     = customerReadAt[selectedId] || selectedConv?.customer_msg_read_at || null;
 
   const isUnread = (conv) => {
     if (conv.last_sender_type !== 'customer') return false;
@@ -207,16 +240,30 @@ export default function MessagesPage() {
     return new Date(conv.last_message_at) > new Date(lr);
   };
 
-  // ── Render ────────────────────────────────────────────────────
+  const totalUnread = conversations.filter(isUnread).length;
+
   return (
-    <div className="flex h-[calc(100vh-120px)] max-w-6xl gap-0 overflow-hidden rounded-2xl border border-gray-200 shadow-sm bg-white">
+    <div
+      className="flex h-[calc(100vh-120px)] max-w-6xl gap-0 overflow-hidden rounded-2xl border border-gray-200 shadow-sm bg-white"
+      onClick={() => menuMsgId && setMenuMsgId(null)}
+    >
 
       {/* ── Conversation list ── */}
       <aside className={`${showList ? 'flex' : 'hidden'} md:flex flex-col w-full md:w-80 lg:w-96 border-r border-gray-100 flex-shrink-0`}>
         {/* Header */}
-        <div className="px-4 py-4 border-b border-gray-100">
-          <h1 className="text-lg font-bold text-gray-900">Messages</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{conversations.length} conversation{conversations.length !== 1 ? 's' : ''}</p>
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+          <div>
+            <h1 className="text-base font-bold text-gray-900">Messages</h1>
+            <p className="text-[11px] text-gray-400">{conversations.length} conversation{conversations.length !== 1 ? 's' : ''}</p>
+          </div>
+          {totalUnread > 0 && (
+            <button
+              onClick={handleMarkAllRead}
+              className="text-[11px] font-semibold text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition-colors whitespace-nowrap"
+            >
+              Mark all read
+            </button>
+          )}
         </div>
 
         {/* Search */}
@@ -235,9 +282,7 @@ export default function MessagesPage() {
 
         {/* List */}
         <div className="flex-1 overflow-y-auto">
-          {loadingConvs && (
-            <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading…</div>
-          )}
+          {loadingConvs && <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading…</div>}
           {!loadingConvs && filtered.length === 0 && (
             <div className="text-center py-16 text-gray-400">
               <p className="text-3xl mb-2">💬</p>
@@ -246,7 +291,7 @@ export default function MessagesPage() {
             </div>
           )}
           {filtered.map((conv) => {
-            const unread = isUnread(conv);
+            const unread   = isUnread(conv);
             const isActive = conv.order_id === selectedId;
             return (
               <button
@@ -257,9 +302,13 @@ export default function MessagesPage() {
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  {/* Avatar */}
-                  <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center flex-shrink-0 text-sm font-bold text-brand-600">
-                    {conv.customer_name?.charAt(0)?.toUpperCase() || '?'}
+                  <div className="relative flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-sm font-bold text-brand-600">
+                      {conv.customer_name?.charAt(0)?.toUpperCase() || '?'}
+                    </div>
+                    {unread && (
+                      <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-brand-500 border-2 border-white" />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -274,15 +323,10 @@ export default function MessagesPage() {
                         {conv.status}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-1">
-                      <p className={`text-xs truncate ${unread ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
-                        {conv.last_sender_type === 'owner' && <span className="text-gray-400">You: </span>}
-                        {conv.last_message}
-                      </p>
-                      {unread && (
-                        <span className="flex-shrink-0 w-2 h-2 rounded-full bg-brand-500" />
-                      )}
-                    </div>
+                    <p className={`text-xs truncate ${unread ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                      {conv.last_sender_type === 'owner' && <span className="text-gray-400">You: </span>}
+                      {conv.last_message}
+                    </p>
                   </div>
                 </div>
               </button>
@@ -290,12 +334,8 @@ export default function MessagesPage() {
           })}
         </div>
 
-        {/* Refresh */}
         <div className="px-3 py-2 border-t border-gray-100">
-          <button
-            onClick={loadConversations}
-            className="w-full text-xs text-gray-400 hover:text-brand-500 py-1 transition-colors"
-          >
+          <button onClick={loadConversations} className="w-full text-xs text-gray-400 hover:text-brand-500 py-1 transition-colors">
             ↻ Refresh
           </button>
         </div>
@@ -313,38 +353,33 @@ export default function MessagesPage() {
           <>
             {/* Chat header */}
             <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3 flex-shrink-0 bg-white">
-              {/* Mobile back button */}
-              <button
-                onClick={() => setShowList(true)}
-                className="md:hidden p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 mr-1"
-              >
-                ←
-              </button>
+              <button onClick={() => setShowList(true)} className="md:hidden p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 mr-1">←</button>
               <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-sm font-bold text-brand-600 flex-shrink-0">
                 {selectedConv.customer_name?.charAt(0)?.toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-gray-900 text-sm truncate">{selectedConv.customer_name}</p>
-                <div className="flex items-center gap-2 mt-0.5">
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-xs font-semibold text-brand-600">{fmtToken(selectedConv.daily_order_number, selectedConv.order_type)}</span>
-                  <span className="text-gray-300">·</span>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-gray-300 hidden sm:inline">·</span>
+                  <span className="text-xs text-gray-500 hidden sm:inline">
                     {selectedConv.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${selectedConv.table_number}`}
                   </span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${statusColor(selectedConv.status)}`}>
                     {selectedConv.status}
                   </span>
+                  {convReadAt && (
+                    <span className="text-[10px] text-blue-500 font-medium">✓✓ Seen</span>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50">
-              {loadingMsgs && (
-                <div className="text-center text-sm text-gray-400 py-8">Loading messages…</div>
-              )}
+              {loadingMsgs && <div className="text-center text-sm text-gray-400 py-8">Loading messages…</div>}
               {!loadingMsgs && activeMessages.length === 0 && (
-                <div className="text-center text-sm text-gray-400 py-8">No messages yet</div>
+                <div className="text-center text-sm text-gray-400 py-8">No messages yet. Send the first message!</div>
               )}
               {activeMessages.map((m) => (
                 <div key={m.id} className={`flex ${m.sender_type === 'owner' ? 'justify-end' : 'justify-start'}`}>
@@ -353,14 +388,49 @@ export default function MessagesPage() {
                       {selectedConv.customer_name?.charAt(0)?.toUpperCase()}
                     </div>
                   )}
-                  <div className={`max-w-[70%] group`}>
-                    <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-snug ${
-                      m.sender_type === 'owner'
-                        ? 'bg-brand-500 text-white rounded-br-sm'
-                        : 'bg-white border border-gray-200 text-gray-800 shadow-sm rounded-bl-sm'
-                    }`}>
-                      {m.message}
-                    </div>
+                  <div className="max-w-[72%] group relative">
+                    {m.is_deleted ? (
+                      <div className={`px-3.5 py-2 rounded-2xl text-xs italic text-gray-400 border border-dashed border-gray-200 bg-white ${
+                        m.sender_type === 'owner' ? 'rounded-br-sm' : 'rounded-bl-sm'
+                      }`}>
+                        Message deleted
+                      </div>
+                    ) : (
+                      <>
+                        <div className={`px-3.5 py-2.5 rounded-2xl text-sm leading-snug ${
+                          m.sender_type === 'owner'
+                            ? 'bg-brand-500 text-white rounded-br-sm'
+                            : 'bg-white border border-gray-200 text-gray-800 shadow-sm rounded-bl-sm'
+                        }`}>
+                          {m.message}
+                          {m.sender_type === 'owner' && <SeenTick msg={m} customerReadAt={convReadAt} />}
+                        </div>
+                        {/* Delete button — owner messages only, appears on hover/tap */}
+                        {m.sender_type === 'owner' && (
+                          <div className={`absolute top-0 -left-8 opacity-0 group-hover:opacity-100 transition-opacity ${
+                            menuMsgId === m.id ? 'opacity-100' : ''
+                          }`}>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setMenuMsgId(menuMsgId === m.id ? null : m.id); }}
+                              className="w-6 h-6 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center text-gray-400 hover:text-red-500 text-xs"
+                              title="Delete message"
+                            >
+                              ⋯
+                            </button>
+                            {menuMsgId === m.id && (
+                              <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-10 min-w-[120px]">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(m.id); }}
+                                  className="w-full text-left px-3 py-2 text-xs text-red-600 hover:bg-red-50 font-medium"
+                                >
+                                  🗑 Delete message
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
                     <p className={`text-[10px] mt-1 text-gray-400 ${m.sender_type === 'owner' ? 'text-right' : 'text-left'}`}>
                       {fmtTime(m.created_at)}
                     </p>
@@ -383,9 +453,7 @@ export default function MessagesPage() {
                   e.target.style.height = 'auto';
                   e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
-                }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
               />
               <button
                 onClick={handleSend}

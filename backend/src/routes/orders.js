@@ -18,7 +18,7 @@ const {
 const {
   getCustomerMessages, postCustomerMessage,
   getOwnerMessages, postOwnerMessage,
-  getConversations,
+  getConversations, deleteOwnerMessage,
 } = require('../controllers/messageController');
 
 // Public: combined bill for a table
@@ -65,7 +65,8 @@ router.get('/:id/kot/history',            authenticate, checkSubscription, getKo
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);
 
 // Owner chat per order
-router.get('/:id/messages',  authenticate, checkSubscription, getOwnerMessages);
-router.post('/:id/messages', authenticate, checkSubscription, postOwnerMessage);
+router.get('/:id/messages',              authenticate, checkSubscription, getOwnerMessages);
+router.post('/:id/messages',             authenticate, checkSubscription, postOwnerMessage);
+router.delete('/:id/messages/:msgId',    authenticate, checkSubscription, deleteOwnerMessage);
 
 module.exports = router;

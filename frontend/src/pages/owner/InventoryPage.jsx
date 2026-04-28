@@ -169,12 +169,12 @@ export default function InventoryPage() {
           <p>No items match this filter.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-x-auto">
+          <table className="w-full text-sm min-w-[520px]">
             <thead>
               <tr className="border-b border-gray-100 text-xs text-gray-400 uppercase tracking-wide">
                 <th className="text-left px-4 py-3">Item</th>
-                <th className="text-left px-4 py-3">Category</th>
+                <th className="text-left px-4 py-3 hidden sm:table-cell">Category</th>
                 <th className="text-center px-4 py-3">Stock</th>
                 <th className="text-center px-4 py-3">Status</th>
                 <th className="text-right px-4 py-3">Actions</th>
@@ -184,41 +184,43 @@ export default function InventoryPage() {
               {filtered.map((item) => (
                 <tr key={item.id} className={`${item.out_of_stock ? 'bg-red-50/40' : item.low_stock ? 'bg-amber-50/40' : ''}`}>
                   <td className="px-4 py-3 font-medium text-gray-900">{item.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{item.category || '—'}</td>
+                  <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{item.category || '—'}</td>
                   <td className="px-4 py-3 text-center">
                     {item.track_stock
                       ? <span className={`font-bold text-base ${item.out_of_stock ? 'text-red-600' : item.low_stock ? 'text-amber-600' : 'text-gray-900'}`}>
                           {item.stock_quantity ?? '—'}
                         </span>
-                      : <span className="text-gray-300 text-xs">not tracked</span>
+                      : <span className="text-gray-300 text-xs">—</span>
                     }
                   </td>
                   <td className="px-4 py-3 text-center">
                     {!item.track_stock ? (
                       <span className="text-xs text-gray-400">—</span>
                     ) : item.out_of_stock ? (
-                      <span className="badge bg-red-100 text-red-700 text-xs">Out of stock</span>
+                      <span className="badge bg-red-100 text-red-700 text-xs">Out</span>
                     ) : item.low_stock ? (
-                      <span className="badge bg-amber-100 text-amber-700 text-xs">Low stock</span>
+                      <span className="badge bg-amber-100 text-amber-700 text-xs">Low</span>
                     ) : (
                       <span className="badge bg-green-100 text-green-700 text-xs">OK</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex items-center justify-end gap-1.5">
                       <button
                         onClick={() => setRestock({ id: item.id, name: item.name, qty: item.stock_quantity ?? 0 })}
-                        className="text-xs font-medium text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1 rounded-lg transition-colors"
+                        className="text-xs font-medium text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                       >
-                        {item.track_stock ? 'Restock' : 'Enable & set'}
+                        {item.track_stock ? 'Restock' : 'Enable'}
                       </button>
                       {item.track_stock && (
                         <button
                           onClick={() => handleDisableTracking(item)}
-                          className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-lg hover:bg-gray-100 transition-colors"
+                          className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0"
                           title="Disable stock tracking"
                         >
-                          ✕
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
                         </button>
                       )}
                     </div>

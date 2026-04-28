@@ -144,9 +144,10 @@ export const verifyOrderPayment = (slug, id, data) => api.post(`/orders/cafe/${s
 export const getCustomerMessages  = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/messages`);
 export const postCustomerMessage  = (slug, id, message) => api.post(`/orders/cafe/${slug}/orders/${id}/messages`, { message });
 // Owner-side (authenticated)
-export const getConversations  = () => api.get('/orders/messages/conversations');
-export const getOwnerMessages  = (id) => api.get(`/orders/${id}/messages`);
-export const postOwnerMessage  = (id, message) => api.post(`/orders/${id}/messages`, { message });
+export const getConversations    = () => api.get('/orders/messages/conversations');
+export const getOwnerMessages    = (id) => api.get(`/orders/${id}/messages`);
+export const postOwnerMessage    = (id, message) => api.post(`/orders/${id}/messages`, { message });
+export const deleteOwnerMessage  = (id, msgId) => api.delete(`/orders/${id}/messages/${msgId}`);
 
 // ─── Categories (Owner) ───────────────────────────────────────
 export const getCategories = () => api.get('/menu/categories');
