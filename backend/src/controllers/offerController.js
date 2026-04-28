@@ -194,7 +194,7 @@ exports.previewOffer = asyncHandler(async (req, res) => {
 // POST /offers/cafe/:slug/validate-coupon  { coupon_code, items, total }
 exports.validateCoupon = asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const { coupon_code, items = [], total = 0 } = req.body;
+  const { coupon_code, total = 0 } = req.body;
 
   if (!coupon_code?.trim()) return fail(res, 'Coupon code is required', 400);
 
@@ -205,62 +205,56 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
   if (cafeResult.rows.length === 0) return fail(res, 'Café not found', 404);
   const cafeId = cafeResult.rows[0].id;
 
-  const now = new Date();
-  const dayOfWeek = now.getDay();
-  const timeStr = now.toTimeString().slice(0, 5);
+  const orderTotal = parseFloat(total) || 0;
+  const now        = new Date();
+  const dayOfWeek  = now.getDay();
+  const timeStr    = now.toTimeString().slice(0, 5);
 
-  // Step 1: does this coupon code exist at all?
-  const codeCheck = await db.query(
-    `SELECT * FROM offers WHERE cafe_id = $1 AND is_active = true AND UPPER(coupon_code) = $2 LIMIT 1`,
+  // Check if the coupon code exists (ignoring order amount / schedule),
+  // so we can return a helpful "min order" hint vs "code not found".
+  const { rows: found } = await db.query(
+    `SELECT id, name, offer_type, discount_value, min_order_amount, active_days, active_from, active_until
+     FROM offers
+     WHERE cafe_id = $1 AND is_active = true AND UPPER(coupon_code) = $2
+     LIMIT 1`,
     [cafeId, coupon_code.trim().toUpperCase()]
   );
-  if (codeCheck.rows.length === 0) {
-    return fail(res, 'Coupon code not found. Please check and try again.', 400);
-  }
-  const candidate = codeCheck.rows[0];
 
-  // Step 2: minimum order check
-  const orderTotal = parseFloat(total) || 0;
-  if (parseFloat(candidate.min_order_amount) > orderTotal) {
-    const need = parseFloat(candidate.min_order_amount) - orderTotal;
-    return fail(
-      res,
-      `Minimum order of ₹${parseFloat(candidate.min_order_amount).toFixed(0)} required. Add ₹${need.toFixed(0)} more to use this coupon.`,
-      400
-    );
+  if (found.length === 0) {
+    return fail(res, 'Invalid coupon code', 400);
   }
 
-  // Step 3: day restriction check
-  if (candidate.active_days && !candidate.active_days.includes(dayOfWeek)) {
-    const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-    const validDays = candidate.active_days.map((d) => DAY_NAMES[d]).join(', ');
-    return fail(res, `This coupon is only valid on: ${validDays}.`, 400);
+  const offer = found[0];
+
+  // Minimum order check — give a helpful nudge
+  if (parseFloat(offer.min_order_amount) > orderTotal) {
+    const need = (parseFloat(offer.min_order_amount) - orderTotal).toFixed(0);
+    return fail(res, `Add ₹${need} more to use this coupon (min order ₹${parseFloat(offer.min_order_amount).toFixed(0)})`, 400);
   }
 
-  // Step 4: time restriction check
-  if (candidate.active_from && timeStr < candidate.active_from.slice(0, 5)) {
-    return fail(res, `This coupon is valid from ${candidate.active_from.slice(0, 5)} only.`, 400);
-  }
-  if (candidate.active_until && timeStr > candidate.active_until.slice(0, 5)) {
-    return fail(res, `This coupon expired at ${candidate.active_until.slice(0, 5)} today.`, 400);
+  // Day / time restrictions
+  const dayOk  = !offer.active_days  || offer.active_days.includes(dayOfWeek);
+  const timeOk = (!offer.active_from  || timeStr >= String(offer.active_from).slice(0, 5))
+              && (!offer.active_until || timeStr <= String(offer.active_until).slice(0, 5));
+
+  if (!dayOk || !timeOk) {
+    return fail(res, 'This coupon is not valid right now', 400);
   }
 
-  const offerResult = { rows: [candidate] };
-
-  const offer = offerResult.rows[0];
+  // Calculate discount
   let discountAmount = 0;
-  let finalAmount = parseFloat(total) || 0;
+  let finalAmount    = orderTotal;
 
   if (offer.offer_type === 'percentage') {
     discountAmount = parseFloat(((finalAmount * parseFloat(offer.discount_value)) / 100).toFixed(2));
-    finalAmount = parseFloat((finalAmount - discountAmount).toFixed(2));
+    finalAmount    = parseFloat((finalAmount - discountAmount).toFixed(2));
   } else if (offer.offer_type === 'fixed') {
     discountAmount = Math.min(parseFloat(offer.discount_value), finalAmount);
-    finalAmount = parseFloat((finalAmount - discountAmount).toFixed(2));
+    finalAmount    = parseFloat((finalAmount - discountAmount).toFixed(2));
   }
 
   ok(res, {
-    applied: true,
+    applied:         true,
     offer_id:        offer.id,
     offer_name:      offer.name,
     offer_type:      offer.offer_type,
