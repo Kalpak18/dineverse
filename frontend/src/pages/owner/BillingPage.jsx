@@ -7,6 +7,8 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
 // ─── Pricing config ───────────────────────────────────────────
+// perMonth / totals / regulars / savings / savingsPct / planKeys
+// index 0=1mo, 1=3mo, 2=6mo, 3=1yr, 4=2yr, 5=3yr
 const TIERS = {
   basic: {
     name: 'Essential',
@@ -14,12 +16,12 @@ const TIERS = {
     badgeCls: 'bg-brand-500 text-white',
     tagline: 'Run your entire café from one screen',
     color: 'brand',
-    perMonth:   [499, 449, 444],
-    totals:     [5988, 10788, 15999],
-    regulars:   [5988, 11976, 17964],
-    savings:    [0, 1188, 1965],
-    savingsPct: [0, 10, 11],
-    planKeys:   ['basic_1year', 'basic_2year', 'basic_3year'],
+    perMonth:   [699, 599, 549, 499, 449, 444],
+    totals:     [699, 1797, 3294, 5988, 10788, 15999],
+    regulars:   [699, 2097, 4194, 8388, 16776, 25164],
+    savings:    [0, 300, 900, 2400, 5988, 9165],
+    savingsPct: [0, 14, 21, 29, 36, 37],
+    planKeys:   ['basic_1month', 'basic_3month', 'basic_6month', 'basic_1year', 'basic_2year', 'basic_3year'],
     outcomes: [
       { icon: '📋', text: 'Accept unlimited orders — no caps, ever' },
       { icon: '🔔', text: 'Never miss an order with instant real-time alerts' },
@@ -37,14 +39,14 @@ const TIERS = {
     badgeCls: 'bg-purple-600 text-white',
     tagline: 'Full kitchen management for serious restaurants',
     color: 'purple',
-    perMonth:   [999, 899, 888],
-    totals:     [11988, 21576, 31968],
-    regulars:   [11988, 23976, 35964],
-    savings:    [0, 2400, 3996],
-    savingsPct: [0, 10, 11],
-    planKeys:   ['premium_1year', 'premium_2year', 'premium_3year'],
+    perMonth:   [1299, 1199, 1099, 999, 899, 888],
+    totals:     [1299, 3597, 6594, 11988, 21576, 31968],
+    regulars:   [1299, 3897, 7794, 15588, 31176, 46764],
+    savings:    [0, 300, 1200, 3600, 9600, 14796],
+    savingsPct: [0, 8, 15, 23, 31, 32],
+    planKeys:   ['premium_1month', 'premium_3month', 'premium_6month', 'premium_1year', 'premium_2year', 'premium_3year'],
     outcomes: [
-      { icon: '✅', text: 'Everything in Basic, plus:' },
+      { icon: '✅', text: 'Everything in Essential, plus:' },
       { icon: '🔄', text: 'Live per-item progress: Preparing → Ready → Served' },
       { icon: '🍽️', text: 'Course sequencing — starters fire before mains' },
       { icon: '❌', text: 'Cancel individual items & notify the customer' },
@@ -72,9 +74,12 @@ const COMPARE_ROWS = [
 ];
 
 const DURATIONS = [
-  { idx: 0, label: '1 Year',  years: 1, badge: null },
-  { idx: 1, label: '2 Years', years: 2, badge: 'Save 10%' },
-  { idx: 2, label: '3 Years', years: 3, badge: 'Best Value' },
+  { idx: 0, label: '1 Month',  note: 'No commitment', badge: null },
+  { idx: 1, label: '3 Months', note: null, badge: 'Save 14%' },
+  { idx: 2, label: '6 Months', note: null, badge: 'Save 21%' },
+  { idx: 3, label: '1 Year',   note: null, badge: 'Save 29%' },
+  { idx: 4, label: '2 Years',  note: null, badge: 'Save 36%' },
+  { idx: 5, label: '3 Years',  note: null, badge: 'Best Value' },
 ];
 
 function fmt(n) {
@@ -83,19 +88,25 @@ function fmt(n) {
 
 function planLabel(plan_type) {
   const map = {
-    free_trial:    'Free Trial',
-    yearly:        'Essential · 1 Year',
-    two_year:      'Essential · 2 Years',
-    three_year:    'Essential · 3 Years',
-    '1year':       'Essential · 1 Year',
-    '2year':       'Essential · 2 Years',
-    '3year':       'Essential · 3 Years',
-    basic_1year:   'Essential · 1 Year',
-    basic_2year:   'Essential · 2 Years',
-    basic_3year:   'Essential · 3 Years',
-    premium_1year: 'Kitchen Pro · 1 Year',
-    premium_2year: 'Kitchen Pro · 2 Years',
-    premium_3year: 'Kitchen Pro · 3 Years',
+    free_trial:       'Free Trial',
+    yearly:           'Essential · 1 Year',
+    two_year:         'Essential · 2 Years',
+    three_year:       'Essential · 3 Years',
+    '1year':          'Essential · 1 Year',
+    '2year':          'Essential · 2 Years',
+    '3year':          'Essential · 3 Years',
+    basic_1month:     'Essential · 1 Month',
+    basic_3month:     'Essential · 3 Months',
+    basic_6month:     'Essential · 6 Months',
+    basic_1year:      'Essential · 1 Year',
+    basic_2year:      'Essential · 2 Years',
+    basic_3year:      'Essential · 3 Years',
+    premium_1month:   'Kitchen Pro · 1 Month',
+    premium_3month:   'Kitchen Pro · 3 Months',
+    premium_6month:   'Kitchen Pro · 6 Months',
+    premium_1year:    'Kitchen Pro · 1 Year',
+    premium_2year:    'Kitchen Pro · 2 Years',
+    premium_3year:    'Kitchen Pro · 3 Years',
   };
   return map[plan_type] || plan_type;
 }
@@ -125,7 +136,7 @@ export default function BillingPage() {
   const [loading, setLoading]     = useState(true);
   const [paying, setPaying]       = useState(false);
   const [selectedTier, setTier]   = useState('basic');
-  const [selectedDur, setDur]     = useState(0);
+  const [selectedDur, setDur]     = useState(3); // default: 1 Year
   const [activated, setActivated] = useState(null);
 
   useEffect(() => {
@@ -267,27 +278,35 @@ export default function BillingPage() {
       )}
 
       {/* Current Plan Status */}
-      <div className="card">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Current Plan</p>
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div>
-            <div className="flex items-center gap-2">
+      <div className={`card border-2 ${isExpired ? 'border-red-200 bg-red-50/30' : current?.days_left > 0 && current.days_left <= 14 ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Current Plan</p>
+        <div className="flex items-start justify-between flex-wrap gap-4">
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg font-bold text-gray-900">{planLabel(current?.plan_type)}</h2>
               <PlanBadge plan_type={current?.plan_type} plan_tier={current?.plan_tier} expiry={current?.plan_expiry_date} />
             </div>
             {expiryDate && (
-              <p className={`text-sm mt-1 ${isExpired ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                {isExpired ? '⚠️ Expired on ' : 'Active until '}{expiryDate}
-              </p>
+              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold ${
+                isExpired
+                  ? 'bg-red-100 text-red-700'
+                  : current?.days_left > 0 && current.days_left <= 14
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-gray-100 text-gray-700'
+              }`}>
+                <span>{isExpired ? '🔴' : current?.days_left <= 14 ? '⚠️' : '🟢'}</span>
+                <span>{isExpired ? 'Expired on ' : 'Active until '}<strong>{expiryDate}</strong></span>
+              </div>
             )}
-            {!isExpired && current?.days_left > 0 && current.days_left <= 30 && (
-              <p className="text-xs text-amber-600 font-medium mt-1">
-                ⏳ {current.days_left} day{current.days_left !== 1 ? 's' : ''} remaining — renew now to avoid interruption
+            {!isExpired && current?.days_left > 0 && (
+              <p className={`text-xs font-medium ${current.days_left <= 7 ? 'text-red-600' : current.days_left <= 30 ? 'text-amber-600' : 'text-gray-400'}`}>
+                {current.days_left} day{current.days_left !== 1 ? 's' : ''} remaining
+                {current.days_left <= 14 && ' — renew now to avoid interruption'}
               </p>
             )}
           </div>
           {isExpired && (
-            <span className="text-sm font-semibold text-red-600 bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg">
+            <span className="text-sm font-semibold text-red-600 bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg self-start">
               Service paused — renew below
             </span>
           )}
@@ -326,7 +345,7 @@ export default function BillingPage() {
                   <span className="text-2xl font-black text-gray-900">₹{fmt(basePerMonth)}</span>
                   <span className="text-sm text-gray-400">/mo</span>
                 </div>
-                <p className="text-xs text-gray-400">billed annually · save more on 2–3 year plans</p>
+                <p className="text-xs text-gray-400">from ₹{fmt(basePerMonth)}/mo · more options below</p>
 
                 {/* Selected indicator */}
                 <div className={`absolute top-4 right-4 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -413,13 +432,14 @@ export default function BillingPage() {
             >
               {d.badge && (
                 <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  d.idx === 2 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
+                  d.idx === 5 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
                 }`}>
                   {d.badge}
                 </span>
               )}
               <p className="font-bold text-gray-900 text-sm mt-1">{d.label}</p>
               <p className="text-xs text-gray-500 mt-0.5">₹{fmt(tier.perMonth[d.idx])}/mo</p>
+              {d.note && <p className="text-[10px] text-gray-400 mt-0.5">{d.note}</p>}
             </button>
           ))}
         </div>
@@ -443,7 +463,7 @@ export default function BillingPage() {
             )}
           </div>
           {selectedDur === 0 && (
-            <p className="text-xs text-gray-400">Switch to 2 or 3 years to unlock a discount</p>
+            <p className="text-xs text-gray-400">Choose 3+ months to save — same features, lower per-month cost</p>
           )}
         </div>
 
@@ -468,31 +488,43 @@ export default function BillingPage() {
       {history.length > 0 && (
         <div className="card">
           <h2 className="font-semibold text-gray-900 mb-4">Payment History</h2>
-          <div className="space-y-2">
-            {history.map((p) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between text-sm py-2 border-b border-gray-50 last:border-0"
-              >
-                <div>
-                  <p className="font-medium text-gray-800">{planLabel(p.plan_type)}</p>
-                  <p className="text-xs text-gray-400">
-                    {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    {p.razorpay_payment_id && (
-                      <span className="ml-2 font-mono">#{p.razorpay_payment_id.slice(-8)}</span>
-                    )}
-                  </p>
+          <div className="divide-y divide-gray-50">
+            {history.map((p) => {
+              const isCancelled = p.status === 'cancelled';
+              const isPending   = p.status === 'pending';
+              const isDone      = p.status === 'completed';
+              return (
+                <div
+                  key={p.id}
+                  className={`flex items-center justify-between text-sm py-3 ${isCancelled ? 'opacity-40' : ''}`}
+                >
+                  <div>
+                    <p className={`font-medium ${isCancelled ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
+                      {planLabel(p.plan_type)}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      {isDone && p.razorpay_payment_id && (
+                        <span className="ml-2 font-mono text-gray-300">#{p.razorpay_payment_id.slice(-8)}</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`font-semibold ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
+                      ₹{fmt(p.amount_paise / 100)}
+                    </span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                      isDone      ? 'bg-green-100 text-green-700' :
+                      isPending   ? 'bg-amber-100 text-amber-700' :
+                      isCancelled ? 'bg-gray-100 text-gray-400'   :
+                                    'bg-gray-100 text-gray-500'
+                    }`}>
+                      {isDone ? 'Paid' : isPending ? 'Not completed' : isCancelled ? 'Cancelled' : p.status}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-semibold">₹{fmt(p.amount_paise / 100)}</span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    p.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
-                  }`}>
-                    {p.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

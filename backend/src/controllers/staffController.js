@@ -36,6 +36,23 @@ exports.createStaff = asyncHandler(async (req, res) => {
     return fail(res, 'A staff account with this email already exists', 409);
   }
 
+  const STAFF_LIMITS = { free_trial: 3, basic: 5 }; // premium = unlimited
+  const planTier = req.subscription?.plan_tier || 'free_trial';
+  const planType = req.subscription?.plan_type;
+  const limit = STAFF_LIMITS[planType === 'free_trial' ? 'free_trial' : (planTier || 'basic')];
+  if (limit !== undefined) {
+    const countRes = await db.query(
+      'SELECT COUNT(*)::int AS cnt FROM cafe_staff WHERE cafe_id = $1 AND is_active = true',
+      [req.cafeId]
+    );
+    if (countRes.rows[0].cnt >= limit) {
+      const upgradeMsg = limit === 3
+        ? `Free trial allows up to 3 staff accounts. Subscribe to Essential for 5, or Kitchen Pro for unlimited.`
+        : `Essential plan allows up to 5 staff accounts. Upgrade to Kitchen Pro for unlimited.`;
+      return fail(res, upgradeMsg, 403);
+    }
+  }
+
   const password_hash = await bcrypt.hash(password, 12);
   const result = await db.query(
     `INSERT INTO cafe_staff (cafe_id, name, email, password_hash, role)

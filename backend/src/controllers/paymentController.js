@@ -10,14 +10,20 @@ const cache = require('../utils/cache');
 // Basic: ₹499/mo base | Premium (KDS + KOT): ₹999/mo base
 // Longer commitments get a discount (~10% at 2yr, ~11% at 3yr).
 const PLANS = {
-  // ── Basic tier ──────────────────────────────────────────────
-  'basic_1year': { label: 'Basic · 1 Year',  price_paise:  598800, months: 12, tier: 'basic' }, // ₹499 × 12
-  'basic_2year': { label: 'Basic · 2 Years', price_paise: 1078800, months: 24, tier: 'basic' }, // ₹449 × 24
-  'basic_3year': { label: 'Basic · 3 Years', price_paise: 1599900, months: 36, tier: 'basic' }, // ₹444 × 36
-  // ── Premium tier ────────────────────────────────────────────
-  'premium_1year': { label: 'Premium · 1 Year',  price_paise: 1198800, months: 12, tier: 'premium' }, // ₹999 × 12
-  'premium_2year': { label: 'Premium · 2 Years', price_paise: 2157600, months: 24, tier: 'premium' }, // ₹899 × 24
-  'premium_3year': { label: 'Premium · 3 Years', price_paise: 3196800, months: 36, tier: 'premium' }, // ₹888 × 36
+  // ── Basic (Essential) tier ───────────────────────────────────
+  'basic_1month':  { label: 'Essential · 1 Month',   price_paise:   69900, months:  1, tier: 'basic' }, // ₹699
+  'basic_3month':  { label: 'Essential · 3 Months',  price_paise:  179700, months:  3, tier: 'basic' }, // ₹599 × 3
+  'basic_6month':  { label: 'Essential · 6 Months',  price_paise:  329400, months:  6, tier: 'basic' }, // ₹549 × 6
+  'basic_1year':   { label: 'Essential · 1 Year',    price_paise:  598800, months: 12, tier: 'basic' }, // ₹499 × 12
+  'basic_2year':   { label: 'Essential · 2 Years',   price_paise: 1078800, months: 24, tier: 'basic' }, // ₹449 × 24
+  'basic_3year':   { label: 'Essential · 3 Years',   price_paise: 1599900, months: 36, tier: 'basic' }, // ₹444 × 36
+  // ── Premium (Kitchen Pro) tier ──────────────────────────────
+  'premium_1month':  { label: 'Kitchen Pro · 1 Month',   price_paise:  129900, months:  1, tier: 'premium' }, // ₹1,299
+  'premium_3month':  { label: 'Kitchen Pro · 3 Months',  price_paise:  359700, months:  3, tier: 'premium' }, // ₹1,199 × 3
+  'premium_6month':  { label: 'Kitchen Pro · 6 Months',  price_paise:  659400, months:  6, tier: 'premium' }, // ₹1,099 × 6
+  'premium_1year':   { label: 'Kitchen Pro · 1 Year',    price_paise: 1198800, months: 12, tier: 'premium' }, // ₹999 × 12
+  'premium_2year':   { label: 'Kitchen Pro · 2 Years',   price_paise: 2157600, months: 24, tier: 'premium' }, // ₹899 × 24
+  'premium_3year':   { label: 'Kitchen Pro · 3 Years',   price_paise: 3196800, months: 36, tier: 'premium' }, // ₹888 × 36
   // ── Legacy keys — old payment records still resolve correctly
   '1year':  { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
   '2year':  { label: '2 Year Plan',  price_paise: 1078800, months: 24, tier: 'basic' },
@@ -76,6 +82,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
   );
   const cafe = cafeRes.rows[0];
 
+  // Cancel any stale pending orders for this café so they don't stack up
+  await db.query(
+    `UPDATE payments SET status = 'cancelled' WHERE cafe_id = $1 AND status = 'pending'`,
+    [req.cafeId]
+  );
+
   const rpOrder = await razorpay.orders.create({
     amount: plan.price_paise,
     currency: 'INR',
@@ -87,7 +99,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     },
   });
 
-  // Persist pending payment
+  // Persist new pending payment
   await db.query(
     `INSERT INTO payments (cafe_id, razorpay_order_id, amount_paise, plan_type, status)
      VALUES ($1, $2, $3, $4, 'pending')`,

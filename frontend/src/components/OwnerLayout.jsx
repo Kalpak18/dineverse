@@ -360,8 +360,9 @@ function OwnerLayoutInner() {
           })}
         </nav>
 
-        {/* Bottom: Profile (owner only) + Logout + Collapse toggle */}
+        {/* Bottom: Plan badge + Profile (owner only) + Logout + Collapse toggle */}
         <div className={`pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+          {!isStaff && !collapsed && <PlanBadge cafe={cafe} remaining={remaining} expired={expired} />}
           {!isStaff && (
             <NavLink
               to="/owner/profile"
@@ -512,6 +513,34 @@ function OwnerLayoutInner() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ─── Plan Badge ───────────────────────────────────────────────
+function PlanBadge({ cafe, remaining, expired }) {
+  const navigate = useNavigate();
+  if (!cafe) return null;
+
+  const isTrial   = cafe.plan_type === 'free_trial';
+  const isPremium = cafe.plan_tier === 'premium';
+
+  const label = isTrial ? 'Free Trial' : isPremium ? 'Kitchen Pro' : 'Essential';
+  const expiry = cafe.plan_expiry_date
+    ? new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    : null;
+
+  let cls = 'bg-amber-50 border-amber-200 text-amber-800';
+  if (isPremium && !expired) cls = 'bg-green-50 border-green-200 text-green-800';
+  if (expired || (remaining !== null && remaining <= 7)) cls = 'bg-red-50 border-red-200 text-red-700';
+
+  return (
+    <button
+      onClick={() => navigate('/owner/billing')}
+      className={`w-full flex items-center justify-between px-3 py-2 mb-1 rounded-lg border text-xs font-medium transition-colors hover:opacity-80 ${cls}`}
+    >
+      <span>{label}</span>
+      {expiry && <span className="opacity-70">↻ {expiry}</span>}
+    </button>
   );
 }
 

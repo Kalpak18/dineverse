@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
+const requirePremium = require('../middleware/requirePremium');
 const { orderLimiter } = require('../middleware/rateLimiter');
 const {
   validateOrder, createOrder,
@@ -51,15 +52,15 @@ router.get('/', authenticate, checkSubscription, getOrders);
 router.get('/:id', authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status', authenticate, checkSubscription, updateOrderStatus);
 router.patch('/:id/kitchen-mode', authenticate, checkSubscription, setKitchenMode);
-router.patch('/:id/items/:itemId/status', authenticate, checkSubscription, updateItemStatus);
+router.patch('/:id/items/:itemId/status', authenticate, checkSubscription, requirePremium, updateItemStatus);
 router.post('/:id/accept', authenticate, checkSubscription, acceptOrder);
 router.post('/:id/reject', authenticate, checkSubscription, rejectOrder);
-router.post('/:id/items/:itemId/accept',  authenticate, checkSubscription, acceptItem);
-router.post('/:id/items/:itemId/reject',  authenticate, checkSubscription, rejectItem);
-router.patch('/:id/items/:itemId/cancel', authenticate, checkSubscription, cancelItem);
-router.patch('/:id/items/reorder',        authenticate, checkSubscription, reorderItems);
+router.post('/:id/items/:itemId/accept',  authenticate, checkSubscription, requirePremium, acceptItem);
+router.post('/:id/items/:itemId/reject',  authenticate, checkSubscription, requirePremium, rejectItem);
+router.patch('/:id/items/:itemId/cancel', authenticate, checkSubscription, requirePremium, cancelItem);
+router.patch('/:id/items/reorder',        authenticate, checkSubscription, requirePremium, reorderItems);
 router.post('/:id/kot',                   authenticate, checkSubscription, generateKot);
-router.get('/:id/kot/history',            authenticate, checkSubscription, getKotHistory);
+router.get('/:id/kot/history',            authenticate, checkSubscription, requirePremium, getKotHistory);
 
 // Owner: all conversations inbox
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);

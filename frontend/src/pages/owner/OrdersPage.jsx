@@ -156,6 +156,10 @@ export default function OrdersPage() {
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
+      if (err?.response?.data?.error === 'premium_required') {
+        toast.error('Kitchen Pro feature — upgrade your plan to unlock per-item status tracking.', { duration: 5000 });
+        return;
+      }
       toast.error(getApiError(err));
     }
   };
