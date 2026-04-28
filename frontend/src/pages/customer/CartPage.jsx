@@ -182,7 +182,11 @@ export default function CartPage() {
       setCouponApplied(true);
       toast.success(`Coupon applied! You save ${c(data.discount_amount)}`);
     } catch (err) {
-      toast.error(err?.response?.data?.message || 'Invalid or expired coupon code');
+      // Clear coupon state so it cannot accidentally be submitted with the order
+      setCouponApplied(false);
+      setCouponInput('');
+      setOfferPreview(null);
+      toast.error(err?.response?.data?.message || 'Invalid coupon code');
     } finally {
       setCouponLoading(false);
     }

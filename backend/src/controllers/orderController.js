@@ -5,7 +5,7 @@ const db = require('../config/database');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
-const { applyBestOffer } = require('./offerController');
+const { applyBestOffer, applyCoupon } = require('./offerController');
 const { notify } = require('../services/notificationService');
 
 // ─── Schedule helper ────────────────────────────────────────────

@@ -320,3 +320,43 @@ exports.applyBestOffer = async (cafeId, items, total) => {
     finalAmount: parseFloat((total - discountAmount).toFixed(2)),
   };
 };
+
+// ─── Helper: apply a specific coupon code to an order total ───────
+// Called from createOrder when customer submits a coupon_code.
+// Returns same shape as applyBestOffer. Never throws — invalid/expired
+// coupon silently falls back to no discount so the order still places.
+exports.applyCoupon = async (cafeId, couponCode, items, total) => {
+  const now       = new Date();
+  const dayOfWeek = now.getDay();
+  const timeStr   = now.toTimeString().slice(0, 5);
+
+  const { rows } = await db.query(
+    `SELECT * FROM offers
+     WHERE cafe_id = $1 AND is_active = true
+       AND UPPER(coupon_code) = $2
+       AND min_order_amount <= $3
+       AND (active_days IS NULL OR $4 = ANY(active_days))
+       AND (active_from IS NULL OR active_from <= $5::TIME)
+       AND (active_until IS NULL OR active_until >= $5::TIME)
+     LIMIT 1`,
+    [cafeId, couponCode.trim().toUpperCase(), parseFloat(total) || 0, dayOfWeek, timeStr]
+  );
+
+  if (rows.length === 0) return { offerId: null, discountAmount: 0, finalAmount: total };
+
+  const offer = rows[0];
+  let discountAmount = 0;
+
+  if (offer.offer_type === 'percentage') {
+    discountAmount = (total * parseFloat(offer.discount_value)) / 100;
+  } else if (offer.offer_type === 'fixed') {
+    discountAmount = parseFloat(offer.discount_value);
+  }
+
+  discountAmount = Math.min(discountAmount, total);
+  return {
+    offerId:        offer.id,
+    discountAmount: parseFloat(discountAmount.toFixed(2)),
+    finalAmount:    parseFloat((total - discountAmount).toFixed(2)),
+  };
+};
