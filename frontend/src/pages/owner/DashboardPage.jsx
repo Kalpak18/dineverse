@@ -41,7 +41,7 @@ export default function DashboardPage() {
       ]);
 
       setStats(statsRes.data);
-      setIsOpen(statsRes.data?.cafe_is_open ?? cafe?.is_open ?? true);
+      setIsOpen(statsRes.data?.cafe_is_open ?? true);
 
       if (annRes?.data?.value?.active && annRes.data.value.text) {
         setAnnouncement(annRes.data.value);
@@ -51,7 +51,9 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [cafe?.id, cafe?.is_open]);
+  // cafe?.id ensures this re-runs if the owner switches outlet, but nothing else
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cafe?.id]);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
 
