@@ -240,10 +240,15 @@ export default function MessagesPage() {
 
   const dismissConversation = (e, orderId) => {
     e.stopPropagation();
-    const next = new Set([...dismissed, orderId]);
-    setDismissed(next);
-    saveDismissed(next);
-    if (selectedId === orderId) { setSelectedId(null); setShowList(true); }
+    try {
+      const next = new Set([...dismissed, orderId]);
+      setDismissed(next);
+      saveDismissed(next);
+      if (selectedId === orderId) { setSelectedId(null); setShowList(true); }
+      toast.success('Conversation dismissed');
+    } catch {
+      toast.error('Failed to dismiss conversation');
+    }
   };
 
   // ── Filtered list ─────────────────────────────────────────────
@@ -255,7 +260,7 @@ export default function MessagesPage() {
       const token = fmtToken(c.daily_order_number, c.order_type).toLowerCase();
       return token.includes(q) || c.customer_name.toLowerCase().includes(q) || (c.last_message || '').toLowerCase().includes(q);
     });
-  }, [conversations, search]);
+  }, [conversations, search, dismissed]);
 
   const selectedConv  = conversations.find((c) => c.order_id === selectedId);
   const activeMessages = messages[selectedId] || [];
@@ -361,11 +366,11 @@ export default function MessagesPage() {
                     </div>
                   </div>
                 </button>
-                {/* Dismiss button — appears on hover */}
+                {/* Dismiss button — always visible */}
                 <button
                   onClick={(e) => dismissConversation(e, conv.order_id)}
                   title="Dismiss conversation"
-                  className="absolute top-3 right-2 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-full text-gray-300 hover:text-gray-600 hover:bg-gray-200 transition-all text-xs flex-shrink-0"
+                  className="absolute top-3 right-2 w-6 h-6 flex items-center justify-center rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors text-sm flex-shrink-0"
                 >
                   ×
                 </button>
