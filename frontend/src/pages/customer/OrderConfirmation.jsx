@@ -251,8 +251,10 @@ export default function OrderConfirmation() {
   // ─── Cancel order ───────────────────────────────────────────────
   const handleCancel = async (order) => {
     setCancelling(order.id);
+    // Use session identity (always present — required to enter the café)
+    const session = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}'); } catch { return {}; } })();
     try {
-      const { data } = await cancelOrder(slug, order.id, order.customer_name, order.customer_phone);
+      const { data } = await cancelOrder(slug, order.id, session.customer_name || order.customer_name, session.customer_phone || order.customer_phone);
       upsertOrder(slug, data.order);
       refresh();
       toast.success('Order cancelled');

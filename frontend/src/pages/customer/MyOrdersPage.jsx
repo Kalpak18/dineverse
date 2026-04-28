@@ -153,8 +153,9 @@ export default function MyOrdersPage() {
   }, [orders]);
 
   const handleCancel = async (order) => {
+    const session = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}'); } catch { return {}; } })();
     try {
-      const { data } = await cancelOrder(slug, order.id, order.customer_name, order.customer_phone);
+      const { data } = await cancelOrder(slug, order.id, session.customer_name || order.customer_name, session.customer_phone || order.customer_phone);
       upsertOrder(slug, data.order);
       refreshOrders();
       toast.success('Order cancelled');
