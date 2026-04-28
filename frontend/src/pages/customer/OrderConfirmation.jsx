@@ -84,7 +84,11 @@ export default function OrderConfirmation() {
   useEffect(() => {
     // 1. Save newly placed order from navigation state (from CartPage)
     const newOrder = location.state?.order;
-    if (newOrder) upsertOrder(slug, newOrder);
+    if (newOrder) {
+      upsertOrder(slug, newOrder);
+      // Clear from browser history so back-navigation never re-triggers the banner
+      navigate(location.pathname + location.search, { replace: true, state: null });
+    }
 
     // 2. Load all stored orders for this café
     const stored = loadOrders(slug);
@@ -677,6 +681,16 @@ export default function OrderConfirmation() {
                     className="w-full py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold transition-colors"
                   >
                     🧾 View Receipt
+                  </button>
+                )}
+
+                {/* Rate — for paid orders not yet rated */}
+                {order.status === 'paid' && !rated.has(order.id) && (
+                  <button
+                    onClick={() => setRatingOrder(order)}
+                    className="w-full py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-100 transition-colors"
+                  >
+                    ⭐ Rate your experience
                   </button>
                 )}
 

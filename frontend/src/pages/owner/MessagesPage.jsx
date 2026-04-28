@@ -7,7 +7,9 @@ import { useBadges } from '../../context/BadgeContext';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
-const LAST_READ_KEY = 'dv_msg_last_read';
+const LAST_READ_KEY    = 'dv_msg_last_read';
+const DISMISSED_KEY    = 'dv_msg_dismissed';
+
 function getLastRead() {
   try { return JSON.parse(localStorage.getItem(LAST_READ_KEY) || '{}'); } catch { return {}; }
 }
@@ -21,6 +23,12 @@ function markAllRead(conversations) {
   const now = new Date().toISOString();
   conversations.forEach((c) => { map[c.order_id] = now; });
   localStorage.setItem(LAST_READ_KEY, JSON.stringify(map));
+}
+function getDismissed() {
+  try { return new Set(JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]')); } catch { return new Set(); }
+}
+function saveDismissed(set) {
+  localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]));
 }
 
 function timeAgo(dateStr) {
@@ -73,6 +81,7 @@ export default function MessagesPage() {
   const [showList,       setShowList]       = useState(true);     // mobile: list vs chat
   const [search,         setSearch]         = useState('');
   const [menuMsgId,      setMenuMsgId]      = useState(null);     // message context-menu open
+  const [dismissed,      setDismissed]      = useState(getDismissed);
 
   const bottomRef  = useRef(null);
   const socketRef  = useRef(null);
@@ -101,6 +110,16 @@ export default function MessagesPage() {
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));
 
     socket.on('order_message', (msg) => {
+      // Un-dismiss if a new customer message arrives for a dismissed conversation
+      if (msg.sender_type === 'customer') {
+        setDismissed((prev) => {
+          if (!prev.has(msg.order_id)) return prev;
+          const next = new Set(prev);
+          next.delete(msg.order_id);
+          saveDismissed(next);
+          return next;
+        });
+      }
       setMessages((prev) => {
         const existing = prev[msg.order_id] || [];
         if (existing.find((m) => m.id === msg.id)) return prev;
@@ -219,11 +238,20 @@ export default function MessagesPage() {
     toast.success('All conversations marked as read');
   };
 
+  const dismissConversation = (e, orderId) => {
+    e.stopPropagation();
+    const next = new Set([...dismissed, orderId]);
+    setDismissed(next);
+    saveDismissed(next);
+    if (selectedId === orderId) { setSelectedId(null); setShowList(true); }
+  };
+
   // ── Filtered list ─────────────────────────────────────────────
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return conversations;
-    return conversations.filter((c) => {
+    const visible = conversations.filter((c) => !dismissed.has(c.order_id));
+    if (!q) return visible;
+    return visible.filter((c) => {
       const token = fmtToken(c.daily_order_number, c.order_type).toLowerCase();
       return token.includes(q) || c.customer_name.toLowerCase().includes(q) || (c.last_message || '').toLowerCase().includes(q);
     });
@@ -254,7 +282,7 @@ export default function MessagesPage() {
         <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
           <div>
             <h1 className="text-base font-bold text-gray-900">Messages</h1>
-            <p className="text-[11px] text-gray-400">{conversations.length} conversation{conversations.length !== 1 ? 's' : ''}</p>
+            <p className="text-[11px] text-gray-400">{filtered.length} conversation{filtered.length !== 1 ? 's' : ''}{dismissed.size > 0 ? ` · ${dismissed.size} dismissed` : ''}</p>
           </div>
           {totalUnread > 0 && (
             <button
@@ -294,42 +322,54 @@ export default function MessagesPage() {
             const unread   = isUnread(conv);
             const isActive = conv.order_id === selectedId;
             return (
-              <button
+              <div
                 key={conv.order_id}
-                onClick={() => openConversation(conv.order_id)}
-                className={`w-full text-left px-4 py-3.5 border-b border-gray-50 transition-colors hover:bg-gray-50 ${
+                className={`relative group flex items-start border-b border-gray-50 transition-colors hover:bg-gray-50 ${
                   isActive ? 'bg-brand-50 border-l-2 border-l-brand-500' : ''
                 }`}
               >
-                <div className="flex items-start gap-3">
-                  <div className="relative flex-shrink-0">
-                    <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-sm font-bold text-brand-600">
-                      {conv.customer_name?.charAt(0)?.toUpperCase() || '?'}
+                <button
+                  onClick={() => openConversation(conv.order_id)}
+                  className="flex-1 text-left px-4 py-3.5 min-w-0"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-brand-100 flex items-center justify-center text-sm font-bold text-brand-600">
+                        {conv.customer_name?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      {unread && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-brand-500 border-2 border-white" />
+                      )}
                     </div>
-                    {unread && (
-                      <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-brand-500 border-2 border-white" />
-                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <span className={`text-xs font-bold truncate ${unread ? 'text-gray-900' : 'text-gray-700'}`}>
+                          {conv.customer_name}
+                        </span>
+                        <span className="text-[10px] text-gray-400 flex-shrink-0 mr-5">{timeAgo(conv.last_message_at)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <span className="text-[10px] font-semibold text-brand-600">{fmtToken(conv.daily_order_number, conv.order_type)}</span>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${statusColor(conv.status)}`}>
+                          {conv.status}
+                        </span>
+                      </div>
+                      <p className={`text-xs truncate ${unread ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
+                        {conv.last_sender_type === 'owner' && <span className="text-gray-400">You: </span>}
+                        {conv.last_message}
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <span className={`text-xs font-bold truncate ${unread ? 'text-gray-900' : 'text-gray-700'}`}>
-                        {conv.customer_name}
-                      </span>
-                      <span className="text-[10px] text-gray-400 flex-shrink-0">{timeAgo(conv.last_message_at)}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[10px] font-semibold text-brand-600">{fmtToken(conv.daily_order_number, conv.order_type)}</span>
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold ${statusColor(conv.status)}`}>
-                        {conv.status}
-                      </span>
-                    </div>
-                    <p className={`text-xs truncate ${unread ? 'text-gray-700 font-medium' : 'text-gray-400'}`}>
-                      {conv.last_sender_type === 'owner' && <span className="text-gray-400">You: </span>}
-                      {conv.last_message}
-                    </p>
-                  </div>
-                </div>
-              </button>
+                </button>
+                {/* Dismiss button — appears on hover */}
+                <button
+                  onClick={(e) => dismissConversation(e, conv.order_id)}
+                  title="Dismiss conversation"
+                  className="absolute top-3 right-2 opacity-0 group-hover:opacity-100 w-6 h-6 flex items-center justify-center rounded-full text-gray-300 hover:text-gray-600 hover:bg-gray-200 transition-all text-xs flex-shrink-0"
+                >
+                  ×
+                </button>
+              </div>
             );
           })}
         </div>
