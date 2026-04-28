@@ -65,7 +65,7 @@ function hoursToSchema(hours) {
 }
 
 function CafeSeoHead({ cafe, slug }) {
-  const pageUrl     = `https://www.dine-verse.com/.cafe/${slug}`;
+  const pageUrl     = `https://www.dine-verse.com/cafe/${slug}`;
   const title       = `${cafe.name} — Order Online | DineVerse`;
   const description = cafe.description
     ? `${cafe.description.slice(0, 140)}…`

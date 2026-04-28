@@ -446,6 +446,26 @@ export default function CartPage() {
         </div>
       )}
 
+      {/* Near-miss offer nudge — show when an offer is almost within reach */}
+      {!couponApplied && offerPreview?.near_miss && (
+        <div className="mx-4 mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+          <span className="text-amber-500 text-lg mt-0.5">🏷️</span>
+          <div className="flex-1">
+            <p className="text-xs font-semibold text-amber-800">
+              Add {c(offerPreview.near_miss.amount_needed)} more to unlock{' '}
+              {offerPreview.near_miss.offer_type === 'percentage'
+                ? `${offerPreview.near_miss.discount_value}% off`
+                : `₹${parseFloat(offerPreview.near_miss.discount_value).toFixed(0)} off`}
+              !
+            </p>
+            <p className="text-xs text-amber-700">
+              {offerPreview.near_miss.offer_name}
+              {offerPreview.near_miss.coupon_code ? ` · Use code ${offerPreview.near_miss.coupon_code}` : ''}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="mx-4 mt-4 bg-gray-50 rounded-xl p-4">
         <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
         <div className="space-y-1 text-sm">

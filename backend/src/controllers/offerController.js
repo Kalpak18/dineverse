@@ -147,7 +147,36 @@ exports.previewOffer = asyncHandler(async (req, res) => {
     cafeResult.rows[0].id, items, parseFloat(total) || 0
   );
 
-  if (!offerId) return ok(res, { applied: false, discount_amount: 0, final_amount: parseFloat(total) || 0 });
+  const orderTotal = parseFloat(total) || 0;
+  const cafeId = cafeResult.rows[0].id;
+
+  // Near-miss: find the cheapest unapplied offer within 50% above current total
+  const now2 = new Date();
+  const { rows: nearMissRows } = await db.query(
+    `SELECT name, offer_type, discount_value, coupon_code, min_order_amount
+     FROM offers
+     WHERE cafe_id = $1 AND is_active = true
+       AND min_order_amount > $2
+       AND min_order_amount <= $2 * 1.5
+       AND (active_days IS NULL OR $3 = ANY(active_days))
+       AND (active_from IS NULL OR active_from <= $4::TIME)
+       AND (active_until IS NULL OR active_until >= $4::TIME)
+     ORDER BY min_order_amount ASC
+     LIMIT 1`,
+    [cafeId, orderTotal, now2.getDay(), now2.toTimeString().slice(0, 5)]
+  );
+  const nearMiss = nearMissRows[0]
+    ? {
+        offer_name:       nearMissRows[0].name,
+        offer_type:       nearMissRows[0].offer_type,
+        discount_value:   nearMissRows[0].discount_value,
+        coupon_code:      nearMissRows[0].coupon_code,
+        min_order_amount: parseFloat(nearMissRows[0].min_order_amount),
+        amount_needed:    parseFloat((parseFloat(nearMissRows[0].min_order_amount) - orderTotal).toFixed(2)),
+      }
+    : null;
+
+  if (!offerId) return ok(res, { applied: false, discount_amount: 0, final_amount: orderTotal, near_miss: nearMiss });
 
   const offerRow = await db.query('SELECT name, description, offer_type, discount_value FROM offers WHERE id = $1', [offerId]);
   ok(res, {
@@ -157,6 +186,7 @@ exports.previewOffer = asyncHandler(async (req, res) => {
     discount_value:  offerRow.rows[0]?.discount_value,
     discount_amount: discountAmount,
     final_amount:    finalAmount,
+    near_miss:       null,
   });
 });
 
@@ -179,21 +209,43 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
   const dayOfWeek = now.getDay();
   const timeStr = now.toTimeString().slice(0, 5);
 
-  const offerResult = await db.query(
-    `SELECT * FROM offers
-     WHERE cafe_id = $1 AND is_active = true
-       AND UPPER(coupon_code) = $2
-       AND min_order_amount <= $3
-       AND (active_days IS NULL OR $4 = ANY(active_days))
-       AND (active_from IS NULL OR active_from <= $5::TIME)
-       AND (active_until IS NULL OR active_until >= $5::TIME)
-     LIMIT 1`,
-    [cafeId, coupon_code.trim().toUpperCase(), parseFloat(total) || 0, dayOfWeek, timeStr]
+  // Step 1: does this coupon code exist at all?
+  const codeCheck = await db.query(
+    `SELECT * FROM offers WHERE cafe_id = $1 AND is_active = true AND UPPER(coupon_code) = $2 LIMIT 1`,
+    [cafeId, coupon_code.trim().toUpperCase()]
   );
-
-  if (offerResult.rows.length === 0) {
-    return fail(res, 'Invalid or expired coupon code', 400);
+  if (codeCheck.rows.length === 0) {
+    return fail(res, 'Coupon code not found. Please check and try again.', 400);
   }
+  const candidate = codeCheck.rows[0];
+
+  // Step 2: minimum order check
+  const orderTotal = parseFloat(total) || 0;
+  if (parseFloat(candidate.min_order_amount) > orderTotal) {
+    const need = parseFloat(candidate.min_order_amount) - orderTotal;
+    return fail(
+      res,
+      `Minimum order of ₹${parseFloat(candidate.min_order_amount).toFixed(0)} required. Add ₹${need.toFixed(0)} more to use this coupon.`,
+      400
+    );
+  }
+
+  // Step 3: day restriction check
+  if (candidate.active_days && !candidate.active_days.includes(dayOfWeek)) {
+    const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const validDays = candidate.active_days.map((d) => DAY_NAMES[d]).join(', ');
+    return fail(res, `This coupon is only valid on: ${validDays}.`, 400);
+  }
+
+  // Step 4: time restriction check
+  if (candidate.active_from && timeStr < candidate.active_from.slice(0, 5)) {
+    return fail(res, `This coupon is valid from ${candidate.active_from.slice(0, 5)} only.`, 400);
+  }
+  if (candidate.active_until && timeStr > candidate.active_until.slice(0, 5)) {
+    return fail(res, `This coupon expired at ${candidate.active_until.slice(0, 5)} today.`, 400);
+  }
+
+  const offerResult = { rows: [candidate] };
 
   const offer = offerResult.rows[0];
   let discountAmount = 0;
