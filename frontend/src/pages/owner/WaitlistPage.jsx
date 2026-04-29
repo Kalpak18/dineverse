@@ -56,7 +56,7 @@ export default function WaitlistPage() {
       const { data } = await updateWaitlistEntry(id, payload);
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...data.entry } : e));
       toast.success(
-        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}! SMS sent.` :
+        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}!` :
         status === 'no_show'   ? 'Marked as no-show' :
         status === 'cancelled' ? 'Entry cancelled' : 'Updated'
       );

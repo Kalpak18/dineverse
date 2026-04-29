@@ -2,7 +2,6 @@ const db              = require('../config/database');
 const { ok, fail }    = require('../utils/respond');
 const asyncHandler    = require('../utils/asyncHandler');
 const { notify }      = require('../services/notificationService');
-const { sendWaitlistSms, sendWaitlistCallingSoonSms } = require('../services/smsService');
 
 // Public: customer joins waitlist
 exports.joinWaitlist = asyncHandler(async (req, res) => {
@@ -132,24 +131,6 @@ exports.updateWaitlist = asyncHandler(async (req, res) => {
   // Notify the customer via socket (if they're still on the page)
   if (sendNotify || status === 'seated') {
     req.io.to(`waitlist:${id}`).emit('waitlist_called', { entry, table_number: entry.table_number });
-  }
-
-  // Send SMS so customer is notified even if they left the page
-  if (entry.customer_phone && (sendNotify || status === 'seated')) {
-    const cafeRes = await db.query('SELECT name FROM cafes WHERE id = $1', [req.cafeId]);
-    const cafeName = cafeRes.rows[0]?.name || 'The café';
-    if (status === 'seated') {
-      sendWaitlistSms(entry.customer_phone, cafeName, entry.table_number).catch(() => {});
-    } else if (sendNotify) {
-      // Calling-soon notification — fetch their current queue position
-      const posRes = await db.query(
-        `SELECT COUNT(*) AS count FROM waitlist
-         WHERE cafe_id = $1 AND status = 'waiting' AND created_at <= $2`,
-        [req.cafeId, entry.created_at]
-      );
-      const position = parseInt(posRes.rows[0].count, 10);
-      sendWaitlistCallingSoonSms(entry.customer_phone, cafeName, position).catch(() => {});
-    }
   }
 
   ok(res, { entry });

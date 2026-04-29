@@ -13,6 +13,7 @@ import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStora
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import { getOrderStatus, cancelOrder, getCafeBySlug, getCustomerMessages, postCustomerMessage } from '../../services/api';
 import toast from 'react-hot-toast';
+import { pushNotification } from '../../utils/customerNotifications';
 
 const ORDER_STATUS = {
   pending:   { label: 'Waiting',   color: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-400', icon: '⏳' },
@@ -106,15 +107,30 @@ export default function MyOrdersPage() {
     socket.on('order_updated', (updated) => {
       upsertOrder(slug, updated);
       refreshOrders();
-      if (updated.status === 'ready')     toast('🔔 Your order is ready!', { duration: 6000 });
-      if (updated.status === 'cancelled') toast.error('Order cancelled by café.');
+      if (updated.status === 'ready') {
+        toast('🔔 Your order is ready!', { duration: 6000 });
+        pushNotification(slug, { title: 'Order Ready! 🔔', body: 'Your order is ready for pickup / serving.', type: 'order' });
+      }
+      if (updated.status === 'confirmed') {
+        pushNotification(slug, { title: 'Order Confirmed ✅', body: 'The café has accepted your order.', type: 'order' });
+      }
+      if (updated.status === 'cancelled') {
+        toast.error('Order cancelled by café.');
+        pushNotification(slug, { title: 'Order Cancelled', body: 'Your order was cancelled by the café.', type: 'order' });
+      }
     });
 
     socket.on('reservation_updated', (updated) => {
       upsertReservation(slug, updated);
       refreshRes();
-      if (updated.status === 'confirmed') toast.success('Table reservation confirmed! ✅', { duration: 6000 });
-      if (updated.status === 'cancelled') toast.error('Reservation cancelled by café.');
+      if (updated.status === 'confirmed') {
+        toast.success('Table reservation confirmed! ✅', { duration: 6000 });
+        pushNotification(slug, { title: 'Reservation Confirmed ✅', body: `Your table is confirmed for ${updated.reserved_time ? updated.reserved_time.slice(0, 5) : 'your slot'}.`, type: 'reservation' });
+      }
+      if (updated.status === 'cancelled') {
+        toast.error('Reservation cancelled by café.');
+        pushNotification(slug, { title: 'Reservation Cancelled', body: 'Your table reservation was cancelled by the café.', type: 'reservation' });
+      }
     });
 
     // Fallback polling — stops after 2h or when all orders reach terminal state

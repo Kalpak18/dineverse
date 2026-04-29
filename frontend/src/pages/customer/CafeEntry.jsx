@@ -12,6 +12,7 @@ import { fmtCurrency } from '../../utils/formatters';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
+import { pushNotification } from '../../utils/customerNotifications';
 
 const RESERVATION_STATUS = {
   pending:   { label: 'Pending Confirmation', color: 'bg-yellow-100 text-yellow-800', icon: '⏳' },
@@ -250,8 +251,10 @@ export default function CafeEntry() {
       setMyBookings(loadReservations(slug));
       if (updated.status === 'confirmed') {
         toast.success('Your table reservation has been confirmed! ✅', { duration: 6000 });
+        pushNotification(slug, { title: 'Reservation Confirmed ✅', body: `Your table is confirmed for ${updated.reserved_time ? updated.reserved_time.slice(0, 5) : 'your slot'}.`, type: 'reservation' });
       } else if (updated.status === 'cancelled') {
         toast.error('Your reservation was cancelled by the café.', { duration: 6000 });
+        pushNotification(slug, { title: 'Reservation Cancelled', body: 'Your table reservation was cancelled by the café.', type: 'reservation' });
       }
     });
 
@@ -860,6 +863,11 @@ function WaitlistModal({ slug, cafeName, onClose }) {
         ? `Your table is ready! Please go to ${tbl}.`
         : 'Your table is ready! Please proceed to the counter.';
       toast.success(msg, { duration: 10000, icon: '🪑' });
+      pushNotification(slug, {
+        title: tbl ? `Table ${tbl} is ready! 🪑` : 'Your table is ready! 🪑',
+        body: tbl ? `Please proceed to table ${tbl}.` : 'Please come to the counter.',
+        type: 'waitlist',
+      });
     });
 
     return () => socket.disconnect();
