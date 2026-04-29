@@ -89,13 +89,14 @@ export default function MyOrdersPage() {
     socketRef.current = socket;
 
     // Track all live orders
-    const liveOrders = storedOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
-    liveOrders.forEach((o) => {
+    const currentOrders = loadOrders(slug);
+    const currentRes    = loadReservations(slug);
+    currentOrders.filter((o) => !['paid', 'cancelled'].includes(o.status)).forEach((o) => {
       socket.emit('track_order', o.id);
       trackedIds.current.add(o.id);
     });
     // Track all reservations
-    storedRes.forEach((r) => socket.emit('track_reservation', r.id));
+    currentRes.forEach((r) => socket.emit('track_reservation', r.id));
 
     socket.on('connect', () => {
       trackedIds.current.forEach((id) => socket.emit('track_order', id));
