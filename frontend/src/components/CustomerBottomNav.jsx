@@ -95,7 +95,7 @@ export default function CustomerBottomNav() {
           active={isHome}
           onClick={() => navigate(`/cafe/${slug}`)}
           icon={<HomeIcon />}
-          label="Home"
+          label="Café"
         />
         <Tab
           active={isOrders}

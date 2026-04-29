@@ -356,9 +356,8 @@ export default function CafeEntry() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
       <CafeSeoHead cafe={cafe} slug={slug} />
-      <Link to="/" className="fixed top-4 left-4 z-50 flex items-center gap-1.5 bg-white/80 hover:bg-white border border-gray-200 text-gray-600 hover:text-brand-600 text-sm font-medium px-3 py-2 rounded-xl shadow-sm backdrop-blur-sm transition-colors">
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
-        Home
+      <Link to="/" className="fixed top-4 left-4 z-50">
+        <img src="/icons/header_logo_round_192x192.png" alt="DineVerse" className="w-9 h-9 rounded-full shadow-sm" />
       </Link>
       <div className="w-full max-w-sm">
 
