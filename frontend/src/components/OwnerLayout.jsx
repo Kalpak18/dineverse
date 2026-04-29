@@ -1,7 +1,6 @@
 import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
-import { useTheme, THEMES } from '../context/ThemeContext';
 import { getOutlets, switchOutlet, toggleCafeOpen } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -60,7 +59,6 @@ export default function OwnerLayout() {
 function OwnerLayoutInner() {
   const { badges } = useBadges();
   const { cafe, role, staffRole, staffInfo, logout, updateCafe } = useAuth();
-  const { themeId, setThemeId } = useTheme();
   const navigate  = useNavigate();
   const location  = useLocation();
   const [mobileOpen, setMobileOpen]   = useState(false);
@@ -72,7 +70,6 @@ function OwnerLayoutInner() {
   const [reorderMode, setReorderMode] = useState(false);
   const [dragIdx, setDragIdx]         = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
-  const [showThemePicker, setShowThemePicker] = useState(false);
 
   // Sync local isOpen whenever AuthContext cafe.is_open changes (e.g. toggled from Dashboard)
   useEffect(() => { setIsOpen(cafe?.is_open ?? true); }, [cafe?.is_open]);
@@ -284,20 +281,24 @@ function OwnerLayoutInner() {
                   </div>
                 </div>
               ) : (
-                <NavLink
-                  to="/owner/profile"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 min-w-0 group"
-                >
-                  <Avatar />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
-                      {cafe?.name}
-                    </p>
-                    <p className="text-xs text-gray-400 truncate">/{cafe?.slug}</p>
-                  </div>
-                  <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
-                </NavLink>
+                <div className="space-y-2">
+                  <NavLink
+                    to="/owner/profile"
+                    onClick={() => setMobileOpen(false)}
+                    className="flex items-center gap-3 min-w-0 group"
+                  >
+                    <Avatar />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate text-sm group-hover:text-brand-600 transition-colors">
+                        {cafe?.name}
+                      </p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <PlanChip cafe={cafe} remaining={remaining} expired={expired} />
+                      </div>
+                    </div>
+                    <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
+                  </NavLink>
+                </div>
               )}
 
               {/* Open/Closed toggle — owner only */}
@@ -439,69 +440,8 @@ function OwnerLayoutInner() {
           })}
         </nav>
 
-        {/* Bottom: Theme picker + Reorder + Plan + Profile + Logout + Collapse */}
+        {/* Bottom: Reorder + Profile + Logout + Collapse */}
         <div className={`pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
-
-          {/* Theme picker */}
-          {!collapsed && (
-            <div className="mb-1">
-              <button
-                onClick={() => setShowThemePicker((v) => !v)}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
-              >
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: THEMES[themeId]?.swatch, flexShrink: 0, display: 'inline-block', border: '1px solid rgba(0,0,0,0.12)' }} />
-                <span className="flex-1 text-left">Theme: {THEMES[themeId]?.name}</span>
-                <span className="text-gray-300">{showThemePicker ? '▲' : '▼'}</span>
-              </button>
-              {showThemePicker && (
-                <div className="mt-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100">
-                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Choose a theme</p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {Object.entries(THEMES).map(([id, t]) => (
-                      <button
-                        key={id}
-                        onClick={() => { setThemeId(id); setShowThemePicker(false); }}
-                        title={t.name}
-                        className="flex flex-col items-center gap-1 group"
-                      >
-                        <span
-                          style={{ background: t.swatch }}
-                          className={`w-7 h-7 rounded-full border-2 transition-transform group-hover:scale-110 ${themeId === id ? 'border-gray-700 scale-110' : 'border-transparent'}`}
-                        />
-                        <span className={`text-[9px] font-medium ${themeId === id ? 'text-gray-700' : 'text-gray-400'}`}>{t.name}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Collapsed: theme dot only */}
-          {collapsed && (
-            <div className="flex justify-center mb-1">
-              <button
-                onClick={() => setShowThemePicker((v) => !v)}
-                title="Change theme"
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <span style={{ width: 12, height: 12, borderRadius: '50%', background: THEMES[themeId]?.swatch, display: 'inline-block', border: '1px solid rgba(0,0,0,0.12)' }} />
-              </button>
-              {showThemePicker && (
-                <div className="absolute bottom-16 left-16 bg-white border border-gray-200 rounded-2xl shadow-2xl p-3 z-50 w-48">
-                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Theme</p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {Object.entries(THEMES).map(([id, t]) => (
-                      <button key={id} onClick={() => { setThemeId(id); setShowThemePicker(false); }} title={t.name}
-                        style={{ background: t.swatch }}
-                        className={`w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 ${themeId === id ? 'border-gray-700 scale-110' : 'border-transparent'}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Reorder toggle — owner only, expanded mode only */}
           {!isStaff && !collapsed && (
@@ -535,7 +475,6 @@ function OwnerLayoutInner() {
             </div>
           )}
 
-          {!isStaff && !collapsed && <PlanBadge cafe={cafe} remaining={remaining} expired={expired} />}
           {!isStaff && (
             <NavLink
               to="/owner/profile"
@@ -686,6 +625,35 @@ function OwnerLayoutInner() {
         </main>
       </div>
     </div>
+  );
+}
+
+// ─── Plan Chip (inline in sidebar header) ─────────────────────
+function PlanChip({ cafe, remaining, expired }) {
+  const navigate = useNavigate();
+  if (!cafe) return null;
+
+  const isTrial   = cafe.plan_type === 'free_trial';
+  const isPremium = cafe.plan_tier === 'premium';
+
+  const label = isTrial ? 'Trial' : isPremium ? 'Kitchen Pro' : 'Essential';
+  const expiry = cafe.plan_expiry_date
+    ? new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+    : null;
+
+  let cls = 'bg-amber-100 text-amber-700';
+  if (isPremium && !expired) cls = 'bg-green-100 text-green-700';
+  if (expired || (remaining !== null && remaining <= 7)) cls = 'bg-red-100 text-red-600';
+
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.preventDefault(); navigate('/owner/billing'); }}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-opacity hover:opacity-75 ${cls}`}
+    >
+      <span>{label}</span>
+      {expiry && <span className="opacity-60">· {expiry}</span>}
+    </button>
   );
 }
 

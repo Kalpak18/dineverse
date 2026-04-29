@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme, THEMES } from '../../context/ThemeContext';
 import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import ImageUpload from '../../components/ImageUpload';
@@ -80,11 +81,12 @@ const BUSINESS_TYPES = [
 ];
 
 const TABS = [
-  { key: 'branding',  label: 'Branding' },
-  { key: 'contact',   label: 'Contact' },
-  { key: 'tax',       label: 'Tax & Billing' },
-  { key: 'delivery',  label: 'Delivery' },
-  { key: 'account',   label: 'Account' },
+  { key: 'branding',   label: 'Branding' },
+  { key: 'appearance', label: 'Appearance' },
+  { key: 'contact',    label: 'Contact' },
+  { key: 'tax',        label: 'Tax & Billing' },
+  { key: 'delivery',   label: 'Delivery' },
+  { key: 'account',    label: 'Account' },
 ];
 
 function buildForm(cafe) {
@@ -124,6 +126,7 @@ function buildForm(cafe) {
 
 export default function ProfilePage() {
   const { cafe, updateCafe, refreshCafe } = useAuth();
+  const { themeId, setThemeId } = useTheme();
   const [form, setForm]     = useState(() => buildForm(cafe));
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('branding');
@@ -314,6 +317,40 @@ export default function ProfilePage() {
           <button type="button" disabled={saving} onClick={() => saveTab()} className="btn-primary w-full">
             {saving ? 'Saving…' : 'Save Branding'}
           </button>
+        </div>
+      )}
+
+      {/* ── APPEARANCE TAB ── */}
+      {activeTab === 'appearance' && (
+        <div className="card space-y-6">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Colour Theme</h2>
+            <p className="text-xs text-gray-400">Choose a colour palette for your dashboard. Changes apply instantly.</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {Object.entries(THEMES).map(([id, t]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setThemeId(id)}
+                className={`flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all hover:shadow-md ${
+                  themeId === id
+                    ? 'border-gray-700 shadow-md bg-gray-50'
+                    : 'border-gray-100 hover:border-gray-300 bg-white'
+                }`}
+              >
+                <span
+                  style={{ background: t.swatch }}
+                  className={`w-10 h-10 rounded-full border-2 transition-transform ${themeId === id ? 'border-gray-600 scale-110' : 'border-transparent'}`}
+                />
+                <span className={`text-xs font-semibold ${themeId === id ? 'text-gray-800' : 'text-gray-500'}`}>{t.name}</span>
+                {themeId === id && (
+                  <span className="text-[10px] font-bold text-white bg-gray-700 px-2 py-0.5 rounded-full">Active</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-400">Theme preference is saved on this device. Staff members may see a different theme.</p>
         </div>
       )}
 
