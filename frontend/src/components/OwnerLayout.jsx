@@ -1,6 +1,7 @@
 import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
+import { useTheme, THEMES } from '../context/ThemeContext';
 import { getOutlets, switchOutlet, toggleCafeOpen } from '../services/api';
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
@@ -59,6 +60,7 @@ export default function OwnerLayout() {
 function OwnerLayoutInner() {
   const { badges } = useBadges();
   const { cafe, role, staffRole, staffInfo, logout, updateCafe } = useAuth();
+  const { themeId, setThemeId } = useTheme();
   const navigate  = useNavigate();
   const location  = useLocation();
   const [mobileOpen, setMobileOpen]   = useState(false);
@@ -67,6 +69,10 @@ function OwnerLayoutInner() {
   const [switching, setSwitching]     = useState(false);
   const [isOpen, setIsOpen]           = useState(cafe?.is_open ?? true);
   const [togglingOpen, setTogglingOpen] = useState(false);
+  const [reorderMode, setReorderMode] = useState(false);
+  const [dragIdx, setDragIdx]         = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [showThemePicker, setShowThemePicker] = useState(false);
 
   // Sync local isOpen whenever AuthContext cafe.is_open changes (e.g. toggled from Dashboard)
   useEffect(() => { setIsOpen(cafe?.is_open ?? true); }, [cafe?.is_open]);
@@ -136,8 +142,59 @@ function OwnerLayoutInner() {
     return () => window.removeEventListener('subscription:expired', handle);
   }, [navigate]);
 
-  // Filter nav by role
-  const visibleNav = ALL_NAV.filter((item) => item.roles.includes(effectiveRole));
+  // Filter nav by role, then apply saved order
+  const baseNav = ALL_NAV.filter((item) => item.roles.includes(effectiveRole));
+  const savedOrder = (() => {
+    try { return JSON.parse(localStorage.getItem(`dv_nav_order_${effectiveRole}`) || 'null'); } catch { return null; }
+  })();
+  const visibleNav = savedOrder
+    ? [...baseNav].sort((a, b) => {
+        const ai = savedOrder.indexOf(a.to);
+        const bi = savedOrder.indexOf(b.to);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      })
+    : baseNav;
+
+  const [navItems, setNavItems] = useState(visibleNav);
+  // Sync navItems when effectiveRole changes
+  useEffect(() => { setNavItems(visibleNav); }, [effectiveRole]); // eslint-disable-line
+
+  const saveNavOrder = (items) => {
+    localStorage.setItem(`dv_nav_order_${effectiveRole}`, JSON.stringify(items.map((i) => i.to)));
+  };
+
+  const handleDragStart = (e, idx) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+  const handleDragOver = (e, idx) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(idx);
+  };
+  const handleDrop = (idx) => {
+    if (dragIdx === null || dragIdx === idx) { setDragIdx(null); setDragOverIdx(null); return; }
+    const next = [...navItems];
+    const [moved] = next.splice(dragIdx, 1);
+    next.splice(idx, 0, moved);
+    setNavItems(next);
+    saveNavOrder(next);
+    setDragIdx(null);
+    setDragOverIdx(null);
+  };
+  const moveItem = (idx, dir) => {
+    const target = idx + dir;
+    if (target < 0 || target >= navItems.length) return;
+    const next = [...navItems];
+    [next[idx], next[target]] = [next[target], next[idx]];
+    setNavItems(next);
+    saveNavOrder(next);
+  };
+  const resetNavOrder = () => {
+    localStorage.removeItem(`dv_nav_order_${effectiveRole}`);
+    setNavItems(baseNav);
+    setReorderMode(false);
+  };
 
   // Avatar: logo image or first-letter fallback
   const Avatar = ({ size = 'md' }) => {
@@ -319,49 +376,165 @@ function OwnerLayoutInner() {
 
         {/* Nav — scrollable */}
         <nav className={`flex-1 overflow-y-auto py-3 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
-          {visibleNav.map((item) => {
+          {navItems.map((item, idx) => {
             const badgeCount = badges[item.to] || 0;
+            const isDragTarget = dragOverIdx === idx && dragIdx !== null && dragIdx !== idx;
             return (
-              <NavLink
+              <div
                 key={item.to}
-                to={item.to}
-                onClick={() => setMobileOpen(false)}
-                title={collapsed ? item.label : undefined}
-                className={({ isActive }) =>
-                  `flex items-center rounded-lg text-sm font-medium transition-colors ${
-                    collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
-                  } ${
-                    isActive
-                      ? 'bg-brand-50 text-brand-700'
-                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-                  }`
-                }
+                draggable={reorderMode && !collapsed}
+                onDragStart={reorderMode ? (e) => handleDragStart(e, idx) : undefined}
+                onDragOver={reorderMode ? (e) => handleDragOver(e, idx) : undefined}
+                onDrop={reorderMode ? () => handleDrop(idx) : undefined}
+                onDragEnd={() => { setDragIdx(null); setDragOverIdx(null); }}
+                className={`relative transition-all ${isDragTarget ? 'border-t-2 border-brand-400' : ''} ${reorderMode && !collapsed ? 'cursor-grab active:cursor-grabbing' : ''}`}
               >
-                <div className="relative flex-shrink-0">
-                  <NavIcon name={item.icon} />
-                  {collapsed && badgeCount > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                      {badgeCount > 9 ? '9+' : badgeCount}
-                    </span>
-                  )}
-                </div>
-                {!collapsed && (
-                  <>
-                    <span className="flex-1">{item.label}</span>
-                    {badgeCount > 0 && (
-                      <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
-                        {badgeCount > 99 ? '99+' : badgeCount}
-                      </span>
+                {reorderMode && !collapsed ? (
+                  <div className={`flex items-center gap-1 rounded-lg px-2 py-1.5 ${dragIdx === idx ? 'opacity-40' : ''} text-gray-600 hover:bg-gray-100`}>
+                    <span className="text-gray-300 text-base leading-none select-none cursor-grab px-0.5">⠿</span>
+                    <div className="relative flex-shrink-0"><NavIcon name={item.icon} /></div>
+                    <span className="flex-1 text-sm font-medium">{item.label}</span>
+                    <div className="flex flex-col gap-0 ml-auto">
+                      <button onClick={() => moveItem(idx, -1)} disabled={idx === 0} className="text-gray-300 hover:text-gray-600 leading-none px-1 disabled:opacity-20 text-xs">▲</button>
+                      <button onClick={() => moveItem(idx, 1)} disabled={idx === navItems.length - 1} className="text-gray-300 hover:text-gray-600 leading-none px-1 disabled:opacity-20 text-xs">▼</button>
+                    </div>
+                  </div>
+                ) : (
+                  <NavLink
+                    to={item.to}
+                    onClick={() => setMobileOpen(false)}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) =>
+                      `flex items-center rounded-lg text-sm font-medium transition-colors ${
+                        collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+                      } ${
+                        isActive
+                          ? 'bg-brand-50 text-brand-700'
+                          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      }`
+                    }
+                  >
+                    <div className="relative flex-shrink-0">
+                      <NavIcon name={item.icon} />
+                      {collapsed && badgeCount > 0 && (
+                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                          {badgeCount > 9 ? '9+' : badgeCount}
+                        </span>
+                      )}
+                    </div>
+                    {!collapsed && (
+                      <>
+                        <span className="flex-1">{item.label}</span>
+                        {badgeCount > 0 && (
+                          <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                            {badgeCount > 99 ? '99+' : badgeCount}
+                          </span>
+                        )}
+                      </>
                     )}
-                  </>
+                  </NavLink>
                 )}
-              </NavLink>
+              </div>
             );
           })}
         </nav>
 
-        {/* Bottom: Plan badge + Profile (owner only) + Logout + Collapse toggle */}
+        {/* Bottom: Theme picker + Reorder + Plan + Profile + Logout + Collapse */}
         <div className={`pb-3 pt-2 border-t border-gray-100 flex-shrink-0 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
+
+          {/* Theme picker */}
+          {!collapsed && (
+            <div className="mb-1">
+              <button
+                onClick={() => setShowThemePicker((v) => !v)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: THEMES[themeId]?.swatch, flexShrink: 0, display: 'inline-block', border: '1px solid rgba(0,0,0,0.12)' }} />
+                <span className="flex-1 text-left">Theme: {THEMES[themeId]?.name}</span>
+                <span className="text-gray-300">{showThemePicker ? '▲' : '▼'}</span>
+              </button>
+              {showThemePicker && (
+                <div className="mt-1 px-3 py-2 bg-gray-50 rounded-xl border border-gray-100">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Choose a theme</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {Object.entries(THEMES).map(([id, t]) => (
+                      <button
+                        key={id}
+                        onClick={() => { setThemeId(id); setShowThemePicker(false); }}
+                        title={t.name}
+                        className="flex flex-col items-center gap-1 group"
+                      >
+                        <span
+                          style={{ background: t.swatch }}
+                          className={`w-7 h-7 rounded-full border-2 transition-transform group-hover:scale-110 ${themeId === id ? 'border-gray-700 scale-110' : 'border-transparent'}`}
+                        />
+                        <span className={`text-[9px] font-medium ${themeId === id ? 'text-gray-700' : 'text-gray-400'}`}>{t.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Collapsed: theme dot only */}
+          {collapsed && (
+            <div className="flex justify-center mb-1">
+              <button
+                onClick={() => setShowThemePicker((v) => !v)}
+                title="Change theme"
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                <span style={{ width: 12, height: 12, borderRadius: '50%', background: THEMES[themeId]?.swatch, display: 'inline-block', border: '1px solid rgba(0,0,0,0.12)' }} />
+              </button>
+              {showThemePicker && (
+                <div className="absolute bottom-16 left-16 bg-white border border-gray-200 rounded-2xl shadow-2xl p-3 z-50 w-48">
+                  <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wide mb-2">Theme</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {Object.entries(THEMES).map(([id, t]) => (
+                      <button key={id} onClick={() => { setThemeId(id); setShowThemePicker(false); }} title={t.name}
+                        style={{ background: t.swatch }}
+                        className={`w-7 h-7 rounded-full border-2 transition-transform hover:scale-110 ${themeId === id ? 'border-gray-700 scale-110' : 'border-transparent'}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reorder toggle — owner only, expanded mode only */}
+          {!isStaff && !collapsed && (
+            <div>
+              {reorderMode ? (
+                <div className="flex gap-1.5 mb-1">
+                  <button
+                    onClick={() => setReorderMode(false)}
+                    className="flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-brand-500 text-white hover:bg-brand-600 transition-colors"
+                  >
+                    ✓ Done
+                  </button>
+                  <button
+                    onClick={resetNavOrder}
+                    className="px-2 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 border border-gray-200 transition-colors"
+                  >
+                    Reset
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setReorderMode(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors"
+                >
+                  <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <span>Reorder sidebar</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {!isStaff && !collapsed && <PlanBadge cafe={cafe} remaining={remaining} expired={expired} />}
           {!isStaff && (
             <NavLink

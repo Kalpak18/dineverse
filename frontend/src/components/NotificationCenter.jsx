@@ -53,9 +53,20 @@ export default function NotificationCenter({ cafeId }) {
   const [alerts, setAlerts]           = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [panelOpen, setPanelOpen]     = useState(false);
+  const [muted, setMuted]             = useState(() => localStorage.getItem('dv_sound') === 'false');
   const navigate  = useNavigate();
   const location  = useLocation();
   const seenIds   = useRef(new Set());
+
+  const toggleMute = () => {
+    setMuted((m) => {
+      const next = !m;
+      localStorage.setItem('dv_sound', String(!next));
+      return next;
+    });
+  };
+
+  const hasUrgent = alerts.some((a) => a.type === 'new_order' || a.type === 'item_sold_out');
 
   // ── Load unread from DB on mount ───────────────────────────────────────
   useEffect(() => {
@@ -92,8 +103,12 @@ export default function NotificationCenter({ cafeId }) {
 
       setAlerts((prev) => [dbToAlert(notif, true), ...prev].slice(0, 20));
       setUnreadCount((c) => c + 1);
-      playNotificationSound();
+      if (!muted) playNotificationSound();
       showBrowserNotif(notif.title, notif.body || '');
+      // Vibrate on mobile for urgent events (new order / sold out)
+      if (notif.type === 'new_order' || notif.type === 'item_sold_out') {
+        navigator.vibrate?.([150, 80, 150]);
+      }
 
       if (document.hidden) {
         const prev = document.title;
@@ -186,7 +201,10 @@ export default function NotificationCenter({ cafeId }) {
         className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
         aria-label="Notifications"
       >
-        <span className="text-xl">🔔</span>
+        {hasUrgent && (
+          <span className="absolute inset-0 rounded-lg bg-red-400 opacity-0 animate-[urgentPing_1.5s_ease-in-out_infinite]" />
+        )}
+        <span className={`text-xl ${hasUrgent ? 'animate-[bellShake_0.5s_ease-in-out_2]' : ''}`}>🔔</span>
         {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">
             {unreadCount > 9 ? '9+' : unreadCount}
@@ -201,11 +219,20 @@ export default function NotificationCenter({ cafeId }) {
           <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-2xl shadow-2xl border border-gray-200 z-[9991] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <span className="font-semibold text-gray-800 text-sm">Notifications</span>
-              {alerts.length > 0 && (
-                <button onClick={handleMarkAllRead} className="text-xs text-brand-600 hover:underline font-medium">
-                  Clear all
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleMute}
+                  title={muted ? 'Sound off — click to enable' : 'Sound on — click to mute'}
+                  className={`text-xs px-2 py-1 rounded-lg border transition-colors ${muted ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-green-50 text-green-700 border-green-200'}`}
+                >
+                  {muted ? '🔇' : '🔊'}
                 </button>
-              )}
+                {alerts.length > 0 && (
+                  <button onClick={handleMarkAllRead} className="text-xs text-brand-600 hover:underline font-medium">
+                    Clear all
+                  </button>
+                )}
+              </div>
             </div>
             <div className="max-h-96 overflow-y-auto divide-y divide-gray-100">
               {alerts.length === 0 ? (
@@ -248,6 +275,7 @@ export default function NotificationCenter({ cafeId }) {
       <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none">
         {alerts.filter((a) => a.fresh).map((alert) => {
           const cfg = TYPE_CONFIG[alert.type] || TYPE_CONFIG.new_order;
+          const isUrgent = alert.type === 'new_order' || alert.type === 'item_sold_out';
           return (
             <div
               key={alert.uid}
@@ -255,14 +283,20 @@ export default function NotificationCenter({ cafeId }) {
               style={{ animation: 'slideInRight 0.25s ease-out' }}
               onClick={() => goTo(alert)}
             >
-              <div className="h-1 bg-white/30 animate-pulse" />
+              {/* Progress bar — drains over 12s for urgent, 6s otherwise */}
+              <div className="h-1.5 bg-white/20 overflow-hidden">
+                <div
+                  className="h-full bg-white/50"
+                  style={{ animation: `drainBar ${isUrgent ? 12 : 6}s linear forwards` }}
+                />
+              </div>
               <div className="px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-start gap-2 flex-1 min-w-0">
                     <span className="text-xl flex-shrink-0 mt-0.5">{cfg.icon}</span>
                     <div className="min-w-0">
                       <p className="text-xs font-bold uppercase tracking-wide opacity-80 mb-0.5">{cfg.label}</p>
-                      <p className="text-sm font-medium leading-snug">{alert.title}</p>
+                      <p className="text-sm font-semibold leading-snug">{alert.title}</p>
                       {alert.body && <p className="text-xs opacity-80 mt-0.5">{alert.body}</p>}
                       <p className="text-xs opacity-60 mt-1">Tap to view →</p>
                     </div>
@@ -285,6 +319,21 @@ export default function NotificationCenter({ cafeId }) {
         @keyframes slideInRight {
           from { transform: translateX(110%); opacity: 0; }
           to   { transform: translateX(0);   opacity: 1; }
+        }
+        @keyframes urgentPing {
+          0%, 100% { opacity: 0; transform: scale(1); }
+          50%       { opacity: 0.25; transform: scale(1.15); }
+        }
+        @keyframes bellShake {
+          0%, 100% { transform: rotate(0deg); }
+          20%       { transform: rotate(-18deg); }
+          40%       { transform: rotate(18deg); }
+          60%       { transform: rotate(-12deg); }
+          80%       { transform: rotate(12deg); }
+        }
+        @keyframes drainBar {
+          from { width: 100%; }
+          to   { width: 0%; }
         }
       `}</style>
     </>

@@ -7,6 +7,7 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { AdminAuthProvider } from './context/AdminAuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
@@ -34,6 +35,7 @@ if ('serviceWorker' in navigator) {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <ThemeProvider>
     <HelmetProvider>
     <ErrorBoundary>
       <BrowserRouter>
@@ -81,5 +83,6 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       </BrowserRouter>
     </ErrorBoundary>
     </HelmetProvider>
+    </ThemeProvider>
   </React.StrictMode>
 );
