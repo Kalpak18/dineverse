@@ -3,7 +3,7 @@ import { getInventory, updateStock } from '../../services/api';
 import PageHint from '../../components/PageHint';
 import toast from 'react-hot-toast';
 
-const LOW = 5;
+const DEFAULT_LOW = 5;
 
 export default function InventoryPage() {
   const [items, setItems]       = useState([]);
@@ -11,7 +11,7 @@ export default function InventoryPage() {
   const [loadError, setLoadError] = useState(false);
   const [filter, setFilter]     = useState('all'); // all | low | out | untracked
   const [search, setSearch]     = useState('');
-  const [restock, setRestock]   = useState(null); // { id, name, qty }
+  const [restock, setRestock]   = useState(null); // { id, name, qty, threshold }
   const [saving, setSaving]     = useState(false);
 
   const load = useCallback(async () => {
@@ -34,16 +34,19 @@ export default function InventoryPage() {
     if (restock.qty === '' || restock.qty < 0) return toast.error('Enter a valid quantity');
     setSaving(true);
     try {
+      const threshold = parseInt(restock.threshold) || DEFAULT_LOW;
       const { data } = await updateStock(restock.id, {
         stock_quantity: parseInt(restock.qty),
         track_stock: true,
+        low_stock_threshold: threshold,
       });
       setItems((prev) => prev.map((i) => i.id === restock.id ? {
         ...i,
         stock_quantity: data.item.stock_quantity,
         track_stock: true,
         is_available: data.item.is_available,
-        low_stock: data.item.stock_quantity <= LOW,
+        low_stock_threshold: data.item.low_stock_threshold,
+        low_stock: data.item.stock_quantity > 0 && data.item.stock_quantity <= (data.item.low_stock_threshold || DEFAULT_LOW),
         out_of_stock: data.item.stock_quantity <= 0,
       } : i));
       toast.success(`${restock.name} restocked to ${restock.qty}`);
@@ -123,7 +126,7 @@ export default function InventoryPage() {
           )}
           {counts.low > 0 && (
             <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-sm text-amber-700 font-medium">
-              ⚠️ {counts.low} item{counts.low !== 1 ? 's' : ''} running low (≤{LOW})
+              ⚠️ {counts.low} item{counts.low !== 1 ? 's' : ''} running low
             </div>
           )}
         </div>
@@ -187,9 +190,12 @@ export default function InventoryPage() {
                   <td className="px-4 py-3 text-gray-500 hidden sm:table-cell">{item.category || '—'}</td>
                   <td className="px-4 py-3 text-center">
                     {item.track_stock
-                      ? <span className={`font-bold text-base ${item.out_of_stock ? 'text-red-600' : item.low_stock ? 'text-amber-600' : 'text-gray-900'}`}>
-                          {item.stock_quantity ?? '—'}
-                        </span>
+                      ? <div className="flex flex-col items-center leading-tight">
+                          <span className={`font-bold text-base ${item.out_of_stock ? 'text-red-600' : item.low_stock ? 'text-amber-600' : 'text-gray-900'}`}>
+                            {item.stock_quantity ?? '—'}
+                          </span>
+                          <span className="text-[10px] text-gray-400">alert ≤{item.low_stock_threshold ?? DEFAULT_LOW}</span>
+                        </div>
                       : <span className="text-gray-300 text-xs">—</span>
                     }
                   </td>
@@ -207,7 +213,7 @@ export default function InventoryPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1.5">
                       <button
-                        onClick={() => setRestock({ id: item.id, name: item.name, qty: item.stock_quantity ?? 0 })}
+                        onClick={() => setRestock({ id: item.id, name: item.name, qty: item.stock_quantity ?? 0, threshold: item.low_stock_threshold ?? DEFAULT_LOW })}
                         className="text-xs font-medium text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap"
                       >
                         {item.track_stock ? 'Restock' : 'Enable'}
@@ -250,6 +256,18 @@ export default function InventoryPage() {
                   value={restock.qty}
                   onChange={(e) => setRestock((r) => ({ ...r, qty: e.target.value }))}
                 />
+              </div>
+              <div>
+                <label className="label">Low-stock alert when below</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min="1"
+                    className="input w-24"
+                    value={restock.threshold}
+                    onChange={(e) => setRestock((r) => ({ ...r, threshold: e.target.value }))}
+                  />
+                  <span className="text-xs text-gray-400">units (default: {DEFAULT_LOW})</span>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button type="submit" disabled={saving} className="btn-primary flex-1">

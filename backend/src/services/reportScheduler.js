@@ -293,6 +293,60 @@ async function sendReportForCafe(cafe, dateStr) {
   logger.info('[Report] Sent to %s (%s) — Revenue: ₹%d, Orders: %s', cafe.name, cafe.email, revenue, stats.paid_orders);
 }
 
+async function sendExpiryReminders() {
+  logger.info('[Expiry] Running subscription expiry reminder job');
+  const { rows: cafes } = await db.query(
+    `SELECT id, name, email, plan_tier, plan_expiry_date
+     FROM cafes
+     WHERE is_active = true
+       AND plan_expiry_date IS NOT NULL
+       AND DATE(plan_expiry_date) = CURRENT_DATE + INTERVAL '7 days'`
+  );
+  logger.info('[Expiry] Sending reminders to %d café(s)', cafes.length);
+  for (const cafe of cafes) {
+    try {
+      const planLabel = cafe.plan_tier === 'premium' ? 'Kitchen Pro' : 'Essential';
+      const expiryStr = new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+      const billingUrl = `${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/billing`;
+      const html = `
+      <!DOCTYPE html>
+      <html><head><meta charset="UTF-8"></head>
+      <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;margin:0;padding:24px">
+        <div style="max-width:500px;margin:0 auto">
+          <div style="background:linear-gradient(135deg,#f59e0b,#d97706);border-radius:16px;padding:28px 32px;margin-bottom:20px;color:white;text-align:center">
+            <p style="font-size:40px;margin:0 0 8px">⚠️</p>
+            <h1 style="margin:0;font-size:22px;font-weight:800">Your subscription expires in 7 days</h1>
+            <p style="margin:8px 0 0;font-size:14px;opacity:0.85">${cafe.name}</p>
+          </div>
+          <div style="background:white;border-radius:12px;padding:24px;border:1px solid #e5e7eb;margin-bottom:16px;text-align:center">
+            <p style="margin:0 0 6px;font-size:13px;color:#6b7280">Current plan</p>
+            <p style="margin:0;font-size:24px;font-weight:800;color:#111827">${planLabel}</p>
+            <p style="margin:8px 0 0;font-size:14px;color:#dc2626;font-weight:600">Expires: ${expiryStr}</p>
+          </div>
+          <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:12px;padding:16px 20px;margin-bottom:20px">
+            <p style="margin:0;font-size:13px;color:#92400e;line-height:1.6">
+              After expiry, your menu will be <strong>hidden from customers</strong> and you won't be able to accept new orders until you renew. Renew now to avoid any interruption.
+            </p>
+          </div>
+          <div style="text-align:center;margin-bottom:24px">
+            <a href="${billingUrl}"
+               style="display:inline-block;background:#f97316;color:white;font-weight:700;font-size:15px;padding:14px 32px;border-radius:10px;text-decoration:none">
+              Renew Now →
+            </a>
+          </div>
+          <p style="text-align:center;font-size:12px;color:#d1d5db">
+            DineVerse · ${cafe.name}
+          </p>
+        </div>
+      </body></html>`;
+      await brevoSend(cafe.email, `⚠️ Your DineVerse subscription expires in 7 days`, html);
+      logger.info('[Expiry] Reminder sent to %s (%s)', cafe.name, cafe.email);
+    } catch (err) {
+      logger.error('[Expiry] Failed for %s: %s', cafe.name, err.message);
+    }
+  }
+}
+
 module.exports = function initReportScheduler() {
   if (!process.env.BREVO_API_KEY) {
     logger.warn('[Report] BREVO_API_KEY not set — skipping report scheduler');
@@ -305,5 +359,12 @@ module.exports = function initReportScheduler() {
     );
   }, { timezone: 'UTC' });
 
-  logger.info('[Report] Daily report scheduler started (fires at 08:00 IST)');
+  // Run expiry reminders at 09:00 AM IST = 03:30 UTC
+  cron.schedule('30 3 * * *', () => {
+    sendExpiryReminders().catch((err) =>
+      logger.error('[Expiry] Scheduler error: %s', err.message)
+    );
+  }, { timezone: 'UTC' });
+
+  logger.info('[Report] Daily report + expiry reminder schedulers started');
 };

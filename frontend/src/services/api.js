@@ -194,10 +194,11 @@ export const getKotHistory     = (id)             => api.get(`/orders/${id}/kot/
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────
-export const getStaff    = ()         => api.get('/staff');
-export const createStaff = (data)     => api.post('/staff', data);
-export const updateStaff = (id, data) => api.patch(`/staff/${id}`, data);
-export const deleteStaff = (id)       => api.delete(`/staff/${id}`);
+export const getStaff           = ()             => api.get('/staff');
+export const createStaff        = (data)         => api.post('/staff', data);
+export const updateStaff        = (id, data)     => api.patch(`/staff/${id}`, data);
+export const resetStaffPassword = (id, password) => api.patch(`/staff/${id}/reset-password`, { new_password: password });
+export const deleteStaff        = (id)           => api.delete(`/staff/${id}`);
 
 // ─── Expenses (Owner) ─────────────────────────────────────────
 export const getExpenses = (params) => api.get('/expenses', { params });

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getStaff, createStaff, updateStaff, deleteStaff } from '../../services/api';
+import { getStaff, createStaff, updateStaff, deleteStaff, resetStaffPassword } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -28,8 +28,11 @@ export default function StaffPage() {
   const [showAdd, setShowAdd]     = useState(false);
   const [form, setForm]           = useState(initForm());
   const [saving, setSaving]       = useState(false);
-  const [deletingId, setDeletingId] = useState(null);
-  const [togglingId, setTogglingId] = useState(null);
+  const [deletingId, setDeletingId]     = useState(null);
+  const [togglingId, setTogglingId]     = useState(null);
+  const [resetTarget, setResetTarget]   = useState(null); // { id, name }
+  const [newPassword, setNewPassword]   = useState('');
+  const [resetting, setResetting]       = useState(false);
 
   const loadStaff = async () => {
     try {
@@ -79,6 +82,24 @@ export default function StaffPage() {
       toast.success('Role updated');
     } catch (err) {
       toast.error(getApiError(err));
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    setResetting(true);
+    try {
+      await resetStaffPassword(resetTarget.id, newPassword);
+      toast.success(`Password reset for ${resetTarget.name}`);
+      setResetTarget(null);
+      setNewPassword('');
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -181,6 +202,14 @@ export default function StaffPage() {
               >
                 {member.is_active ? '🟢' : '🔴'}
               </button>
+              {/* Reset password */}
+              <button
+                onClick={() => { setResetTarget({ id: member.id, name: member.name }); setNewPassword(''); }}
+                title="Reset password"
+                className="p-1.5 rounded-lg hover:bg-amber-50 text-gray-300 hover:text-amber-500 transition-colors"
+              >
+                🔑
+              </button>
               {/* Delete */}
               <button
                 onClick={() => handleDelete(member.id)}
@@ -239,6 +268,49 @@ export default function StaffPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset password modal */}
+      {resetTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 px-4 pb-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setResetTarget(null); setNewPassword(''); } }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div className="h-1 bg-amber-500 rounded-t-2xl" />
+            <div className="p-5">
+              <h3 className="font-bold text-gray-900 text-lg mb-1">Reset Password</h3>
+              <p className="text-sm text-gray-500 mb-4">Set a new password for <strong>{resetTarget.name}</strong>. They can change it after logging in.</p>
+              <div className="space-y-3">
+                <div>
+                  <label className="label">New Password</label>
+                  <PasswordInput
+                    className="input"
+                    placeholder="Min. 8 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleResetPassword()}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={handleResetPassword}
+                    disabled={resetting || newPassword.length < 8}
+                    className="btn-primary flex-1 disabled:opacity-60"
+                  >
+                    {resetting ? 'Resetting…' : 'Reset Password'}
+                  </button>
+                  <button
+                    onClick={() => { setResetTarget(null); setNewPassword(''); }}
+                    className="btn-secondary flex-1"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>

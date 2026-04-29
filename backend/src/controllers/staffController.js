@@ -84,6 +84,22 @@ exports.updateStaff = asyncHandler(async (req, res) => {
   ok(res, { staff: result.rows[0] });
 });
 
+// Owner: reset a staff member's password
+exports.resetStaffPassword = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { new_password } = req.body;
+  if (!new_password || new_password.length < 8) {
+    return fail(res, 'New password must be at least 8 characters');
+  }
+  const password_hash = await bcrypt.hash(new_password, 12);
+  const result = await db.query(
+    'UPDATE cafe_staff SET password_hash = $1 WHERE id = $2 AND cafe_id = $3 RETURNING id, name',
+    [password_hash, id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Staff member not found', 404);
+  ok(res, {}, `Password reset for ${result.rows[0].name}`);
+});
+
 // Owner: delete a staff account
 exports.deleteStaff = asyncHandler(async (req, res) => {
   const { id } = req.params;

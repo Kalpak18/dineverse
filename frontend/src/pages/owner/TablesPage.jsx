@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
+import JSZip from 'jszip';
 import { io } from 'socket.io-client';
 import { fmtCurrency } from '../../utils/formatters';
 
@@ -65,6 +66,7 @@ export default function TablesPage() {
   const [editingArea, setEditingArea]   = useState(null); // {id, name}
   const [newTable, setNewTable]         = useState({ label: '', area_id: '' }); // area_id='' means unassigned
   const [addingTable, setAddingTable]   = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -79,6 +81,33 @@ export default function TablesPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleDownloadAllQRs = async () => {
+    const allTables = [...areas.flatMap((a) => a.tables || []), ...unassigned];
+    if (allTables.length === 0) { toast.error('No tables to download'); return; }
+    setDownloadingZip(true);
+    try {
+      const zip = new JSZip();
+      await Promise.all(allTables.map(async (table) => {
+        const url = `${window.location.origin}/cafe/${cafe?.slug}?table=${encodeURIComponent(table.label)}`;
+        const canvas = document.createElement('canvas');
+        await QRCode.toCanvas(canvas, url, { width: 512, margin: 2 });
+        const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+        zip.file(`qr-${table.label.replace(/[^a-z0-9]/gi, '_')}.png`, blob);
+      }));
+      const content = await zip.generateAsync({ type: 'blob' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(content);
+      link.download = `${cafe?.slug || 'tables'}-qr-codes.zip`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      toast.success(`Downloaded ${allTables.length} QR codes`);
+    } catch {
+      toast.error('Failed to generate ZIP');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
 
   // ── Area actions ──────────────────────────────────────────────
   const handleAddArea = async (e) => {
@@ -201,6 +230,23 @@ export default function TablesPage() {
 
       {/* ── Setup tab ── */}
       {tab === 'setup' && (<>
+
+      {/* ── Bulk QR download ── */}
+      {(areas.flatMap((a) => a.tables || []).length + unassigned.length) > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={handleDownloadAllQRs}
+            disabled={downloadingZip}
+            className="flex items-center gap-2 text-sm font-medium text-brand-600 hover:text-brand-800 bg-brand-50 hover:bg-brand-100 px-4 py-2 rounded-xl transition-colors disabled:opacity-50"
+          >
+            {downloadingZip ? (
+              <>⏳ Generating…</>
+            ) : (
+              <><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Download All QR Codes</>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ── Add new area ── */}
       <div className="card">

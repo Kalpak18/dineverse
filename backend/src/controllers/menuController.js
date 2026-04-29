@@ -152,6 +152,7 @@ exports.updateMenuItem = asyncHandler(async (req, res) => {
 exports.getInventory = asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT mi.id, mi.name, mi.track_stock, mi.stock_quantity, mi.is_available,
+            COALESCE(mi.low_stock_threshold, 5) AS low_stock_threshold,
             c.name AS category
      FROM menu_items mi
      LEFT JOIN categories c ON mi.category_id = c.id
@@ -159,27 +160,28 @@ exports.getInventory = asyncHandler(async (req, res) => {
      ORDER BY mi.track_stock DESC, mi.stock_quantity ASC NULLS LAST, mi.name ASC`,
     [req.cafeId]
   );
-  const LOW_STOCK_THRESHOLD = 5;
   const items = result.rows.map((r) => ({
     ...r,
-    low_stock: r.track_stock && r.stock_quantity != null && r.stock_quantity <= LOW_STOCK_THRESHOLD,
+    low_stock: r.track_stock && r.stock_quantity != null && r.stock_quantity > 0 && r.stock_quantity <= (r.low_stock_threshold || 5),
     out_of_stock: r.track_stock && r.stock_quantity != null && r.stock_quantity <= 0,
   }));
-  ok(res, { items, low_stock_threshold: LOW_STOCK_THRESHOLD });
+  ok(res, { items });
 });
 
-// Owner: restock an item (set new stock quantity)
+// Owner: restock an item (set new stock quantity + optional threshold)
 exports.updateStock = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { stock_quantity, track_stock } = req.body;
+  const { stock_quantity, track_stock, low_stock_threshold } = req.body;
+  const threshold = low_stock_threshold != null ? Math.max(1, parseInt(low_stock_threshold)) : null;
   const result = await db.query(
     `UPDATE menu_items
-     SET stock_quantity = $1,
-         track_stock    = COALESCE($2, track_stock),
-         is_available   = CASE WHEN $1 > 0 THEN true ELSE is_available END
+     SET stock_quantity      = $1,
+         track_stock         = COALESCE($2, track_stock),
+         is_available        = CASE WHEN $1 > 0 THEN true ELSE is_available END,
+         low_stock_threshold = COALESCE($5, low_stock_threshold, 5)
      WHERE id = $3 AND cafe_id = $4
-     RETURNING id, name, track_stock, stock_quantity, is_available`,
-    [parseInt(stock_quantity), track_stock != null ? track_stock : null, id, req.cafeId]
+     RETURNING id, name, track_stock, stock_quantity, is_available, COALESCE(low_stock_threshold, 5) AS low_stock_threshold`,
+    [parseInt(stock_quantity), track_stock != null ? track_stock : null, id, req.cafeId, threshold]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
   await bustMenuCache(req.cafeId);

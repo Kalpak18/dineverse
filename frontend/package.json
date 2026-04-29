@@ -19,6 +19,7 @@
     "@capacitor/core": "^6.0.0",
     "axios": "^1.7.2",
     "jsqr": "^1.4.0",
+    "jszip": "^3.10.1",
     "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",

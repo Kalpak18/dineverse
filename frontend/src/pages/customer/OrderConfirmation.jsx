@@ -383,6 +383,19 @@ export default function OrderConfirmation() {
             <p className="text-gray-500 text-sm">
               {cafeInfo?.name ? `Your order is now with ${cafeInfo.name}` : 'Your order is on its way to the kitchen'}
             </p>
+            {(() => {
+              const items = location.state?.order?.items;
+              if (!items?.length) return null;
+              const totalQty = items.reduce((s, i) => s + (i.quantity || 1), 0);
+              const minWait = Math.max(5, totalQty * 4);
+              const maxWait = minWait + 5;
+              return (
+                <div className="mt-3 inline-flex items-center gap-1.5 bg-green-50 text-green-700 text-xs font-semibold px-3 py-1.5 rounded-full">
+                  <span>⏱</span>
+                  <span>Est. wait: {minWait}–{maxWait} min</span>
+                </div>
+              );
+            })()}
             <p className="text-xs text-gray-400 mt-3">Tap anywhere to track your order</p>
           </div>
         </div>
