@@ -25,6 +25,40 @@ function normalizePhone(phone) {
 
 exports.normalizePhone = normalizePhone;
 
+exports.sendWaitlistSms = async (phone, cafeName, tableNumber) => {
+  if (!phone) return;
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+    logger.warn('[Waitlist SMS] Twilio not configured — skipping SMS to %s', phone);
+    return;
+  }
+  const to = normalizePhone(phone);
+  const msg = tableNumber
+    ? `${cafeName}: Your table (${tableNumber}) is ready! Please proceed to be seated.`
+    : `${cafeName}: Your table is ready! Please come to the counter.`;
+  try {
+    await getClient().messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER, to });
+    logger.info('[Waitlist SMS] Sent to %s', to);
+  } catch (err) {
+    logger.error('[Waitlist SMS] Failed for %s: %s', to, err.message);
+  }
+};
+
+exports.sendWaitlistCallingSoonSms = async (phone, cafeName, position) => {
+  if (!phone) return;
+  if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+    logger.warn('[Waitlist SMS] Twilio not configured — skipping calling-soon SMS to %s', phone);
+    return;
+  }
+  const to = normalizePhone(phone);
+  const msg = `${cafeName}: You're ${position <= 1 ? 'next' : `#${position} in line`}! Please make your way to the entrance.`;
+  try {
+    await getClient().messages.create({ body: msg, from: process.env.TWILIO_PHONE_NUMBER, to });
+    logger.info('[Waitlist SMS] Calling-soon sent to %s', to);
+  } catch (err) {
+    logger.error('[Waitlist SMS] Failed for %s: %s', to, err.message);
+  }
+};
+
 exports.sendOtpSms = async (phone, otp) => {
   const to = normalizePhone(phone);
 

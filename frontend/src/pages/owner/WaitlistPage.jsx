@@ -56,11 +56,19 @@ export default function WaitlistPage() {
       const { data } = await updateWaitlistEntry(id, payload);
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...data.entry } : e));
       toast.success(
-        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}!` :
+        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}! SMS sent.` :
         status === 'no_show'   ? 'Marked as no-show' :
         status === 'cancelled' ? 'Entry cancelled' : 'Updated'
       );
     } catch { toast.error('Failed to update entry'); }
+  };
+
+  const handleNotify = async (id) => {
+    try {
+      await updateWaitlistEntry(id, { notify: true });
+      setEntries((prev) => prev.map((e) => e.id === id ? { ...e, notified_at: new Date().toISOString() } : e));
+      toast.success('Customer notified via SMS 🔔');
+    } catch { toast.error('Failed to notify'); }
   };
 
   const handleSeatConfirm = async () => {
@@ -190,6 +198,13 @@ export default function WaitlistPage() {
                         className="flex-1 text-xs font-semibold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg transition-colors"
                       >
                         ✓ Seat Now
+                      </button>
+                      <button
+                        onClick={() => handleNotify(entry.id)}
+                        title={entry.notified_at ? `Last notified ${timeAgo(entry.notified_at)}` : 'Send SMS alert to customer'}
+                        className="text-xs font-medium text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        🔔 Notify
                       </button>
                       <button
                         onClick={() => handleAction(entry.id, 'no_show')}
