@@ -6,6 +6,7 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist, getWaitlistPosition, checkReservationByPhone } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
+import { trackVisit } from '../../utils/visitedCafes';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import { fmtCurrency } from '../../utils/formatters';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -212,9 +213,12 @@ export default function CafeEntry() {
     const { date, time } = nowParts();
     Promise.all([getCafeBySlug(slug), getCafeTables(slug, { date, time })])
       .then(([cafeRes, tablesRes]) => {
-        setCafe(cafeRes.data.cafe);
+        const cafeData = cafeRes.data.cafe;
+        setCafe(cafeData);
         setAreas(tablesRes.data.areas || []);
         setHasTables(tablesRes.data.has_tables || false);
+        // Record this café in the device's visited history
+        trackVisit(slug, cafeData?.name, cafeData?.logo_url);
       })
       .catch(() => setCafe(null))
       .finally(() => setLoading(false));

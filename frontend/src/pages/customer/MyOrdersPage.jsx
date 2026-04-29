@@ -4,7 +4,7 @@
  * Live status updates via Socket.io.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime, fmtCurrency, groupByDate } from '../../utils/formatters';
@@ -37,6 +37,7 @@ const TABS = { ACTIVE: 'active', RESERVATIONS: 'reservations', HISTORY: 'history
 export default function MyOrdersPage() {
   const { slug }              = useParams();
   const navigate              = useNavigate();
+  const [searchParams]        = useSearchParams();
   const { addItem, clearCart } = useCart();
   const [cafeCurrency, setCafeCurrency] = useState(
     () => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } }
@@ -45,7 +46,10 @@ export default function MyOrdersPage() {
   const [orders, setOrders]           = useState([]);
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
-  const [activeTab, setActiveTab]     = useState(TABS.ACTIVE);
+  // Respect ?tab=reservations from the bottom nav Bookings tab
+  const [activeTab, setActiveTab]     = useState(
+    searchParams.get('tab') === 'reservations' ? TABS.RESERVATIONS : TABS.ACTIVE
+  );
   const [initialized, setInitialized] = useState(false);
   const socketRef   = useRef(null);
   const pollRef     = useRef(null);
@@ -74,14 +78,6 @@ export default function MyOrdersPage() {
       setCafeName(data.cafe?.name || '');
       if (data.cafe?.currency) setCafeCurrency(data.cafe.currency);
     }).catch(() => {});
-
-    // If nothing stored, redirect back
-    const storedOrders = loadOrders(slug);
-    const storedRes    = loadReservations(slug);
-    if (storedOrders.length === 0 && storedRes.length === 0) {
-      navigate(`/cafe/${slug}`, { replace: true });
-      return;
-    }
 
     setInitialized(true);
 
@@ -217,13 +213,10 @@ export default function MyOrdersPage() {
       {/* Header */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <button onClick={() => navigate(`/cafe/${slug}`)} className="p-2 -ml-2 rounded-xl hover:bg-gray-100 transition-colors">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-          </button>
           <div className="flex-1 min-w-0">
-            <h1 className="font-bold text-gray-900 text-base">My Orders</h1>
+            <h1 className="font-bold text-gray-900 text-base">
+              {activeTab === TABS.RESERVATIONS ? 'My Bookings' : 'My Orders'}
+            </h1>
             {cafeName && <p className="text-xs text-gray-400 truncate">{cafeName}</p>}
           </div>
           <Link

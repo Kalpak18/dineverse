@@ -274,7 +274,7 @@ export default function CartPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto bg-white min-h-screen pb-32">
+    <div className="max-w-2xl mx-auto bg-white min-h-screen pb-44">
       <div className="sticky top-0 bg-white z-10 border-b border-gray-100">
         <div className="flex items-center gap-3 px-4 py-3.5">
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-sm">
@@ -597,7 +597,7 @@ export default function CartPage() {
         </div>
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
+      <div className="fixed bottom-[60px] left-0 right-0 bg-white border-t border-gray-200 px-4 py-4">
         <div className="max-w-2xl mx-auto space-y-2">
           {!cafeOpen && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 font-medium">

@@ -558,7 +558,7 @@ export default function MenuPage() {
 
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
-        <div className="fixed bottom-4 left-0 right-0 px-4 z-20 max-w-2xl mx-auto flex flex-col gap-2">
+        <div className="fixed bottom-[calc(60px+1rem)] left-0 right-0 px-4 z-20 max-w-2xl mx-auto flex flex-col gap-2">
           {activeOrders.length > 0 && itemCount === 0 && (
             <button
               onClick={() => navigate(`/cafe/${slug}/confirmation`)}

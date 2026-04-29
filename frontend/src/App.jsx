@@ -20,6 +20,7 @@ import OrderConfirmation from './pages/customer/OrderConfirmation';
 import MyOrdersPage from './pages/customer/MyOrdersPage';
 import ScanPage from './pages/customer/ScanPage';
 import DriverTracking from './pages/driver/DriverTracking';
+import CafeLayout from './components/CafeLayout';
 
 // Owner pages
 import LoginPage from './pages/owner/LoginPage';
@@ -136,12 +137,14 @@ export default function App() {
       <Route path="/refund"  element={<RefundPage />} />
       <Route path="/contact" element={<ContactPage />} />
 
-      {/* Customer routes */}
-      <Route path="/cafe/:slug" element={<CafeEntry />} />
-      <Route path="/cafe/:slug/menu" element={<MenuPage />} />
-      <Route path="/cafe/:slug/cart" element={<CartPage />} />
-      <Route path="/cafe/:slug/confirmation" element={<OrderConfirmation />} />
-      <Route path="/cafe/:slug/my-orders"   element={<MyOrdersPage />} />
+      {/* Customer routes — wrapped in CafeLayout for the shared bottom nav */}
+      <Route path="/cafe/:slug" element={<CafeLayout />}>
+        <Route index element={<CafeEntry />} />
+        <Route path="menu" element={<MenuPage />} />
+        <Route path="cart" element={<CartPage />} />
+        <Route path="confirmation" element={<OrderConfirmation />} />
+        <Route path="my-orders" element={<MyOrdersPage />} />
+      </Route>
 
       {/* Driver GPS tracking page — no auth, authenticated by delivery_token in URL */}
       <Route path="/driver/:orderId/:token" element={<DriverTracking />} />
