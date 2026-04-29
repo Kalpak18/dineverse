@@ -517,7 +517,7 @@ function ReservationCard({ res, onDismiss }) {
   const cfg = RES_STATUS[res.status] || RES_STATUS.pending;
   const canDismiss = ['cancelled', 'completed', 'no_show'].includes(res.status);
   const dateStr = res.reserved_date
-    ? new Date(res.reserved_date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long' })
+    ? new Date(String(res.reserved_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'long' })
     : '';
   const timeStr = res.reserved_time ? res.reserved_time.slice(0, 5) : '';
 

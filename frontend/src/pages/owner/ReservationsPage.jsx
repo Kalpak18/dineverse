@@ -17,7 +17,9 @@ function todayISO() {
 }
 
 function fmtDate(d) {
-  return new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  if (!d) return '';
+  const dateOnly = String(d).slice(0, 10); // handle both "YYYY-MM-DD" and full ISO timestamps
+  return new Date(dateOnly + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
 }
 
 function fmtTime12(t) {

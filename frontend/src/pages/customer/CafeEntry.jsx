@@ -566,7 +566,7 @@ export default function CafeEntry() {
             {myBookings.map((r) => {
               const cfg = RESERVATION_STATUS[r.status] || RESERVATION_STATUS.pending;
               const dateStr = r.reserved_date
-                ? new Date(r.reserved_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                ? new Date(String(r.reserved_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
                 : '';
               const timeStr = r.reserved_time ? r.reserved_time.slice(0, 5) : '';
               return (
