@@ -56,7 +56,7 @@ exports.getPlans = asyncHandler(async (req, res) => {
   ok(res, {
     current: {
       plan_type: cafe.plan_type,
-      plan_tier: cafe.plan_tier || 'basic',
+      plan_tier: cafe.plan_tier || null,
       plan_expiry_date: cafe.plan_expiry_date,
       is_active: isActive,
       days_left: isActive ? daysLeft : 0,

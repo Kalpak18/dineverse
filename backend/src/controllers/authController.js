@@ -469,7 +469,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
               opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
-              plan_type, COALESCE(plan_tier, 'basic') AS plan_tier, plan_start_date, plan_expiry_date, created_at,
+              plan_type, plan_tier, plan_start_date, plan_expiry_date, created_at,
               parent_cafe_id,
               COALESCE(delivery_enabled, false)   AS delivery_enabled,
               COALESCE(delivery_radius_km, 5)     AS delivery_radius_km,
@@ -488,7 +488,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
               COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
-              plan_type, COALESCE(plan_tier, 'basic') AS plan_tier, plan_start_date, plan_expiry_date, created_at
+              plan_type, plan_tier, plan_start_date, plan_expiry_date, created_at
        FROM cafes WHERE id = $1`,
       [req.cafeId]
     );

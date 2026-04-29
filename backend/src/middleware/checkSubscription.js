@@ -33,7 +33,7 @@ module.exports = async function checkSubscription(req, res, next) {
       req.subscriptionDaysLeft = daysLeft <= WARN_DAYS ? daysLeft : null;
     }
 
-    req.subscription = { plan_type, plan_tier: plan_tier || 'basic', plan_expiry_date };
+    req.subscription = { plan_type, plan_tier: plan_tier || null, plan_expiry_date };
     next();
   } catch (err) {
     logger.error('CheckSubscription DB error: %s', err.message);
