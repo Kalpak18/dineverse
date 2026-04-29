@@ -122,6 +122,18 @@ exports.createPublicReservation = asyncHandler(async (req, res) => {
   );
 
   const res0 = result.rows[0];
+
+  // Fetch joined area name + table label so the customer card can show them
+  const joinedRes = await db.query(
+    `SELECT r.*, a.name AS area_name, ct.label AS table_label
+     FROM reservations r
+     LEFT JOIN areas a ON r.area_id = a.id
+     LEFT JOIN cafe_tables ct ON r.table_id = ct.id
+     WHERE r.id = $1`,
+    [res0.id]
+  );
+  const reservation = joinedRes.rows[0] || res0;
+
   // Notify owner — persisted so they see it even after reconnect
   const dateStr = new Date(`${reserved_date}T${reserved_time}`).toLocaleString('en-IN', {
     weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -134,7 +146,7 @@ exports.createPublicReservation = asyncHandler(async (req, res) => {
     email: true,
   }).catch(() => {});
 
-  ok(res, { reservation: res0 }, 'Reservation requested! The café will confirm shortly.', 201);
+  ok(res, { reservation }, 'Reservation requested! The café will confirm shortly.', 201);
 });
 
 // ─── Owner: list reservations (auto-expires pending past grace) ─
@@ -214,7 +226,16 @@ exports.updateReservation = asyncHandler(async (req, res) => {
   );
   if (result.rows.length === 0) return fail(res, 'Reservation not found', 404);
 
-  const updated = result.rows[0];
+  const joinedRes = await db.query(
+    `SELECT r.*, a.name AS area_name, ct.label AS table_label
+     FROM reservations r
+     LEFT JOIN areas a ON r.area_id = a.id
+     LEFT JOIN cafe_tables ct ON r.table_id = ct.id
+     WHERE r.id = $1`,
+    [result.rows[0].id]
+  );
+  const updated = joinedRes.rows[0] || result.rows[0];
+
   // Notify owner room + customer's reservation room
   if (req.io) {
     req.io.to(`cafe:${req.cafeId}`).emit('reservation_updated', updated);

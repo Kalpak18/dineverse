@@ -554,6 +554,11 @@ export default function CafeEntry() {
                     <p className="text-xs text-gray-500">
                       {dateStr} at {timeStr} · {r.party_size} {r.party_size === 1 ? 'person' : 'people'}
                     </p>
+                    {(r.area_name || r.table_label) && (
+                      <p className="text-xs text-brand-600 font-medium mt-0.5">
+                        📍 {[r.area_name, r.table_label ? `Table ${r.table_label}` : null].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
                     {r.status === 'confirmed' && (
                       <p className="text-xs text-green-700 font-medium mt-1">Your table is confirmed — see you then!</p>
                     )}

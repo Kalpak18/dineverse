@@ -557,6 +557,11 @@ function ReservationCard({ res, onDismiss }) {
               {res.party_size} {res.party_size === 1 ? 'person' : 'people'}
               {res.notes ? ` · ${res.notes}` : ''}
             </p>
+            {(res.area_name || res.table_label) && (
+              <p className="text-xs text-brand-600 font-medium mt-1">
+                📍 {[res.area_name, res.table_label ? `Table ${res.table_label}` : null].filter(Boolean).join(' · ')}
+              </p>
+            )}
           </div>
           <span className="text-2xl">📅</span>
         </div>
