@@ -127,6 +127,7 @@ export const getNearbyCafes     = (lat, lng, radius = 30) => api.get('/cafes/nea
 export const getAvailableTables = (slug) => api.get(`/cafes/${slug}/available-tables`);
 
 // Owner: areas + tables management
+export const getLiveTables    = ()             => api.get('/tables/live');
 export const getAreas         = ()             => api.get('/tables/areas');
 export const createArea       = (data)         => api.post('/tables/areas', data);
 export const updateArea       = (id, data)     => api.patch(`/tables/areas/${id}`, data);

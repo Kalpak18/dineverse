@@ -838,17 +838,24 @@ function WaitlistModal({ slug, cafeName, onClose }) {
   // Join per-entry socket room once we have the entry ID, listen for café call
   useEffect(() => {
     if (!joined?.id) return;
-    const socket = io(SOCKET_URL, { transports: ['websocket'] });
+    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
-    socket.emit('track_waitlist', joined.id);
-    socket.on('waitlist_called', ({ table_number } = {}) => {
+
+    const onConnect = () => socket.emit('track_waitlist', joined.id);
+    socket.on('connect', onConnect);
+    // If already connected by the time this fires (rare but possible), emit immediately
+    if (socket.connected) socket.emit('track_waitlist', joined.id);
+
+    socket.on('waitlist_called', ({ entry, table_number } = {}) => {
+      const tbl = table_number || entry?.table_number || null;
       setCalled(true);
-      setAssignedTable(table_number || null);
-      const msg = table_number
-        ? `Your table is ready! Please go to Table ${table_number}.`
-        : 'Your table is ready! Please proceed to the café.';
-      toast.success(msg, { duration: 10000 });
+      setAssignedTable(tbl);
+      const msg = tbl
+        ? `Your table is ready! Please go to ${tbl}.`
+        : 'Your table is ready! Please proceed to the counter.';
+      toast.success(msg, { duration: 10000, icon: '🪑' });
     });
+
     return () => socket.disconnect();
   }, [joined?.id]);
 
@@ -900,7 +907,7 @@ function WaitlistModal({ slug, cafeName, onClose }) {
                 <div className="w-14 h-14 rounded-full bg-green-100 flex items-center justify-center mx-auto text-3xl">🍽️</div>
                 <p className="font-bold text-green-700 text-lg">Your table is ready!</p>
                 {assignedTable ? (
-                  <p className="text-sm text-gray-700 font-medium">Please go to <strong className="text-green-700">Table {assignedTable}</strong> at <strong>{cafeName}</strong>.</p>
+                  <p className="text-sm text-gray-700 font-medium">Please go to <strong className="text-green-700">{assignedTable}</strong> at <strong>{cafeName}</strong>.</p>
                 ) : (
                   <p className="text-sm text-gray-500">Please proceed to <strong>{cafeName}</strong>. The team is expecting you.</p>
                 )}

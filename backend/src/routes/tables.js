@@ -5,9 +5,13 @@ const checkSubscription = require('../middleware/checkSubscription');
 const {
   getAreas, createArea, updateArea, deleteArea,
   createTable, updateTable, deleteTable,
+  getLiveTables,
 } = require('../controllers/tableController');
 
 router.use(authenticate, checkSubscription, requireOwner);
+
+// Live floor view
+router.get('/live',           getLiveTables);
 
 // Areas
 router.get('/areas',          getAreas);

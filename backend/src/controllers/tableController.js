@@ -104,6 +104,102 @@ exports.deleteTable = asyncHandler(async (req, res) => {
   ok(res, {}, 'Table deleted');
 });
 
+// ─── Owner: GET /api/tables/live ──────────────────────────────
+// Returns every table with:
+//   active_orders: [{id, order_number, customer_name, status, final_amount, item_count, created_at}]
+//   reservations:  [{id, customer_name, party_size, reserved_date, reserved_time, status}]  (today + future, next 24h)
+//   is_occupied:   bool  (has at least one non-paid, non-cancelled order)
+exports.getLiveTables = asyncHandler(async (req, res) => {
+  const [areasRes, tablesRes, ordersRes, resvRes] = await Promise.all([
+    db.query(
+      'SELECT id, name, sort_order FROM areas WHERE cafe_id = $1 AND is_active = true ORDER BY sort_order ASC, name ASC',
+      [req.cafeId]
+    ),
+    db.query(
+      'SELECT id, area_id, label FROM cafe_tables WHERE cafe_id = $1 AND is_active = true ORDER BY label ASC',
+      [req.cafeId]
+    ),
+    // Active dine-in orders grouped by table_number (pending / confirmed / preparing / ready / served)
+    db.query(
+      `SELECT
+         o.id, o.table_number, o.customer_name, o.status,
+         o.final_amount, o.daily_order_number, o.order_number,
+         o.created_at,
+         COUNT(oi.id)::int AS item_count
+       FROM orders o
+       LEFT JOIN order_items oi ON oi.order_id = o.id
+       WHERE o.cafe_id = $1
+         AND o.order_type = 'dine-in'
+         AND o.status NOT IN ('paid', 'cancelled')
+       GROUP BY o.id
+       ORDER BY o.created_at ASC`,
+      [req.cafeId]
+    ),
+    // Reservations for today + next 24 h (pending + confirmed only)
+    db.query(
+      `SELECT id, customer_name, customer_phone, party_size,
+              reserved_date, reserved_time, status, notes,
+              COALESCE(table_id::text, '') AS table_id,
+              COALESCE(area_id::text, '') AS area_id
+       FROM reservations
+       WHERE cafe_id = $1
+         AND status IN ('pending', 'confirmed')
+         AND reserved_date >= CURRENT_DATE
+         AND (reserved_date < CURRENT_DATE + INTERVAL '1 day'
+              OR (reserved_date = CURRENT_DATE + INTERVAL '1 day'
+                  AND reserved_time <= (CURRENT_TIME + INTERVAL '2 hours')))
+       ORDER BY reserved_date ASC, reserved_time ASC`,
+      [req.cafeId]
+    ),
+  ]);
+
+  // Index orders by normalised table label
+  const ordersByTable = {};
+  for (const o of ordersRes.rows) {
+    const key = (o.table_number || '').toLowerCase().trim();
+    if (!ordersByTable[key]) ordersByTable[key] = [];
+    ordersByTable[key].push(o);
+  }
+
+  // Index reservations by table_id (if linked) and fall back to label matching
+  const resvByTableId = {};
+  const resvUnlinked  = [];
+  for (const r of resvRes.rows) {
+    if (r.table_id) {
+      if (!resvByTableId[r.table_id]) resvByTableId[r.table_id] = [];
+      resvByTableId[r.table_id].push(r);
+    } else {
+      resvUnlinked.push(r);
+    }
+  }
+
+  const tables = tablesRes.rows.map((t) => {
+    const key    = t.label.toLowerCase().trim();
+    const orders = ordersByTable[key] || [];
+    const resv   = (resvByTableId[String(t.id)] || []);
+    return {
+      id:          t.id,
+      area_id:     t.area_id,
+      label:       t.label,
+      is_occupied: orders.length > 0,
+      active_orders: orders,
+      reservations:  resv,
+    };
+  });
+
+  const areas = areasRes.rows.map((a) => ({
+    ...a,
+    tables: tables.filter((t) => t.area_id === a.id),
+  }));
+  const unassigned = tables.filter((t) => !t.area_id);
+
+  // Summary counts
+  const totalTables   = tables.length;
+  const occupiedCount = tables.filter((t) => t.is_occupied).length;
+
+  ok(res, { areas, unassigned, total_tables: totalTables, occupied_count: occupiedCount });
+});
+
 // ─── Public: GET /api/cafes/:slug/tables?date=&time= ──────────
 // Returns active areas + their active tables.
 // If ?date=YYYY-MM-DD&time=HH:MM are provided, each table gets:
