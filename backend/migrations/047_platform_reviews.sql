@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS platform_reviews (
   id              SERIAL PRIMARY KEY,
-  cafe_id         INTEGER NOT NULL,
+  cafe_id         UUID NOT NULL,
   cafe_name       TEXT NOT NULL,
   owner_name      TEXT NOT NULL,
   city            TEXT,
