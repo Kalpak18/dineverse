@@ -245,6 +245,7 @@ export default function CartPage() {
         // Stable per-attempt key — retries send the same UUID, backend deduplicates
         client_order_id: orderIdRef.current,
         coupon_code: couponApplied ? couponInput.trim() : null,
+        ...(session.reservation_id && { reservation_id: session.reservation_id }),
         items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
         ...(isDelivery && {
           delivery_address:      deliveryForm.delivery_address.trim(),

@@ -93,6 +93,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const {
     customer_name, customer_phone, table_number, items, notes,
     order_type = 'dine-in', client_order_id, tip_amount = 0,
+    reservation_id,
     // delivery fields
     delivery_address, delivery_address2, delivery_city, delivery_zipcode,
     delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
@@ -260,13 +261,14 @@ exports.createOrder = asyncHandler(async (req, res) => {
             offer_id, notes, client_order_id,
             delivery_address, delivery_address2, delivery_city, delivery_zipcode,
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
-            delivery_fee, delivery_status)
+            delivery_fee, delivery_status, reservation_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
-                   delivery_address, delivery_phone, delivery_fee, delivery_status`,
+                   delivery_address, delivery_phone, delivery_fee, delivery_status,
+                   reservation_id`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
          trueTotal, discountAmount, tip, trueFinal,
          taxAmount, rate,
@@ -280,7 +282,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
          order_type === 'delivery' ? (delivery_lng || null) : null,
          order_type === 'delivery' ? (delivery_instructions || null) : null,
          deliveryFee || 0,
-         order_type === 'delivery' ? 'pending' : null]
+         order_type === 'delivery' ? 'pending' : null,
+         reservation_id ? parseInt(reservation_id) : null]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
@@ -334,6 +337,16 @@ exports.createOrder = asyncHandler(async (req, res) => {
           }).catch(() => {});
         }
       }
+    }
+
+    // Mark reservation as seated and link it to this order
+    if (reservation_id) {
+      await client.query(
+        `UPDATE reservations
+         SET status = 'seated', order_id = $1
+         WHERE id = $2 AND cafe_id = $3 AND status IN ('pending', 'confirmed')`,
+        [order.id, parseInt(reservation_id), cafeId]
+      );
     }
 
     await client.query('COMMIT');

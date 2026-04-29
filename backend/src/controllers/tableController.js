@@ -143,7 +143,7 @@ exports.getLiveTables = asyncHandler(async (req, res) => {
               COALESCE(area_id::text, '') AS area_id
        FROM reservations
        WHERE cafe_id = $1
-         AND status IN ('pending', 'confirmed')
+         AND status IN ('pending', 'confirmed', 'seated')
          AND reserved_date >= CURRENT_DATE
          AND (reserved_date < CURRENT_DATE + INTERVAL '1 day'
               OR (reserved_date = CURRENT_DATE + INTERVAL '1 day'

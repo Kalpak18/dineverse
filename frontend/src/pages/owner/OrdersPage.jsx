@@ -534,7 +534,14 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
             <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
           </div>
         </div>
-        <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
+        <div className="flex items-center gap-1.5">
+          <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
+          {order.reservation_id && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+              🔖 Reserved
+            </span>
+          )}
+        </div>
         <p className="text-xs text-gray-400 mt-0.5">
           {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
           {' · '}{fmtTime(order.created_at)}
@@ -1553,7 +1560,14 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                   <span className="font-bold text-gray-900 text-sm">{fmtToken(token, order.order_type)}</span>
                   <span className="badge bg-purple-100 text-purple-800 text-xs">Paid</span>
                 </div>
-                <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
+                <div className="flex items-center gap-1.5">
+                  <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
+                  {order.reservation_id && (
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                      🔖 Reserved
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
                   {' · '}{fmtDateTime(order.created_at)}

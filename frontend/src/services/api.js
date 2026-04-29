@@ -243,6 +243,7 @@ export const getTableBill = (slug, tableNumber) =>
 // ─── Reservations ─────────────────────────────────────────────
 export const createReservation = (slug, data) => api.post(`/reservations/cafe/${slug}/reserve`, data);
 export const getPublicReservationStatus = (slug, id) => api.get(`/reservations/cafe/${slug}/status/${id}`);
+export const checkReservationByPhone = (slug, phone) => api.get(`/reservations/cafe/${slug}/check`, { params: { phone } });
 export const getReservations = (params) => api.get('/reservations', { params });
 export const updateReservation = (id, data) => api.patch(`/reservations/${id}`, data);
 export const deleteReservation = (id) => api.delete(`/reservations/${id}`);

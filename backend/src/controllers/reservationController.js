@@ -3,6 +3,38 @@ const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { notify } = require('../services/notificationService');
 
+// ─── Public: Check if phone has a reservation today ──────────
+exports.checkReservationByPhone = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const { phone } = req.query;
+  if (!phone?.trim()) return ok(res, { reservation: null });
+
+  const cafeRes = await db.query(
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    [slug]
+  );
+  if (cafeRes.rows.length === 0) return fail(res, 'Café not found', 404);
+  const cafeId = cafeRes.rows[0].id;
+
+  const result = await db.query(
+    `SELECT r.id, r.customer_name, r.customer_phone, r.party_size,
+            r.reserved_date, r.reserved_time, r.status, r.notes,
+            r.table_id,
+            ct.label AS table_label
+     FROM reservations r
+     LEFT JOIN cafe_tables ct ON ct.id = r.table_id
+     WHERE r.cafe_id = $1
+       AND r.customer_phone = $2
+       AND r.reserved_date  = CURRENT_DATE
+       AND r.status IN ('pending', 'confirmed')
+     ORDER BY r.reserved_time ASC
+     LIMIT 1`,
+    [cafeId, phone.trim()]
+  );
+
+  ok(res, { reservation: result.rows[0] || null });
+});
+
 // ─── Public: Customer books a reservation ─────────────────────
 exports.createPublicReservation = asyncHandler(async (req, res) => {
   const { slug } = req.params;

@@ -473,9 +473,11 @@ function TableDetailPanel({ table, currency, onClose }) {
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <span className="font-semibold text-gray-900 text-sm">{r.customer_name}</span>
                       <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                        r.status === 'confirmed' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        r.status === 'seated'    ? 'bg-purple-100 text-purple-700' :
+                        r.status === 'confirmed' ? 'bg-green-100 text-green-700'  :
+                                                   'bg-amber-100 text-amber-700'
                       }`}>
-                        {r.status}
+                        {r.status === 'seated' ? '✓ Seated' : r.status}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-xs text-gray-500">
