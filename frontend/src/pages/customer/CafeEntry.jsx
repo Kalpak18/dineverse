@@ -160,7 +160,6 @@ export default function CafeEntry() {
   const [loading, setLoading]     = useState(true);
   const [showReserve, setShowReserve]   = useState(false);
   const [showWaitlist, setShowWaitlist] = useState(false);
-  const [myBookings, setMyBookings] = useState([]);
   const socketRef = useRef(null);
 
   const tableFromUrl = searchParams.get('table') || '';
@@ -223,9 +222,6 @@ export default function CafeEntry() {
       .catch(() => setCafe(null))
       .finally(() => setLoading(false));
 
-    // Load stored bookings for this cafe
-    setMyBookings(loadReservations(slug));
-
     // Connect socket to track reservation status updates
     const socket = io(SOCKET_URL, {
       transports: ['polling', 'websocket'],
@@ -248,7 +244,6 @@ export default function CafeEntry() {
 
     socket.on('reservation_updated', (updated) => {
       upsertReservation(slug, updated);
-      setMyBookings(loadReservations(slug));
       if (updated.status === 'confirmed') {
         toast.success('Your table reservation has been confirmed! ✅', { duration: 6000 });
       } else if (updated.status === 'cancelled') {
@@ -320,8 +315,6 @@ export default function CafeEntry() {
     navigate(`/cafe/${slug}/menu`);
   };
 
-  const activeOrders  = loadOrders(slug).filter((o) => !['paid', 'cancelled'].includes(o.status));
-  const hasAnyHistory = loadOrders(slug).length > 0 || loadReservations(slug).length > 0;
 
   if (loading) return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50 to-orange-100 flex items-center justify-center px-4 py-8">
@@ -361,33 +354,6 @@ export default function CafeEntry() {
       </Link>
       <div className="w-full max-w-sm">
 
-        {/* Active orders banner / My Orders button */}
-        {activeOrders.length > 0 ? (
-          <button
-            onClick={() => navigate(`/cafe/${slug}/my-orders`)}
-            className="w-full mb-5 bg-teal-500 hover:bg-teal-600 text-white rounded-2xl px-4 py-4 text-left shadow-lg transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-bold text-sm">
-                  📋 {activeOrders.length} active order{activeOrders.length !== 1 ? 's' : ''} in progress
-                </p>
-                <p className="text-teal-100 text-xs mt-0.5">Tap to track status, chat with café →</p>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-lg flex-shrink-0">
-                {activeOrders.length}
-              </div>
-            </div>
-          </button>
-        ) : hasAnyHistory ? (
-          <button
-            onClick={() => navigate(`/cafe/${slug}/my-orders`)}
-            className="w-full mb-5 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 rounded-2xl px-4 py-3 text-left transition-colors flex items-center justify-between"
-          >
-            <span className="text-sm font-medium">🧾 My Orders & Bookings</span>
-            <span className="text-gray-300 text-sm">→</span>
-          </button>
-        ) : null}
 
         {/* Closed / schedule banner */}
         {(() => {
@@ -559,61 +525,6 @@ export default function CafeEntry() {
           🕐 Join Waitlist
         </button>
 
-        {/* My Bookings — live status tracker */}
-        {myBookings.length > 0 && (
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">My Bookings</p>
-            {myBookings.map((r) => {
-              const cfg = RESERVATION_STATUS[r.status] || RESERVATION_STATUS.pending;
-              const dateStr = r.reserved_date
-                ? new Date(String(r.reserved_date).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-                : '';
-              const timeStr = r.reserved_time ? r.reserved_time.slice(0, 5) : '';
-              return (
-                <div key={r.id} className="rounded-xl border border-gray-200 bg-white p-3 flex items-start justify-between gap-3 shadow-sm">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${cfg.color}`}>
-                        {cfg.icon} {cfg.label}
-                      </span>
-                    </div>
-                    <p className="text-sm font-medium text-gray-800">{r.customer_name}</p>
-                    <p className="text-xs text-gray-500">
-                      {dateStr} at {timeStr} · {r.party_size} {r.party_size === 1 ? 'person' : 'people'}
-                    </p>
-                    {r.status === 'confirmed' && (
-                      <p className="text-xs text-green-700 font-medium mt-1">
-                        Your table is confirmed — see you then!
-                      </p>
-                    )}
-                    {r.status === 'cancelled' && (
-                      <p className="text-xs text-red-600 mt-1">
-                        This booking was cancelled. Please contact the café or book again.
-                      </p>
-                    )}
-                    {r.status === 'pending' && (
-                      <p className="text-xs text-yellow-700 mt-1">
-                        Waiting for café to confirm your table…
-                      </p>
-                    )}
-                  </div>
-                  {['cancelled', 'completed', 'no_show'].includes(r.status) && (
-                    <button
-                      onClick={() => {
-                        removeReservation(slug, r.id);
-                        setMyBookings(loadReservations(slug));
-                      }}
-                      className="text-gray-300 hover:text-gray-500 text-lg leading-none flex-shrink-0"
-                      title="Dismiss"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
 
         {/* Address + map link */}
         {(cafe.address || cafe.city) && (
@@ -654,7 +565,6 @@ export default function CafeEntry() {
           onClose={() => setShowReserve(false)}
           onBooked={(reservation) => {
             upsertReservation(slug, reservation);
-            setMyBookings(loadReservations(slug));
             // Track this reservation — emit now if connected, otherwise queue via connect handler
             const sock = socketRef.current;
             if (sock) {
