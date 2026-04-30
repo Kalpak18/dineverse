@@ -241,8 +241,8 @@ export default function DashboardPage() {
 
         {/* Today stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard label="Today's Orders" value={stats?.today?.total_orders || 0} icon="📋" color="blue" />
-          <StatCard label="Collected Revenue" value={c(stats?.today?.total_revenue || 0)} icon="💰" color="green" />
+          <StatCard label="Today's Orders" value={stats?.today?.total_orders || 0} icon="📋" color="blue" sub="placed today" />
+          <StatCard label="Collected Revenue" value={c(stats?.today?.total_revenue || 0)} icon="💰" color="green" sub="from paid orders" />
           <StatCard
             label="Pending"
             value={stats?.statusBreakdown?.find((s) => s.status === 'pending')?.count || 0}
@@ -454,7 +454,7 @@ function TestimonialWidget() {
   );
 }
 
-function StatCard({ label, value, icon, color, href, pulse }) {
+function StatCard({ label, value, icon, color, href, pulse, sub }) {
   const colors = {
     blue:   'bg-blue-50 text-blue-600',
     green:  'bg-green-50 text-green-600',
@@ -470,6 +470,7 @@ function StatCard({ label, value, icon, color, href, pulse }) {
       </div>
       <p className={`text-2xl font-bold ${color === 'red' ? 'text-red-600' : 'text-gray-900'}`}>{value}</p>
       <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
       {href && pulse && <p className="text-xs text-red-500 font-medium mt-1">Needs action →</p>}
     </>
   );

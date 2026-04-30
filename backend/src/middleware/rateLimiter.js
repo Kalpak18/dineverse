@@ -76,6 +76,17 @@ exports.orderLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Public action limiter — cancel, payment, customer chat: 10 req/min per IP.
+// Prevents order-cancel floods, payment-endpoint probing, and chat spam.
+exports.publicLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  store,
+  message: { success: false, message: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Health check limiter: Render pings about every 30s, so 30/min is plenty.
 // Prevents external actors from hammering /health to probe infrastructure state.
 exports.healthLimiter = rateLimit({

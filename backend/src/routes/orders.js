@@ -3,7 +3,7 @@ const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
 const requirePremium = require('../middleware/requirePremium');
-const { orderLimiter } = require('../middleware/rateLimiter');
+const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
   validateOrder, createOrder,
   getOrders, getOrderById, updateOrderStatus,
@@ -15,6 +15,7 @@ const {
   acceptOrder, rejectOrder, acceptItem, rejectItem,
   cancelItem, reorderItems, generateKot, getKotHistory,
   updateDriverLocation, getDriverOrderInfo,
+  remindBill,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -30,19 +31,19 @@ router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 // view order status / cancel even if the owner's plan expired.
 router.post('/cafe/:slug/orders', orderLimiter, validateOrder, createOrder);
 router.get('/cafe/:slug/orders/:id/status', getOrderStatus);
-router.post('/cafe/:slug/orders/:id/cancel', customerCancelOrder);
+router.post('/cafe/:slug/orders/:id/cancel', publicLimiter, customerCancelOrder);
 
 // Public: driver GPS ping (authenticated by delivery_token UUID in URL)
 router.patch('/driver/:orderId/:token/location', updateDriverLocation);
 router.get('/driver/:orderId/:token/info',       getDriverOrderInfo);
 
 // Public: customer pays for their food order via Razorpay
-router.post('/cafe/:slug/orders/:id/pay', createOrderPayment);
-router.post('/cafe/:slug/orders/:id/pay/verify', verifyOrderPayment);
+router.post('/cafe/:slug/orders/:id/pay',        publicLimiter, createOrderPayment);
+router.post('/cafe/:slug/orders/:id/pay/verify', publicLimiter, verifyOrderPayment);
 
 // Public: customer ↔ owner chat for an order
 router.get('/cafe/:slug/orders/:id/messages',  getCustomerMessages);
-router.post('/cafe/:slug/orders/:id/messages', postCustomerMessage);
+router.post('/cafe/:slug/orders/:id/messages', publicLimiter, postCustomerMessage);
 
 // Owner-only: stats must be before /:id so 'stats' isn't treated as an order ID
 router.get('/stats', authenticate, checkSubscription, requireOwner, getDashboardStats);
@@ -61,6 +62,7 @@ router.patch('/:id/items/:itemId/cancel', authenticate, checkSubscription, requi
 router.patch('/:id/items/reorder',        authenticate, checkSubscription, requirePremium, reorderItems);
 router.post('/:id/kot',                   authenticate, checkSubscription, generateKot);
 router.get('/:id/kot/history',            authenticate, checkSubscription, requirePremium, getKotHistory);
+router.post('/table/:tableNumber/remind', authenticate, checkSubscription, remindBill);
 
 // Owner: all conversations inbox
 router.get('/messages/conversations', authenticate, checkSubscription, getConversations);

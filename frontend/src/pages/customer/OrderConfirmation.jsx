@@ -8,6 +8,7 @@ import { getOrderStatus, cancelOrder, getCafeBySlug, submitRating, createOrderPa
 import DeliveryMap from '../../components/DeliveryMap';
 import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
+import { pushNotification } from '../../utils/customerNotifications';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },
@@ -100,7 +101,10 @@ export default function OrderConfirmation() {
     setInitialized(true);
 
     // 2b. Load cafe info (for bill printing)
-    getCafeBySlug(slug).then(({ data }) => setCafeInfo(data.cafe)).catch(() => {});
+    getCafeBySlug(slug).then(({ data }) => {
+      setCafeInfo(data.cafe);
+      document.title = data.cafe?.name ? `Orders — ${data.cafe.name}` : 'Your Orders — DineVerse';
+    }).catch(() => {});
 
     // 3. Connect socket.io
     const socket = io(SOCKET_URL, {
@@ -190,6 +194,12 @@ export default function OrderConfirmation() {
     };
     socket.on('driver_location', onDriverLocation);
 
+    // 5e. Bill reminder from owner
+    socket.on('bill_reminder', () => {
+      toast('💵 Time to pay your bill!', { duration: 8000, icon: '🧾' });
+      pushNotification(slug, { title: 'Bill Ready 🧾', body: 'Your table bill is ready. Please proceed to payment.', type: 'order' });
+    });
+
     // 6. Join a room for every currently active order
     const liveOrders = stored.filter((o) => !['paid', 'cancelled'].includes(o.status));
     liveOrders.forEach((o) => {
@@ -232,6 +242,7 @@ export default function OrderConfirmation() {
       socket.disconnect();
       socketRef.current = null;
       trackedIds.current.clear();
+      document.title = 'DineVerse';
     };
   }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 

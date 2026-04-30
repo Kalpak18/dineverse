@@ -133,6 +133,11 @@ export default function MyOrdersPage() {
       }
     });
 
+    socket.on('bill_reminder', () => {
+      toast('💵 Time to pay your bill!', { duration: 8000, icon: '🧾' });
+      pushNotification(slug, { title: 'Bill Ready 🧾', body: 'Your table bill is ready. Please proceed to payment.', type: 'order' });
+    });
+
     // Fallback polling — stops after 2h or when all orders reach terminal state
     const POLL_MAX_MS = 2 * 60 * 60 * 1000;
     pollStartTs.current = Date.now();

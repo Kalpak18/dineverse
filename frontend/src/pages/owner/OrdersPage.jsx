@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage } from '../../services/api';
+import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -103,29 +103,38 @@ export default function OrdersPage() {
     }
   );
 
-  // Opens BillingModal for a single active-order card (print / quick mark-paid)
+  // Opens BillingModal — stores orderId so bill always reflects live order state
   const openOrderBilling = useCallback((order) => {
     setBillingModal({
-      bill: {
-        isTakeaway: order.order_type === 'takeaway',
-        customerName: order.customer_name,
-        orderNumber: order.daily_order_number,
-        table_number: order.table_number,
-        subtotal:       parseFloat(order.total_amount)    || 0,
-        taxAmount:      parseFloat(order.tax_amount)      || 0,
-        taxRate:        parseFloat(order.tax_rate)        || 0,
-        discountAmount: parseFloat(order.discount_amount) || 0,
-        tipAmount:      parseFloat(order.tip_amount)      || 0,
-        deliveryFee:    parseFloat(order.delivery_fee)    || 0,
-        total:          parseFloat(order.final_amount || order.total_amount) || 0,
-        aggregatedItems: (order.items || []).map((i) => ({
-          name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
-        })),
-        orders: [order],
-      },
+      orderId: order.id,
       onConfirm: (cashReceived) => handleStatusUpdate(order.id, 'paid', cashReceived),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build the bill object from live orders state (keeps modal data fresh)
+  const billingBill = billingModal?.orderId
+    ? (() => {
+        const o = orders.find((x) => x.id === billingModal.orderId);
+        if (!o) return null;
+        return {
+          isTakeaway:     o.order_type === 'takeaway',
+          customerName:   o.customer_name,
+          orderNumber:    o.daily_order_number,
+          table_number:   o.table_number,
+          subtotal:       parseFloat(o.total_amount)    || 0,
+          taxAmount:      parseFloat(o.tax_amount)      || 0,
+          taxRate:        parseFloat(o.tax_rate)        || 0,
+          discountAmount: parseFloat(o.discount_amount) || 0,
+          tipAmount:      parseFloat(o.tip_amount)      || 0,
+          deliveryFee:    parseFloat(o.delivery_fee)    || 0,
+          total:          parseFloat(o.final_amount || o.total_amount) || 0,
+          aggregatedItems: (o.items || []).map((i) => ({
+            name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+          })),
+          orders: [o],
+        };
+      })()
+    : billingModal?.bill || null;
 
   const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null) => {
     try {
@@ -456,6 +465,14 @@ export default function OrdersPage() {
           tableBills={tableBills}
           onStatusUpdate={handleStatusUpdate}
           onOpenBilling={(bill, onConfirm) => setBillingModal({ bill, onConfirm })}
+          onRemind={async (tableNumber) => {
+            try {
+              await remindBill(tableNumber);
+              toast.success(`Reminder sent to table ${tableNumber}`);
+            } catch {
+              toast.error('Could not send reminder');
+            }
+          }}
         />
       )}
 
@@ -465,9 +482,9 @@ export default function OrdersPage() {
       )}
 
       {/* ── Billing Modal (shared: Bills tab + OrderCard print) ── */}
-      {billingModal?.bill && (
+      {billingBill && (
         <BillingModal
-          bill={billingModal.bill}
+          bill={billingBill}
           onConfirm={billingModal.onConfirm}
           onClose={() => setBillingModal(null)}
         />
@@ -770,12 +787,13 @@ function ItemKotRow({ item, cafe, orderToken, tableNumber, orderType, onStatusUp
 
 // ─── Bills View (Takeaway Pickup + Table Bills) ────────────────────────────
 
-function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling }) {
+function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling, onRemind }) {
   const { cafe: _bv } = useAuth();
   const c = (n) => fmtCurrency(n, _bv?.currency);
   const [expandedTable, setExpandedTable] = useState(null);
   const [search, setSearch] = useState('');
   const [collecting, setCollecting] = useState(null); // orderId or tableNumber being paid
+  const [reminding, setReminding] = useState(null);
 
   const handleCollect = async (bill, cashReceived) => {
     const key = bill.isTakeaway ? bill.orders[0].id : bill.table_number;
@@ -993,15 +1011,30 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling 
 
                     <div className="px-4 pb-3 border-t border-gray-50 flex items-center justify-between pt-2">
                       <span className="text-xs text-gray-400">{isExpanded ? '▲ Hide details' : '▼ Show details'}</span>
-                      {allServed && (
-                        <button
-                          onClick={() => onOpenBilling(bill, (cashReceived) => handleCollect(bill, cashReceived))}
-                          disabled={collecting === bill.table_number}
-                          className="py-1.5 px-4 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white font-bold text-xs transition-colors"
-                        >
-                          {collecting === bill.table_number ? 'Processing…' : '💵 Collect Payment'}
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {allServed && onRemind && (
+                          <button
+                            onClick={async () => {
+                              setReminding(bill.table_number);
+                              await onRemind(bill.table_number);
+                              setReminding(null);
+                            }}
+                            disabled={reminding === bill.table_number}
+                            className="py-1.5 px-3 rounded-xl bg-amber-100 hover:bg-amber-200 disabled:opacity-60 text-amber-700 font-semibold text-xs transition-colors"
+                          >
+                            {reminding === bill.table_number ? 'Sending…' : '🔔 Remind'}
+                          </button>
+                        )}
+                        {allServed && (
+                          <button
+                            onClick={() => onOpenBilling(bill, (cashReceived) => handleCollect(bill, cashReceived))}
+                            disabled={collecting === bill.table_number}
+                            className="py-1.5 px-4 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white font-bold text-xs transition-colors"
+                          >
+                            {collecting === bill.table_number ? 'Processing…' : '💵 Collect Payment'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {isExpanded && (

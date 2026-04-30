@@ -35,6 +35,7 @@ export default function MenuManagementPage() {
   const [catModal, setCatModal] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [restockItem, setRestockItem] = useState(null); // item being restocked
+  const [priceBumpModal, setPriceBumpModal] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -95,6 +96,26 @@ export default function MenuManagementPage() {
     }
   };
 
+  const handleBulkPriceBump = async ({ categoryId, percent }) => {
+    const factor = 1 + percent / 100;
+    const targets = categoryId === '__all__'
+      ? items
+      : items.filter((i) => (categoryId === '__none__' ? !i.category_id : i.category_id === categoryId));
+    if (targets.length === 0) { toast.error('No items in selection'); return; }
+    try {
+      await Promise.all(
+        targets.map((item) =>
+          updateMenuItem(item.id, { price: Math.round(parseFloat(item.price) * factor * 100) / 100 })
+        )
+      );
+      await loadAll();
+      setPriceBumpModal(false);
+      toast.success(`Updated prices for ${targets.length} item${targets.length !== 1 ? 's' : ''}`);
+    } catch (err) {
+      toast.error(getApiError(err));
+    }
+  };
+
   if (loading) return <LoadingSpinner />;
 
   const vegItems = items.filter((i) => i.is_veg);
@@ -119,7 +140,10 @@ export default function MenuManagementPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
         <div className="flex gap-2">
-<button onClick={() => setItemModal('new')} className="btn-primary text-sm">
+          <button onClick={() => setPriceBumpModal(true)} className="btn-secondary text-sm">
+            📈 Bulk Price Update
+          </button>
+          <button onClick={() => setItemModal('new')} className="btn-primary text-sm">
             + Add Item
           </button>
         </div>
@@ -247,6 +271,13 @@ export default function MenuManagementPage() {
           item={restockItem}
           onClose={() => setRestockItem(null)}
           onSave={(qty) => handleRestock(restockItem.id, qty)}
+        />
+      )}
+      {priceBumpModal && (
+        <PriceBumpModal
+          categories={categories}
+          onClose={() => setPriceBumpModal(false)}
+          onApply={handleBulkPriceBump}
         />
       )}
     </div>
@@ -704,6 +735,65 @@ function RestockModal({ item, onClose, onSave }) {
         <div className="flex gap-3">
           <button type="submit" disabled={saving} className="btn-primary flex-1">
             {saving ? 'Saving...' : 'Update Stock'}
+          </button>
+          <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function PriceBumpModal({ categories, onClose, onApply }) {
+  const [categoryId, setCategoryId] = useState('__all__');
+  const [percent, setPercent] = useState('');
+  const [applying, setApplying] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const p = parseFloat(percent);
+    if (isNaN(p) || p === 0 || p < -90 || p > 500) {
+      return toast.error('Enter a percentage between -90% and 500%');
+    }
+    setApplying(true);
+    await onApply({ categoryId, percent: p });
+    setApplying(false);
+  };
+
+  const sign = parseFloat(percent) >= 0 ? '+' : '';
+
+  return (
+    <Modal title="Bulk Price Update" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="label">Apply To</label>
+          <select className="input" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="__all__">All items</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+            <option value="__none__">Uncategorized items</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">Change By (%)</label>
+          <input
+            type="number" step="0.1" className="input" autoFocus
+            placeholder="e.g. 10 to raise by 10%, -5 to reduce by 5%"
+            value={percent}
+            onChange={(e) => setPercent(e.target.value)}
+          />
+          {percent && !isNaN(parseFloat(percent)) && (
+            <p className="text-xs mt-1 text-brand-600 font-medium">
+              ₹100 item → ₹{Math.round(100 * (1 + parseFloat(percent) / 100) * 100) / 100} ({sign}{percent}%)
+            </p>
+          )}
+          <p className="text-xs text-gray-400 mt-1">
+            Prices are rounded to 2 decimal places. This cannot be undone — edit individual items to revert.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button type="submit" disabled={applying || !percent} className="btn-primary flex-1">
+            {applying ? 'Updating…' : 'Apply'}
           </button>
           <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
         </div>

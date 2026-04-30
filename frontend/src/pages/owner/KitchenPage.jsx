@@ -429,9 +429,9 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
       </p>
       <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
 
-      {order.kitchen_mode === 'individual' && !order.accepted && status === 'pending' && (
+      {order.kitchen_mode === 'individual' && !order.accepted && (
         <div className="flex gap-2 mb-2">
-          <button onClick={() => onAcceptOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept</button>
+          <button onClick={() => onAcceptOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-green-600 text-white hover:bg-green-500 transition-colors">✅ Accept Order</button>
           <button onClick={() => onRejectOrder(order.id)} className="flex-1 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-500 transition-colors">❌ Reject</button>
         </div>
       )}
@@ -470,10 +470,7 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
                           className="w-5 h-5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 flex items-center justify-center text-xs disabled:opacity-30">↓</button>
                       </div>
                       <div className="flex flex-wrap gap-0.5 justify-end">
-                        {!item.accepted && order.accepted && (
-                          <button onClick={() => onAcceptItem(order.id, item.id)} className="text-[10px] px-1.5 py-0.5 rounded bg-green-600 text-white hover:bg-green-500">Accept</button>
-                        )}
-                        {item.item_status === 'pending' && item.accepted && (
+                        {item.item_status === 'pending' && (
                           <button onClick={() => onItemUpdate(order.id, item.id, 'preparing')} className="text-[10px] px-1.5 py-0.5 rounded bg-orange-600 text-white hover:bg-orange-500">Start</button>
                         )}
                         {item.item_status === 'preparing' && (

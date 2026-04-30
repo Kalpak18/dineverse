@@ -944,7 +944,11 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
       if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
         logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
         await payClient.query('ROLLBACK');
-        return fail(res, 'Payment amount mismatch', 400);
+        // Refund the captured amount so the customer is not charged for a mismatched payment
+        razorpay.payments.refund(razorpay_payment_id, { amount: rzpPayment.amount }).catch((refundErr) =>
+          logger.error('Auto-refund failed for payment %s on order %s: %s', razorpay_payment_id, id, refundErr.message)
+        );
+        return fail(res, 'Payment amount mismatch — your payment will be refunded automatically.', 400);
       }
     } catch (fetchErr) {
       logger.warn('Could not fetch payment %s for amount check on food order %s: %s', razorpay_payment_id, id, fetchErr.message);
@@ -1002,10 +1006,15 @@ exports.setKitchenMode = asyncHandler(async (req, res) => {
     [mode, id]
   );
 
-  // When switching to individual, reset all item statuses to pending
+  // When switching to individual: reset item statuses to pending AND auto-accept
+  // so every item immediately shows "Start" without requiring a separate accept step.
   if (mode === 'individual') {
     await db.query(
-      "UPDATE order_items SET item_status = 'pending' WHERE order_id = $1",
+      "UPDATE order_items SET item_status = 'pending', accepted = true WHERE order_id = $1",
+      [id]
+    );
+    await db.query(
+      'UPDATE orders SET accepted = true WHERE id = $1',
       [id]
     );
   }
@@ -1404,4 +1413,28 @@ exports.getKotHistory = asyncHandler(async (req, res) => {
     [id]
   );
   ok(res, { slips: slips.rows });
+});
+
+// ─── Owner: send bill reminder to customer for a table ─────────
+exports.remindBill = asyncHandler(async (req, res) => {
+  const { tableNumber } = req.params;
+  const { cafeId } = req;
+
+  // Find all served (unpaid) orders on this table
+  const result = await db.query(
+    `SELECT id FROM orders
+     WHERE cafe_id = $1 AND table_number = $2
+       AND status IN ('served', 'ready', 'preparing', 'confirmed')
+     ORDER BY created_at ASC`,
+    [cafeId, tableNumber]
+  );
+
+  if (result.rows.length === 0) return fail(res, 'No active orders for this table', 404);
+
+  // Emit bill_reminder socket event to each order's customer room
+  result.rows.forEach(({ id }) => {
+    req.io.to(`order:${id}`).emit('bill_reminder', { table_number: tableNumber });
+  });
+
+  ok(res, { notified: result.rows.length }, 'Reminder sent');
 });

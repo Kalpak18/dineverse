@@ -31,6 +31,7 @@ export default function CartPage() {
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
+  const [orderError, setOrderError] = useState(null);
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const offerDebounce = useRef(null);
   const [couponInput, setCouponInput]     = useState('');
@@ -66,6 +67,12 @@ export default function CartPage() {
 
   const TIP_OPTIONS = [0, 10, 20, 50];
   const [cafeOpen, setCafeOpen] = useState(session?.is_open !== false);
+
+  useEffect(() => {
+    const name = session?.cafe_name;
+    document.title = name ? `Cart — ${name}` : 'Your Cart — DineVerse';
+    return () => { document.title = 'DineVerse'; };
+  }, [session?.cafe_name]);
 
   // Live open/closed updates — same room MenuPage uses
   useEffect(() => {
@@ -222,6 +229,7 @@ export default function CartPage() {
 
   const handlePlaceOrder = async () => {
     if (submittingRef.current) return;
+    setOrderError(null);
     // Validate delivery form before locking — errors should be retryable
     if (isDelivery) {
       if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
@@ -266,7 +274,9 @@ export default function CartPage() {
         navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
       }
     } catch (err) {
-      toast.error(getApiError(err));
+      const msg = getApiError(err);
+      toast.error(msg);
+      setOrderError(msg);
     } finally {
       setLoading(false);
       submittingRef.current = false;
@@ -602,6 +612,18 @@ export default function CartPage() {
           {!cafeOpen && (
             <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 font-medium">
               🔴 This café is currently closed — orders cannot be placed right now.
+            </div>
+          )}
+          {orderError && (
+            <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
+              <span>⚠️ {orderError}</span>
+              <button
+                onClick={handlePlaceOrder}
+                disabled={loading}
+                className="shrink-0 font-semibold text-red-700 underline disabled:opacity-50"
+              >
+                Try again
+              </button>
             </div>
           )}
           <button

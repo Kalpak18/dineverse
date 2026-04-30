@@ -191,6 +191,7 @@ export const cancelOrderItem = (id, itemId, reason) => api.patch(`/orders/${id}/
 export const reorderOrderItems = (id, items)      => api.patch(`/orders/${id}/items/reorder`, { items });
 export const generateOrderKot  = (id)             => api.post(`/orders/${id}/kot`);
 export const getKotHistory     = (id)             => api.get(`/orders/${id}/kot/history`);
+export const remindBill        = (tableNumber)    => api.post(`/orders/table/${encodeURIComponent(tableNumber)}/remind`);
 export const getDashboardStats = () => api.get('/orders/stats');
 
 // ─── Staff (Owner) ────────────────────────────────────────────
