@@ -27,12 +27,25 @@ export default defineConfig(({ mode }) => {
         external: ['@capacitor-community/barcode-scanner'],
         output: {
           manualChunks(id) {
-            if (id.includes('node_modules')) {
-              if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) return 'vendor-react';
-              if (id.includes('socket.io')) return 'vendor-socket';
-              if (id.includes('leaflet'))   return 'vendor-leaflet';
-              return 'vendor-misc';
-            }
+            if (!id.includes('node_modules')) return;
+            // React ecosystem — keep all react-* and router in one chunk to avoid
+            // circular refs between react, react-dom, react-router shared internals
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('/react-router/') ||
+              id.includes('/react-router-dom/') ||
+              id.includes('/scheduler/')        // react-dom peer dep
+            ) return 'vendor-react';
+            // socket.io-client + its deps (engine.io-client, xmlhttprequest-ssl, etc.)
+            if (
+              id.includes('/socket.io-client/') ||
+              id.includes('/engine.io-client/') ||
+              id.includes('/xmlhttprequest-ssl/') ||
+              id.includes('/@socket.io/')
+            ) return 'vendor-socket';
+            if (id.includes('/leaflet/')) return 'vendor-leaflet';
+            return 'vendor-misc';
           },
         },
       },
