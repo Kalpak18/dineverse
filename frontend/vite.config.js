@@ -12,27 +12,11 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'prompt',
         injectRegister: false,
-        strategies: 'generateSW',
-        workbox: {
-          // Network-first for navigation (always get latest HTML)
-          navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//],
-          // Cache hashed assets forever (they change name on update)
-          runtimeCaching: [
-            {
-              urlPattern: /\/assets\/.+\.(js|css|woff2?)$/,
-              handler: 'CacheFirst',
-              options: { cacheName: 'assets', expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 } },
-            },
-            {
-              urlPattern: /\/icons\/.+\.(png|ico|svg)$/,
-              handler: 'CacheFirst',
-              options: { cacheName: 'icons', expiration: { maxAgeSeconds: 60 * 60 * 24 * 30 } },
-            },
-          ],
-          cleanupOutdatedCaches: true,
-          skipWaiting: true, // activate new SW immediately; main.jsx reloads on controllerchange
-          clientsClaim: true,
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.js',
+        injectManifest: {
+          injectionPoint: 'self.__WB_MANIFEST',
         },
         manifest: false, // we already have public/site.webmanifest
       }),

@@ -354,6 +354,73 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
+          {/* Insights row — table turn + repeat customers */}
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="card text-center">
+              <p className="text-3xl font-bold text-gray-900 mb-1">
+                {data.tableTurn?.avg_turn_mins != null ? `${data.tableTurn.avg_turn_mins} min` : '—'}
+              </p>
+              <p className="text-xs text-gray-500">Avg table turn time</p>
+              {data.tableTurn?.paid_dine_in_orders > 0 && (
+                <p className="text-xs text-gray-400 mt-1">across {data.tableTurn.paid_dine_in_orders} dine-in orders</p>
+              )}
+            </div>
+            <div className="card text-center">
+              <p className="text-3xl font-bold text-gray-900 mb-1">
+                {data.repeatCustomers?.total > 0
+                  ? `${Math.round((data.repeatCustomers.repeat / data.repeatCustomers.total) * 100)}%`
+                  : '—'}
+              </p>
+              <p className="text-xs text-gray-500">Repeat customer rate</p>
+              {data.repeatCustomers?.total > 0 && (
+                <p className="text-xs text-gray-400 mt-1">
+                  {data.repeatCustomers.repeat} of {data.repeatCustomers.total} paying customers
+                </p>
+              )}
+            </div>
+            <div className="card text-center">
+              <p className="text-3xl font-bold text-gray-900 mb-1">
+                {data.repeatCustomers?.total || 0}
+              </p>
+              <p className="text-xs text-gray-500">Unique paying customers</p>
+              <p className="text-xs text-gray-400 mt-1">by phone number</p>
+            </div>
+          </div>
+
+          {/* Peak hours heatmap */}
+          {data.peakHours?.length > 0 && (() => {
+            const maxOrders = Math.max(...data.peakHours.map((h) => parseInt(h.order_count)));
+            return (
+              <div className="card">
+                <h2 className="font-semibold text-gray-900 mb-4">Peak Hours</h2>
+                <div className="flex items-end gap-1 h-24">
+                  {Array.from({ length: 24 }, (_, hr) => {
+                    const found = data.peakHours.find((h) => h.hour === hr);
+                    const count = found ? parseInt(found.order_count) : 0;
+                    const pct   = maxOrders > 0 ? (count / maxOrders) * 100 : 0;
+                    return (
+                      <div key={hr} className="flex-1 flex flex-col items-center gap-1" title={`${hr}:00 — ${count} orders`}>
+                        <div
+                          className="w-full rounded-t-sm transition-all"
+                          style={{
+                            height: `${Math.max(pct, 2)}%`,
+                            backgroundColor: pct > 66 ? '#ef4444' : pct > 33 ? '#f97316' : '#cbd5e1',
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-between text-[9px] text-gray-400 mt-1">
+                  <span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  🔴 peak &nbsp;🟠 busy &nbsp;⬜ quiet
+                </p>
+              </div>
+            );
+          })()}
+
           {/* Expenses section */}
           <AddExpenseForm onAdded={load} />
 

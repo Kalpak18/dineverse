@@ -134,7 +134,8 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
       [cafeId]
     ),
     db.query(
-      `SELECT id, category_id, name, description, price, image_url, is_veg, is_available, display_order
+      `SELECT id, category_id, name, description, price, image_url, is_veg, is_available, display_order,
+              tags, track_stock, stock_quantity, low_stock_threshold
        FROM menu_items
        WHERE cafe_id = $1 AND is_available = true
        ORDER BY display_order ASC, name ASC`,
@@ -154,6 +155,50 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
 
   await cache.set(cacheKey, menu, 30_000);
   ok(res, { menu });
+});
+
+// Public: upsell suggestions — items frequently ordered with the given cart items
+exports.getUpsellSuggestions = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const { items } = req.query; // comma-separated menu_item_ids
+  if (!items) return ok(res, { suggestions: [] });
+
+  const itemIds = items.split(',').filter(Boolean);
+  if (!itemIds.length) return ok(res, { suggestions: [] });
+
+  const cafeResult = await db.query(
+    'SELECT id FROM cafes WHERE slug = $1 AND is_active = true',
+    [slug]
+  );
+  if (!cafeResult.rows.length) return ok(res, { suggestions: [] });
+  const cafeId = cafeResult.rows[0].id;
+
+  // Co-occurrence: find items ordered in the same order as any cart item,
+  // excluding items already in the cart, limited to available + in-stock items
+  const result = await db.query(
+    `SELECT oi2.menu_item_id AS id,
+            mi.name, mi.price, mi.image_url, mi.is_veg,
+            mi.track_stock, mi.stock_quantity, mi.low_stock_threshold,
+            COUNT(*) AS co_count
+     FROM order_items oi1
+     JOIN order_items oi2 ON oi1.order_id = oi2.order_id
+       AND oi2.menu_item_id != oi1.menu_item_id
+       AND oi2.menu_item_id != ALL($2::uuid[])
+     JOIN menu_items mi ON oi2.menu_item_id = mi.id
+     JOIN orders o ON oi1.order_id = o.id
+     WHERE oi1.menu_item_id = ANY($2::uuid[])
+       AND mi.cafe_id = $1
+       AND mi.is_available = true
+       AND (mi.track_stock = false OR mi.stock_quantity IS NULL OR mi.stock_quantity > 0)
+       AND o.status != 'cancelled'
+     GROUP BY oi2.menu_item_id, mi.name, mi.price, mi.image_url, mi.is_veg,
+              mi.track_stock, mi.stock_quantity, mi.low_stock_threshold
+     ORDER BY co_count DESC
+     LIMIT 4`,
+    [cafeId, itemIds]
+  );
+
+  ok(res, { suggestions: result.rows });
 });
 
 // Owner: toggle café open/closed

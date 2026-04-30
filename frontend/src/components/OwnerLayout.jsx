@@ -2,8 +2,9 @@ import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-route
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
 import { getOutlets, switchOutlet, toggleCafeOpen } from '../services/api';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import { subscribeToPush, unsubscribeFromPush, getPushPermission } from '../utils/webPush';
 import NotificationCenter from './NotificationCenter';
 import NavIcon from './NavIcon';
 
@@ -70,6 +71,25 @@ function OwnerLayoutInner() {
   const [reorderMode, setReorderMode] = useState(false);
   const [dragIdx, setDragIdx]         = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [pushPerm, setPushPerm]       = useState('default'); // 'default' | 'granted' | 'denied' | 'unsupported'
+
+  useEffect(() => {
+    getPushPermission().then(setPushPerm).catch(() => setPushPerm('unsupported'));
+  }, []);
+
+  const handlePushToggle = useCallback(async () => {
+    if (pushPerm === 'granted') {
+      await unsubscribeFromPush();
+      setPushPerm('default');
+      toast('Push notifications turned off');
+    } else {
+      const sub = await subscribeToPush();
+      const perm = await getPushPermission();
+      setPushPerm(perm);
+      if (sub) toast.success('Push notifications enabled — you\'ll be notified of new orders!');
+      else if (perm === 'denied') toast.error('Notifications blocked. Enable them in browser settings.');
+    }
+  }, [pushPerm]);
 
   // Sync local isOpen whenever AuthContext cafe.is_open changes (e.g. toggled from Dashboard)
   useEffect(() => { setIsOpen(cafe?.is_open ?? true); }, [cafe?.is_open]);
@@ -494,6 +514,24 @@ function OwnerLayoutInner() {
               {!collapsed && <span>Profile</span>}
             </NavLink>
           )}
+          {/* Push notification toggle */}
+          {pushPerm !== 'unsupported' && (
+            <button
+              onClick={handlePushToggle}
+              title={collapsed ? (pushPerm === 'granted' ? 'Notifications ON' : 'Enable notifications') : undefined}
+              className={`w-full flex items-center rounded-lg text-sm font-medium transition-colors ${
+                pushPerm === 'granted'
+                  ? 'text-teal-700 hover:bg-teal-50'
+                  : 'text-gray-500 hover:bg-gray-100'
+              } ${collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'}`}
+            >
+              <span className="text-base">{pushPerm === 'granted' ? '🔔' : '🔕'}</span>
+              {!collapsed && (
+                <span>{pushPerm === 'granted' ? 'Notifications ON' : 'Enable Notifications'}</span>
+              )}
+            </button>
+          )}
+
           <button
             onClick={handleLogout}
             title={collapsed ? 'Logout' : undefined}

@@ -7,6 +7,7 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const { applyBestOffer, applyCoupon } = require('./offerController');
 const { notify } = require('../services/notificationService');
+const { sendToOwners } = require('./pushController');
 
 // ─── Schedule helper ────────────────────────────────────────────
 // Returns null (open) or a string reason why orders are blocked.
@@ -373,6 +374,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
       title: `New order from ${customer_name}`,
       body:  `${orderLabel} · ${itemCount} item${itemCount !== 1 ? 's' : ''} · ₹${fullOrder.final_amount}`,
       refId: fullOrder.id,
+    }).catch(() => {});
+
+    // Web Push to owner devices (fire-and-forget, outside transaction)
+    sendToOwners(cafeId, {
+      title: `🔔 New Order — ${orderLabel}`,
+      body:  `${customer_name} · ${itemCount} item${itemCount !== 1 ? 's' : ''} · ₹${fullOrder.final_amount}`,
+      url:   '/owner/orders',
     }).catch(() => {});
 
     logger.info('Order #%s placed at café %s table %s', order.order_number, slug, table_number);

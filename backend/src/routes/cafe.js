@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { getCafeBySlug, getCafeMenu, exploreCafes, getAvailableTables, toggleCafeOpen, getNearbyCafes } = require('../controllers/cafeController');
+const { getCafeBySlug, getCafeMenu, exploreCafes, getAvailableTables, toggleCafeOpen, getNearbyCafes, getUpsellSuggestions } = require('../controllers/cafeController');
 const { getPublicTables } = require('../controllers/tableController');
 const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
@@ -24,6 +24,7 @@ router.get('/sitemap-slugs', asyncHandler(async (_req, res) => {
 router.get('/nearby', getNearbyCafes);        // must come before /:slug
 router.get('/:slug', getCafeBySlug);
 router.get('/:slug/menu', getCafeMenu);
+router.get('/:slug/menu/suggestions', getUpsellSuggestions);
 router.get('/:slug/tables', getPublicTables);
 router.get('/:slug/available-tables', getAvailableTables);
 

@@ -28,7 +28,8 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     }
   }
 
-  const [summaryRes, expensesRes, topItemsRes, dailyRes, orderTypeRes, categoryRes] = await Promise.all([
+  const [summaryRes, expensesRes, topItemsRes, dailyRes, orderTypeRes, categoryRes,
+         tableTurnRes, peakHoursRes, repeatRes] = await Promise.all([
     // Order counts — total_orders = ALL orders received (including cancelled)
     // paid_orders = only paid (matches History tab count)
     db.query(
@@ -95,6 +96,42 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       [req.cafeId, startDate, endDate]
     ),
 
+    // Table turn time — avg minutes from order placed to paid (dine-in only)
+    db.query(
+      `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60))::int AS avg_turn_mins,
+              COUNT(*) AS paid_dine_in_orders
+       FROM orders
+       WHERE cafe_id = $1 AND status = 'paid' AND order_type = 'dine-in'
+         AND DATE(created_at) BETWEEN $2 AND $3`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Peak hours — orders by hour of day
+    db.query(
+      `SELECT EXTRACT(HOUR FROM created_at AT TIME ZONE 'Asia/Kolkata')::int AS hour,
+              COUNT(*) AS order_count
+       FROM orders
+       WHERE cafe_id = $1 AND status != 'cancelled'
+         AND DATE(created_at) BETWEEN $2 AND $3
+       GROUP BY hour
+       ORDER BY hour ASC`,
+      [req.cafeId, startDate, endDate]
+    ),
+
+    // Repeat customers — by phone number
+    db.query(
+      `SELECT COUNT(*) AS total_customers,
+              COUNT(*) FILTER (WHERE order_count > 1) AS repeat_customers
+       FROM (
+         SELECT customer_phone, COUNT(*) AS order_count
+         FROM orders
+         WHERE cafe_id = $1 AND status = 'paid' AND customer_phone IS NOT NULL
+           AND DATE(created_at) BETWEEN $2 AND $3
+         GROUP BY customer_phone
+       ) sub`,
+      [req.cafeId, startDate, endDate]
+    ),
+
     // Revenue by category
     db.query(
       `SELECT COALESCE(c.name, 'Uncategorized') AS category,
@@ -139,6 +176,15 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     orderTypeBreakdown:  orderTypeRes.rows,
     categoryBreakdown:   categoryRes.rows,
     expenses:            expensesRes.rows[0].expense_list || [],
+    tableTurn: {
+      avg_turn_mins:       tableTurnRes.rows[0]?.avg_turn_mins ?? null,
+      paid_dine_in_orders: parseInt(tableTurnRes.rows[0]?.paid_dine_in_orders ?? 0),
+    },
+    peakHours:           peakHoursRes.rows,
+    repeatCustomers: {
+      total:   parseInt(repeatRes.rows[0]?.total_customers ?? 0),
+      repeat:  parseInt(repeatRes.rows[0]?.repeat_customers ?? 0),
+    },
   });
 });
 

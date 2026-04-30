@@ -1,0 +1,237 @@
+Customer Account System — Should We Build It Now?
+Context
+User asked: "Can we make customer side app also so the functioning will be same as it is now but they will have data of their cafes visited, chats with cafes and much more, should we have to do that or not yet or keep it in future"
+
+Currently, the customer side is completely stateless — no accounts, no login. All data (orders, session name/phone) lives in localStorage under session_{slug} and cafe_orders_{slug} and is lost when the browser is cleared or the user switches devices.
+
+Recommendation: Defer to a dedicated sprint — but decide on scope first
+This is a medium-large feature (~3–4 weeks of work). It touches auth, DB schema, every customer-facing route, and requires entirely new frontend pages. It should not be bolted onto the current sprint — it needs its own focused effort.
+
+Do it — but not yet. The P0/P1 bugs in the audit below are more urgent (financial loss, security). Fix those first. Then tackle the customer account system as Sprint 5.
+
+What "Customer App" Means (Full Scope)
+New DB tables needed
+CREATE TABLE customers (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone        VARCHAR(15) UNIQUE NOT NULL,
+  name         VARCHAR(100),
+  email        VARCHAR(255),
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE TABLE customer_sessions (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id  UUID REFERENCES customers(id) ON DELETE CASCADE,
+  token        TEXT NOT NULL,  -- JWT or opaque token
+  expires_at   TIMESTAMPTZ NOT NULL,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+-- Link existing orders to a customer account
+ALTER TABLE orders ADD COLUMN customer_id UUID REFERENCES customers(id);
+-- Saved addresses
+CREATE TABLE customer_addresses (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+  label       VARCHAR(50),  -- "Home", "Work"
+  address     TEXT NOT NULL,
+  lat         NUMERIC, lng NUMERIC
+);
+-- Visited cafes / favorites
+CREATE TABLE customer_cafe_visits (
+  customer_id UUID REFERENCES customers(id) ON DELETE CASCADE,
+  cafe_id     UUID REFERENCES cafes(id) ON DELETE CASCADE,
+  last_visited_at TIMESTAMPTZ DEFAULT NOW(),
+  visit_count INT DEFAULT 1,
+  is_favorite BOOLEAN DEFAULT false,
+  PRIMARY KEY (customer_id, cafe_id)
+);
+New backend routes
+POST /api/customers/send-otp — phone OTP (reuse Twilio/SMS already in use for owner auth, or add fast2sms)
+POST /api/customers/verify-otp — returns JWT
+GET /api/customers/me — profile
+PATCH /api/customers/me — update name/email
+GET /api/customers/orders — all orders across all cafes (paginated)
+GET /api/customers/chats — all message threads across cafes
+GET /api/customers/cafes — visited cafes + favorites
+POST /api/customers/cafes/:cafeId/favorite — toggle favorite
+GET /api/customers/addresses — saved delivery addresses
+POST /api/customers/addresses — add address
+DELETE /api/customers/addresses/:id
+New frontend pages
+/account — sign in with phone (OTP flow, same as owner but simpler)
+/account/orders — cross-café order history
+/account/chats — all conversations grouped by café
+/account/cafes — visited cafes + favorites
+/account/addresses — saved delivery addresses
+Account icon/button in the customer nav (currently no nav at all)
+Migration of existing orders
+When a customer logs in with phone X, we link all past orders where customer_phone = X to their new customer_id. This gives them instant order history without any action on their part.
+
+Phased Approach (if approved)
+Phase 1 — Identity (2 weeks)
+
+customers table + phone OTP auth + JWT
+POST /customers/send-otp and verify-otp endpoints
+Customer auth context in frontend (parallel to owner AuthContext)
+/account sign-in page (phone → OTP → logged in)
+Link orders.customer_id on sign-in (backfill by phone)
+Phase 2 — History & Chats (1 week) 6. GET /customers/orders with pagination 7. /account/orders page — list with status, expand items 8. GET /customers/chats — reuse existing message tables 9. /account/chats page — shows all conversations
+
+Phase 3 — Saved data & Loyalty (1 week) 10. customer_addresses table + CRUD API 11. /account/addresses page — auto-fill delivery address in cart 12. customer_cafe_visits table — track on order placement 13. /account/cafes page — visited + favorites 14. Loyalty points (optional, owner-configured: earn 1 pt per ₹X spent)
+
+Files to Create/Modify
+File	Change
+backend/migrations/046_customers.sql	New customers, sessions, addresses, visits tables
+backend/src/controllers/customerAuthController.js	New — OTP send/verify, profile CRUD
+backend/src/routes/customers.js	New — all customer routes
+backend/src/middleware/requireCustomer.js	New — JWT check for customer token
+frontend/src/context/CustomerAuthContext.jsx	New — customer session management
+frontend/src/pages/customer/AccountPage.jsx	New — sign in / profile
+frontend/src/pages/customer/AccountOrdersPage.jsx	New — order history
+frontend/src/pages/customer/AccountChatsPage.jsx	New — chat history
+frontend/src/services/api.js	Add customer auth + account API calls
+Verification
+Sign in with phone → receive OTP → JWT stored in localStorage as dineverse_customer_token
+Place an order without being logged in → log in → order appears in history (backfilled by phone)
+/account/orders shows orders from multiple cafes in one list
+/account/chats shows all message threads; clicking one opens the chat
+Saved address auto-populates delivery address field in CartPage
+DineVerse — Full App Audit: Bugs, Security, UX Gaps & Missing Features
+Context
+Three-agent audit across customer frontend, owner frontend, and backend. Verified critical claims against actual code before including. Issues already fixed in recent commits (GST visibility, final_amount consistency, history badge sync) are excluded. Everything below is currently broken or missing.
+
+P0 — Critical (financial loss / security / data loss)
+1. Anyone can cancel any order
+File: backend/src/controllers/orderController.js ~line 533
+Issue: customerCancelOrder only checks that the order belongs to a café slug. It never verifies the caller is the actual customer (no name/phone match). Anyone who knows an order ID + café slug can cancel any pending order.
+Fix: Add AND (o.customer_name = $3 OR o.customer_phone = $4) to the lookup query, taking customer_name and customer_phone from request body.
+
+2. Table bill leaks full itemized order data to unauthenticated users
+File: backend/src/controllers/orderController.js ~line 595
+Issue: getTableBill has no auth middleware. It returns all item names, quantities, and prices for any table at any café to anyone who guesses a table number + slug. Confirmed: endpoint returns order_items rows with item_name, quantity, unit_price, subtotal.
+Fix: Require the customer's customer_name in the request to match at least one order on the table. OR require the session token. Simplest: add customer_name param check so a stranger can't enumerate all tables.
+
+3. Payment can be marked paid without amount validation
+File: backend/src/controllers/orderController.js ~line 825
+Issue: After HMAC signature is verified, code fetches the Razorpay payment to check the amount. If that fetch throws (Razorpay down, network blip), the catch block allows payment to proceed with a log warning. An attacker can engineer a fetch failure after signature verification to get an order marked paid for any amount.
+Fix: Change the catch block to ROLLBACK and return a 503 — do not mark paid unless amount is confirmed. Frontend should show "Payment received, verifying…" and retry.
+
+4. Cart destroyed by full page reload in table re-confirm
+File: frontend/src/pages/customer/CartPage.jsx ~line 141
+Issue: When a customer's previous orders are all paid and they start a new round, the table confirm modal calls window.location.reload() after updating localStorage. This wipes the entire React state including the cart, so the customer's cart items are gone.
+Fix: Remove window.location.reload(). Instead, read the updated session from localStorage and call window.dispatchEvent(new Event('storage')) or lift session into a context so CartPage re-reads it without reload.
+
+5. Duplicate orders on network retry
+File: frontend/src/pages/customer/CartPage.jsx ~line 208
+Issue: client_order_id is generated with crypto.randomUUID() inside the handlePlaceOrder function. If the network request fails and the user retries, a new UUID is generated, so the backend deduplication (which works correctly) never fires — a second order is created. Confirmed: backend dedup is keyed on client_order_id.
+Fix: Generate the UUID in a useRef initialized on component mount: const orderIdRef = useRef(crypto.randomUUID()). Reset it only after a successful order (orderIdRef.current = crypto.randomUUID()). Retries reuse the same UUID.
+
+P1 — High (broken UX, wrong data shown to users)
+6. Billing modal data silently lost on outside-click
+File: frontend/src/pages/owner/OrdersPage.jsx — BillingModal component
+Issue: Owner fills in cash amount, counter tip, payment mode — then accidentally clicks the backdrop. Modal closes with no confirmation prompt and all data is lost. For large bills this is highly disruptive.
+Fix: Add a isDirty check (any field touched) — if dirty, show "Discard changes?" confirm before closing on backdrop click or pressing Escape.
+
+7. Offer discount invisible when tax is inclusive
+File: frontend/src/pages/customer/CartPage.jsx ~line 427
+Issue: The discount line (🎉 Offer applied / -₹X) is only rendered inside the taxInclusive branch conditionally. For tax-exclusive mode the discount line IS shown, but the code has an offerPreview?.applied && taxInclusive check that hides it in some paths.
+Fix: Always render the discount line if discountAmt > 0, regardless of tax mode. Move it outside both taxInclusive and !taxInclusive branches.
+
+8. Item status can go backwards (served → preparing)
+File: backend/src/controllers/orderController.js ~line 908
+Issue: updateItemStatus accepts any status in ['pending','preparing','ready','served'] and writes it directly. No transition validation. A mis-tap on the KDS can send a served dish back to pending.
+Fix: Add a transition map:
+
+const ALLOWED = { pending: ['preparing'], preparing: ['ready','pending'], ready: ['served','preparing'], served: [] };
+if (!ALLOWED[currentStatus].includes(newStatus)) return fail(res, 'Invalid status transition', 400);
+Requires fetching current item_status before the update (single extra query).
+
+9. Analytics revenue total silently includes tips
+File: frontend/src/pages/owner/AnalyticsPage.jsx ~line 244
+Issue: total_revenue from the API (and in the History tab summary) includes tip amounts. An owner sees ₹1,000 revenue but ₹200 is customer tips that go to staff — actual food revenue is ₹800. No label distinction. Could cause over-purchasing.
+Fix: Display as two lines: "Food Revenue: ₹800" and "Tips collected: ₹200" (or at minimum add a tooltip: "Includes ₹X in customer tips").
+
+10. Cart total silently becomes NaN if price is a string
+File: frontend/src/context/CartContext.jsx
+Issue: total = state.items.reduce((sum, i) => sum + i.price * i.quantity, 0) — if i.price comes from the API as a string (common with PostgreSQL numeric types), "100" * 2 = 200 works via JS coercion, but sum + "100" * 2 can produce NaN under certain paths. The cart total silently breaks checkout.
+Fix: parseFloat(i.price) * i.quantity in the reducer. One line, zero risk.
+
+11. Admin setup endpoint depends on env var alone
+File: backend/src/controllers/adminController.js ~line 16
+Issue: If ADMIN_SETUP_ENABLED=true is accidentally left set in production on a fresh deployment (no admin exists yet), anyone can POST to /api/admin/setup and create the platform admin account.
+Fix: After creating the first admin, immediately set a DB flag or simply always check existing.rows[0].count > 0 and return 409. The env var is redundant — remove it and rely solely on "admin already exists" check. Add rate limiting (already applied via authLimiter).
+
+P2 — Medium (UX gaps, edge cases, daily pain)
+12. Waitlist position shown but never updated
+File: frontend/src/pages/customer/CafeEntry.jsx ~line 762
+Issue: After joining the waitlist, the customer sees "You are #5 in line." This number is never updated via socket or polling. If 3 people ahead leave, the customer still sees #5.
+Fix: Add socket listener for waitlist_update event (if backend emits it) or poll getWaitlistStatus every 60s while the page is open. Update displayed position reactively.
+
+13. Minimum delivery order amount not shown inline
+File: frontend/src/pages/customer/CartPage.jsx ~line 191
+Issue: If cart total < deliveryMinOrder, the Place Order button fires a toast error. But there's no inline label anywhere showing "Min. order ₹300 for delivery." Customer doesn't know how much to add.
+**Fix:** Show a small banner below the item list when isDelivery && deliveryMinOrder > 0: "Minimum order for delivery: ₹{deliveryMinOrder}" with a progress bar or deficit amount ("Add ₹61 more to unlock delivery").
+
+14. Socket room emission before connection confirmed on reservation
+File: frontend/src/pages/customer/CafeEntry.jsx ~line 489
+Issue: After booking a reservation, socket.emit('track_reservation', ...) fires immediately. But the socket connection (established in a parent useEffect) may not be ready yet, so the emit is lost.
+Fix: Check socket.connected before emitting; if not, listen for socket.on('connect', ...) once and then emit.
+
+15. Chat messages can duplicate on reconnect
+File: frontend/src/pages/owner/OrdersPage.jsx ~line 408
+Issue: Opening a chat fetches HTTP history and merges with socket messages. On reconnect, the HTTP fetch replays, potentially duplicating messages already received via socket. Dedup only checks id but IDs may not be consistent across reconnects.
+Fix: After merge, deduplicate by id: const merged = [...new Map([...http, ...socket].map(m => [m.id, m])).values()].
+
+16. Staff role not set on creation
+File: backend/src/controllers/staffController.js ~line 38
+Issue: When creating a staff account, no role is assigned. The column likely defaults to NULL. Downstream code reading req.staffRole may behave unpredictably for these accounts.
+Fix: Require role in the create-staff request body validator and default to 'cashier' if not provided.
+
+17. Dashboard & OrdersPage "today" counts can disagree
+File: frontend/src/pages/owner/DashboardPage.jsx ~line 241
+Issue: Dashboard counts today's orders by created_at >= today_start. OrdersPage shows all orders regardless of date. An order placed yesterday but paid today counts differently in each view — visible inconsistency.
+Fix: Align the Dashboard's "Today" metric to use paid_at for the revenue figure and created_at for order count, with a tooltip clarifying which is which.
+
+18. Billing modal stale order snapshot
+File: frontend/src/pages/owner/OrdersPage.jsx ~openOrderBilling function
+Issue: The billing modal captures order data at the time it's opened. If the kitchen marks an item ready or adds a note after the modal opens, the modal shows stale data. High-volume cafés open billing modals that stay open for minutes.
+Fix: Pass the orderId to the modal and have it re-read from the orders state array directly (live reference) rather than a snapshot.
+
+P3 — Low (missing convenience features, polish)
+#	Feature	File	Description
+19	Bulk QR download	TablesPage.jsx	Download all table QR codes as a ZIP. Currently requires one click per table.
+20	Staff password reset	StaffPage.jsx	Owner can't reset a locked-out staff member's password — must delete & recreate.
+21	Bulk menu price update	MenuManagementPage.jsx	No "increase all prices in category by X%" — requires editing each item.
+22	Per-item low-stock threshold	InventoryPage.jsx	Low-stock alert hardcoded to 5 units. Should be configurable per item.
+23	Refund initiation on payment failure	orderController.js ~828	If amount mismatch is detected post-capture, no Razorpay refund is triggered. Manual process.
+24	Polling beyond 2 hours	OrderConfirmation.jsx	Status polling hard-stops at 2h even if order is still pending. Should stop on terminal status only.
+25	Remind customer for unpaid bill	OrdersPage.jsx	No "send reminder" button for tables with long-unpaid bills.
+Already Fixed (do not re-open)
+hasGst gating on GSTIN field — fixed, now gstRate > 0 only
+total_amount vs final_amount on order rows — fixed across all views
+History tab badge vs filter mismatch — fixed, lifted dateRange to parent
+History revenue sum — fixed to use final_amount
+ProfilePage single-form → tabs with per-tab save — done
+Implementation Order
+Sprint 1 — P0 security/data fixes (do these first, deploy immediately):
+
+Payment verification catch block → ROLLBACK instead of allow
+customerCancelOrder → add customer identity check
+getTableBill → add customer_name verification
+CartPage client_order_id → generate in useRef on mount
+CartPage window.location.reload() → remove, use storage event
+Sprint 2 — P1 UX fixes: 6. Billing modal dirty-state confirmation on close 7. Offer discount always visible regardless of tax mode 8. Item status transition validation (backend) 9. Analytics tips labeling 10. CartContext price parseFloat
+
+Sprint 3 — P2 UX gaps: 11-18 above, in order of user-facing impact
+
+Sprint 4 — P3 convenience features: 19-25 as time permits
+
+Files to Modify
+Priority	File	Change
+P0	backend/src/controllers/orderController.js	Lines 533, 595, 825
+P0	frontend/src/pages/customer/CartPage.jsx	Lines 141, 208
+P1	frontend/src/pages/owner/OrdersPage.jsx	BillingModal backdrop close
+P1	frontend/src/pages/customer/CartPage.jsx	Offer discount display
+P1	backend/src/controllers/orderController.js	Item status transitions ~908
+P1	frontend/src/pages/owner/AnalyticsPage.jsx	Revenue tip labeling
+P1	frontend/src/context/CartContext.jsx	parseFloat in reducer
+P1	backend/src/controllers/adminController.js	Remove env var gate

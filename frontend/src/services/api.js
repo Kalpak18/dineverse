@@ -136,6 +136,8 @@ export const createTable      = (data)         => api.post('/tables', data);
 export const updateTable      = (id, data)     => api.patch(`/tables/${id}`, data);
 export const deleteTable      = (id)           => api.delete(`/tables/${id}`);
 export const getCafeMenu = (slug) => api.get(`/cafes/${slug}/menu`);
+export const getUpsellSuggestions = (slug, itemIds) =>
+  api.get(`/cafes/${slug}/menu/suggestions`, { params: { items: itemIds.join(',') } });
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
 export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`);
 export const cancelOrder = (slug, id, customer_name, customer_phone) =>

@@ -610,6 +610,14 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
             {categoryLabel}
           </span>
         )}
+        {/* Low-stock urgency badge */}
+        {item.track_stock && item.stock_quantity != null &&
+         item.stock_quantity <= (item.low_stock_threshold ?? 5) &&
+         item.stock_quantity > 0 && (
+          <span className="absolute top-2 right-2 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow">
+            Only {item.stock_quantity} left!
+          </span>
+        )}
         {/* Qty badge */}
         {qty > 0 && (
           <span className="absolute bottom-2 right-2 bg-brand-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow">

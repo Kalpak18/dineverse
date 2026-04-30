@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, previewOffer, validateCoupon, getCafeTables } from '../../services/api';
+import { placeOrder, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -21,7 +21,7 @@ function normTable(raw, areaName) {
 export default function CartPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
-  const { items, total, itemCount, cafeCurrency, updateQty, clearCart } = useCart();
+  const { items, total, itemCount, cafeCurrency, addItem, updateQty, clearCart } = useCart();
   const c = (n) => fmtCurrency(n, cafeCurrency);
   const [sessionTick, setSessionTick] = useState(0); // incremented to re-read localStorage without full reload
   const [loading, setLoading] = useState(false);
@@ -37,6 +37,7 @@ export default function CartPage() {
   const [couponInput, setCouponInput]     = useState('');
   const [couponApplied, setCouponApplied] = useState(false); // true when offer was set via coupon
   const [couponLoading, setCouponLoading] = useState(false);
+  const [suggestions, setSuggestions]   = useState([]);
 
   // Table / order-type re-confirm state
   const [showTableModal, setShowTableModal] = useState(false);
@@ -73,6 +74,19 @@ export default function CartPage() {
     document.title = name ? `Cart — ${name}` : 'Your Cart — DineVerse';
     return () => { document.title = 'DineVerse'; };
   }, [session?.cafe_name]);
+
+  // Upsell suggestions — debounced, only when cart has items
+  useEffect(() => {
+    if (!items.length) { setSuggestions([]); return; }
+    const ids = items.map((i) => i.id).filter(Boolean);
+    if (!ids.length) return;
+    const t = setTimeout(() => {
+      getUpsellSuggestions(slug, ids)
+        .then(({ data }) => setSuggestions(data.data?.suggestions || []))
+        .catch(() => {});
+    }, 600);
+    return () => clearTimeout(t);
+  }, [slug, items]);
 
   // Live open/closed updates — same room MenuPage uses
   useEffect(() => {
@@ -342,6 +356,46 @@ export default function CartPage() {
           </div>
         ))}
       </div>
+
+      {/* Upsell suggestions */}
+      {suggestions.length > 0 && (
+        <div className="px-4 mb-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Customers also ordered</p>
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {suggestions.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => addItem({ id: s.id, name: s.name, price: s.price, image_url: s.image_url })}
+                className="flex-shrink-0 w-28 bg-white border border-gray-100 rounded-xl p-2 text-left hover:border-brand-300 transition-colors shadow-sm"
+              >
+                {s.image_url ? (
+                  <img src={s.image_url} alt={s.name} className="w-full h-14 object-cover rounded-lg mb-1.5" />
+                ) : (
+                  <div className="w-full h-14 bg-gray-100 rounded-lg mb-1.5 flex items-center justify-center text-2xl">🍽️</div>
+                )}
+                <p className="text-xs font-semibold text-gray-800 line-clamp-2 leading-tight">{s.name}</p>
+                <p className="text-xs text-brand-600 font-bold mt-0.5">{c(parseFloat(s.price))}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Min-order progress bar (delivery only) */}
+      {isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder && (
+        <div className="mx-4 mb-2 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <div className="flex justify-between text-xs text-amber-700 font-medium mb-1.5">
+            <span>Min. order for delivery: {c(deliveryMinOrder)}</span>
+            <span>Add {c(deliveryMinOrder - total)} more</span>
+          </div>
+          <div className="w-full bg-amber-100 rounded-full h-2">
+            <div
+              className="bg-amber-500 h-2 rounded-full transition-all"
+              style={{ width: `${Math.min((total / deliveryMinOrder) * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Delivery address form — only for delivery orders */}
       {isDelivery && (

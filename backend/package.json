@@ -32,6 +32,7 @@
     "socket.io": "^4.7.5",
     "twilio": "^5.13.1",
     "uuid": "^9.0.1",
+    "web-push": "^3.6.7",
     "winston": "^3.19.0"
   },
   "devDependencies": {
