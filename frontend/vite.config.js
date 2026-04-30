@@ -37,13 +37,10 @@ export default defineConfig(({ mode }) => {
               id.includes('/react-router-dom/') ||
               id.includes('/scheduler/')        // react-dom peer dep
             ) return 'vendor-react';
-            // socket.io-client + its deps (engine.io-client, xmlhttprequest-ssl, etc.)
-            if (
-              id.includes('/socket.io-client/') ||
-              id.includes('/engine.io-client/') ||
-              id.includes('/xmlhttprequest-ssl/') ||
-              id.includes('/@socket.io/')
-            ) return 'vendor-socket';
+            // socket.io-client has internal circular refs between its own modules
+            // (engine.io-client, @socket.io/component-emitter, etc.). Splitting it
+            // into a separate chunk cuts through those cycles and causes TDZ errors
+            // on minified variables. Let it bundle naturally with vendor-misc.
             if (id.includes('/leaflet/')) return 'vendor-leaflet';
             return 'vendor-misc';
           },
