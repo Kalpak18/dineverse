@@ -145,17 +145,27 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       [req.cafeId, startDate, endDate]
     ),
 
-    // Repeat customers — by phone number
+    // Repeat customers — unique phones who ordered during the period,
+    // checked against their ALL-TIME paid order count for this café.
+    // Prevents the "today" view from hiding repeat customers whose earlier
+    // visit falls outside the selected date range.
     db.query(
-      `SELECT COUNT(*) AS total_customers,
-              COUNT(*) FILTER (WHERE order_count > 1) AS repeat_customers
-       FROM (
-         SELECT customer_phone, COUNT(*) AS order_count
+      `WITH period_phones AS (
+         SELECT DISTINCT customer_phone
          FROM orders
          WHERE cafe_id = $1 AND status = 'paid' AND customer_phone IS NOT NULL
            AND DATE(created_at) BETWEEN $2 AND $3
+       ),
+       all_time_counts AS (
+         SELECT customer_phone, COUNT(*) AS total_orders
+         FROM orders
+         WHERE cafe_id = $1 AND status = 'paid' AND customer_phone IS NOT NULL
          GROUP BY customer_phone
-       ) sub`,
+       )
+       SELECT COUNT(*)                                        AS total_customers,
+              COUNT(*) FILTER (WHERE a.total_orders > 1)     AS repeat_customers
+       FROM period_phones p
+       JOIN all_time_counts a USING (customer_phone)`,
       [req.cafeId, startDate, endDate]
     ),
 
