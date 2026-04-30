@@ -25,26 +25,7 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         // Capacitor native plugin — not installed in web/CI builds, only resolved at runtime on device
         external: ['@capacitor-community/barcode-scanner'],
-        output: {
-          manualChunks(id) {
-            if (!id.includes('node_modules')) return;
-            // React ecosystem — keep all react-* and router in one chunk to avoid
-            // circular refs between react, react-dom, react-router shared internals
-            if (
-              id.includes('/react/') ||
-              id.includes('/react-dom/') ||
-              id.includes('/react-router/') ||
-              id.includes('/react-router-dom/') ||
-              id.includes('/scheduler/')        // react-dom peer dep
-            ) return 'vendor-react';
-            // socket.io-client has internal circular refs between its own modules
-            // (engine.io-client, @socket.io/component-emitter, etc.). Splitting it
-            // into a separate chunk cuts through those cycles and causes TDZ errors
-            // on minified variables. Let it bundle naturally with vendor-misc.
-            if (id.includes('/leaflet/')) return 'vendor-leaflet';
-            return 'vendor-misc';
-          },
-        },
+        output: {},
       },
     },
     server: {
