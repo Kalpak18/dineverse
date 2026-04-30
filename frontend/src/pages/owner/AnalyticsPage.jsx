@@ -360,9 +360,9 @@ export default function AnalyticsPage() {
               <p className="text-3xl font-bold text-gray-900 mb-1">
                 {data.tableTurn?.avg_turn_mins != null ? `${data.tableTurn.avg_turn_mins} min` : '—'}
               </p>
-              <p className="text-xs text-gray-500">Avg table turn time</p>
-              {data.tableTurn?.paid_dine_in_orders > 0 && (
-                <p className="text-xs text-gray-400 mt-1">across {data.tableTurn.paid_dine_in_orders} dine-in orders</p>
+              <p className="text-xs text-gray-500">Avg time to serve (dine-in)</p>
+              {data.tableTurn?.served_dine_in_orders > 0 && (
+                <p className="text-xs text-gray-400 mt-1">across {data.tableTurn.served_dine_in_orders} orders</p>
               )}
             </div>
             <div className="card text-center">

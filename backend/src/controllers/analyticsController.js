@@ -96,13 +96,17 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       [req.cafeId, startDate, endDate]
     ),
 
-    // Table turn time — avg minutes from order placed to paid (dine-in only)
+    // Table service time — avg minutes from order placed to food served (dine-in).
+    // Uses order_events 'served' transition timestamp so prepaid orders don't skew it.
+    // Excludes orders that were never marked served (takeaway, delivery, cancelled, still open).
     db.query(
-      `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 60))::int AS avg_turn_mins,
-              COUNT(*) AS paid_dine_in_orders
-       FROM orders
-       WHERE cafe_id = $1 AND status = 'paid' AND order_type = 'dine-in'
-         AND DATE(created_at) BETWEEN $2 AND $3`,
+      `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (e.created_at - o.created_at)) / 60))::int AS avg_turn_mins,
+              COUNT(*) AS served_dine_in_orders
+       FROM orders o
+       JOIN order_events e ON e.order_id = o.id AND e.to_status = 'served'
+       WHERE o.cafe_id = $1
+         AND o.order_type = 'dine-in'
+         AND DATE(o.created_at) BETWEEN $2 AND $3`,
       [req.cafeId, startDate, endDate]
     ),
 
@@ -177,8 +181,8 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     categoryBreakdown:   categoryRes.rows,
     expenses:            expensesRes.rows[0].expense_list || [],
     tableTurn: {
-      avg_turn_mins:       tableTurnRes.rows[0]?.avg_turn_mins ?? null,
-      paid_dine_in_orders: parseInt(tableTurnRes.rows[0]?.paid_dine_in_orders ?? 0),
+      avg_turn_mins:         tableTurnRes.rows[0]?.avg_turn_mins ?? null,
+      served_dine_in_orders: parseInt(tableTurnRes.rows[0]?.served_dine_in_orders ?? 0),
     },
     peakHours:           peakHoursRes.rows,
     repeatCustomers: {
