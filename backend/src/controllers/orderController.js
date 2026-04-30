@@ -506,7 +506,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
      req.role === 'STAFF' ? 'staff' : 'owner',
      req.staffId || req.cafeId,
      null]
-  ).catch(() => {});
+  ).catch((err) => logger.warn('order_events insert failed for order %s: %s', id, err.message));
 
   const updatedOrder = result.rows[0];
   if (req.io) {
@@ -984,6 +984,13 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   } finally {
     payClient.release();
   }
+
+  // Log the paid event so analytics can track orders that skip 'served' (e.g. online payment)
+  db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
+     VALUES ($1, $2, 'paid', 'system', 'Razorpay')`,
+    [id, updatedOrder.status === 'paid' ? null : updatedOrder.status]
+  ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
 
   // Emit to owner/kitchen via socket
   if (req.io) {

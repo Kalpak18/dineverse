@@ -96,17 +96,40 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       [req.cafeId, startDate, endDate]
     ),
 
-    // Table service time — avg minutes from order placed to food served (dine-in).
-    // Uses order_events 'served' transition timestamp so prepaid orders don't skew it.
-    // Excludes orders that were never marked served (takeaway, delivery, cancelled, still open).
+    // Table service time — avg minutes from order placed → food served (dine-in).
+    // Uses MIN(served event) per order to avoid double-counting if an order is
+    // re-marked served. Falls back to updated_at for orders that jumped straight
+    // to 'paid' without a 'served' event (e.g. online payment shortcut).
     db.query(
-      `SELECT ROUND(AVG(EXTRACT(EPOCH FROM (e.created_at - o.created_at)) / 60))::int AS avg_turn_mins,
+      `WITH served_times AS (
+         -- Best case: explicit 'served' event exists
+         SELECT o.id AS order_id, MIN(e.created_at) AS end_time
+         FROM orders o
+         JOIN order_events e ON e.order_id = o.id AND e.to_status = 'served'
+         WHERE o.cafe_id = $1
+           AND o.order_type = 'dine-in'
+           AND o.status IN ('served', 'paid')
+           AND DATE(o.created_at) BETWEEN $2 AND $3
+         GROUP BY o.id
+
+         UNION ALL
+
+         -- Fallback: no 'served' event but order is paid — use updated_at as proxy
+         SELECT o.id AS order_id, o.updated_at AS end_time
+         FROM orders o
+         WHERE o.cafe_id = $1
+           AND o.order_type = 'dine-in'
+           AND o.status = 'paid'
+           AND DATE(o.created_at) BETWEEN $2 AND $3
+           AND NOT EXISTS (
+             SELECT 1 FROM order_events e2
+             WHERE e2.order_id = o.id AND e2.to_status = 'served'
+           )
+       )
+       SELECT ROUND(AVG(EXTRACT(EPOCH FROM (st.end_time - o.created_at)) / 60))::int AS avg_turn_mins,
               COUNT(*) AS served_dine_in_orders
        FROM orders o
-       JOIN order_events e ON e.order_id = o.id AND e.to_status = 'served'
-       WHERE o.cafe_id = $1
-         AND o.order_type = 'dine-in'
-         AND DATE(o.created_at) BETWEEN $2 AND $3`,
+       JOIN served_times st ON st.order_id = o.id`,
       [req.cafeId, startDate, endDate]
     ),
 
