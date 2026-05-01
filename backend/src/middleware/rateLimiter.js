@@ -1,25 +1,36 @@
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
-// Use Redis store when REDIS_URL is set (multi-instance production).
-// Falls back to in-memory store for local dev / single-instance Phase 1.
-function makeStore() {
-  if (!process.env.REDIS_URL) return undefined; // default in-memory
+// Shared Redis client — one connection, reused across all store instances.
+// express-rate-limit v7 requires a SEPARATE RedisStore instance per limiter
+// (each with a unique prefix), but they can all share the same Redis connection.
+let _redisClient = null;
 
-  const { RedisStore } = require('rate-limit-redis');
+function getRedisClient() {
+  if (!process.env.REDIS_URL) return null;
+  if (_redisClient) return _redisClient;
+
   const Redis = require('ioredis');
-  const client = new Redis(process.env.REDIS_URL, {
+  _redisClient = new Redis(process.env.REDIS_URL, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
     tls: {},
     retryStrategy: (times) => (times > 5 ? null : Math.min(times * 500, 3000)),
   });
-  client.on('error', () => {}); // suppress unhandled error events
-  client.connect().catch(() => {}); // best-effort
-  return new RedisStore({ sendCommand: (...args) => client.call(...args) });
+  _redisClient.on('error', () => {});
+  _redisClient.connect().catch(() => {});
+  return _redisClient;
 }
 
-const store = makeStore();
+// Create a fresh RedisStore instance for each limiter (unique prefix required).
+// Falls back to undefined (in-memory) when REDIS_URL is not set.
+function makeStore(prefix) {
+  const client = getRedisClient();
+  if (!client) return undefined;
+
+  const { RedisStore } = require('rate-limit-redis');
+  return new RedisStore({ sendCommand: (...args) => client.call(...args), prefix });
+}
 
 function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
@@ -34,7 +45,7 @@ function otpKeyGenerator(req) {
 exports.authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  store,
+  store: makeStore('rl:auth:'),
   message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -46,7 +57,7 @@ exports.authLimiter = rateLimit({
 exports.otpLimiter = rateLimit({
   windowMs: 5 * 60 * 1000,
   max: 5,
-  store,
+  store: makeStore('rl:otp:'),
   keyGenerator: otpKeyGenerator,
   skipFailedRequests: true,
   message: { success: false, message: 'Too many OTP requests. Please wait a few minutes before trying again.', error: 'Too many OTP requests. Please wait a few minutes before trying again.' },
@@ -58,7 +69,7 @@ exports.otpLimiter = rateLimit({
 exports.apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 200,
-  store,
+  store: makeStore('rl:api:'),
   message: { success: false, message: 'Rate limit exceeded. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -69,7 +80,7 @@ exports.apiLimiter = rateLimit({
 exports.orderLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
-  store,
+  store: makeStore('rl:order:'),
   keyGenerator: (req) => `order:${ipKeyGenerator(req.ip)}:${req.params.slug || ''}`,
   message: { success: false, message: 'Too many orders placed. Please wait a moment.' },
   standardHeaders: true,
@@ -81,7 +92,7 @@ exports.orderLimiter = rateLimit({
 exports.publicLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
-  store,
+  store: makeStore('rl:pub:'),
   message: { success: false, message: 'Too many requests. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -92,7 +103,7 @@ exports.publicLimiter = rateLimit({
 exports.healthLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
-  store,
+  store: makeStore('rl:health:'),
   standardHeaders: true,
   legacyHeaders: false,
 });
