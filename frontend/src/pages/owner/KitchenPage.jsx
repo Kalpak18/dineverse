@@ -185,7 +185,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   else alert('Pop-up blocked. Allow pop-ups to print kitchen tokens.');
 }
 
-const OVERDUE_MS = 15 * 60 * 1000;
+const OVERDUE_MS = 25 * 60 * 1000;
 
 function useTimer() {
   const [now, setNow] = useState(Date.now());
@@ -418,11 +418,11 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
   const actionLabel = getActionLabel(status, order.order_type);
   const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   return (
-    <div className={`rounded-xl border-l-4 p-3 ${STATUS_COLORS[status]} ${overdue ? 'animate-pulse border-red-500 bg-red-950/40' : ''}`}>
+    <div className={`rounded-xl border-l-4 p-3 ${overdue ? 'border-red-500 bg-red-950/20' : STATUS_COLORS[status]}`}>
       <div className="flex items-center justify-between mb-1.5">
         <span className="font-bold text-white text-lg">{fmtToken(order.daily_order_number, order.order_type)}</span>
-        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${overdue ? 'bg-red-900 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-          {elapsed(order.created_at, now)}
+        <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${overdue ? 'bg-red-900/70 text-red-300 font-bold' : 'bg-gray-800 text-gray-400'}`}>
+          {overdue && <span>⚠️</span>}{elapsed(order.created_at, now)}
         </span>
       </div>
       <p className="text-sm text-gray-300 mb-0.5">
@@ -524,7 +524,7 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
         <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
       )}
 
-      {nextStatus && !(order.kitchen_mode === 'individual' && status === 'preparing') && (
+      {nextStatus && (
         <button onClick={() => onAdvance(order)} className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}>
           {actionLabel} →
         </button>
