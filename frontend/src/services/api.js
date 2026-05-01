@@ -274,4 +274,35 @@ export const deleteDeliveryPlatform= (id)         => api.delete(`/delivery/platf
 export const dispatchToPartner     = (orderId, platform) =>
   api.post(`/delivery/orders/${orderId}/dispatch`, { platform });
 
+// ─── Modifiers (Owner) ────────────────────────────────────────
+export const getModifierGroups   = ()           => api.get('/modifiers/groups');
+export const createModifierGroup = (data)       => api.post('/modifiers/groups', data);
+export const updateModifierGroup = (id, data)   => api.patch(`/modifiers/groups/${id}`, data);
+export const deleteModifierGroup = (id)         => api.delete(`/modifiers/groups/${id}`);
+export const createModifierOption = (groupId, data) => api.post(`/modifiers/groups/${groupId}/options`, data);
+export const updateModifierOption = (groupId, optId, data) => api.patch(`/modifiers/groups/${groupId}/options/${optId}`, data);
+export const deleteModifierOption = (groupId, optId) => api.delete(`/modifiers/groups/${groupId}/options/${optId}`);
+export const getItemModifierGroups = (itemId)   => api.get(`/modifiers/items/${itemId}/groups`);
+export const setItemModifierGroups = (itemId, groupIds) => api.put(`/modifiers/items/${itemId}/groups`, { group_ids: groupIds });
+export const getItemVariants     = (itemId)     => api.get(`/modifiers/items/${itemId}/variants`);
+export const saveItemVariants    = (itemId, variants) => api.put(`/modifiers/items/${itemId}/variants`, { variants });
+// Public: customer ordering
+export const getPublicItemModifiers = (slug, itemId) => api.get(`/modifiers/cafe/${slug}/items/${itemId}/modifiers`);
+
+// ─── Shifts (Owner) ───────────────────────────────────────────
+export const openShift        = (data)  => api.post('/shifts/open', data);
+export const closeShift       = (data)  => api.post('/shifts/close', data);
+export const getCurrentShift  = ()      => api.get('/shifts/current');
+export const getShifts        = (params) => api.get('/shifts', { params });
+export const getShiftSummary  = (id)    => api.get(`/shifts/${id}/summary`);
+
+// ─── Loyalty (Owner) ──────────────────────────────────────────
+export const getLoyaltyProgram    = ()           => api.get('/loyalty/program');
+export const saveLoyaltyProgram   = (data)       => api.post('/loyalty/program', data);
+export const getLoyaltyCustomers  = (params)     => api.get('/loyalty/customers', { params });
+export const adjustLoyaltyPoints  = (data)       => api.post('/loyalty/customers/adjust', data);
+export const getLoyaltyTransactions = (phone)    => api.get(`/loyalty/customers/${phone}/transactions`);
+// Public
+export const getLoyaltyBalance    = (slug)       => api.get(`/loyalty/cafe/${slug}/balance`);
+
 export default api;

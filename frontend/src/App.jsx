@@ -44,6 +44,9 @@ import CustomersPage from './pages/owner/CustomersPage';
 import WaitlistPage from './pages/owner/WaitlistPage';
 import SchedulePage from './pages/owner/SchedulePage';
 import MessagesPage from './pages/owner/MessagesPage';
+import ShiftPage from './pages/owner/ShiftPage';
+import LoyaltyPage from './pages/owner/LoyaltyPage';
+import ModifiersPage from './pages/owner/ModifiersPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -184,6 +187,9 @@ export default function App() {
         <Route path="waitlist"  element={<WaitlistPage />} />
         <Route path="schedule" element={<SchedulePage />} />
         <Route path="messages" element={<MessagesPage />} />
+        <Route path="shift" element={<ShiftPage />} />
+        <Route path="loyalty" element={<LoyaltyPage />} />
+        <Route path="modifiers" element={<ModifiersPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

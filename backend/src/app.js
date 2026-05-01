@@ -214,6 +214,9 @@ app.use('/api/delivery',       require('./routes/delivery'));
 app.use('/api/testimonials',   require('./routes/testimonials'));
 app.use('/api/push',           require('./routes/push'));
 app.use('/api/aggregator',     require('./routes/aggregator'));
+app.use('/api/modifiers',      require('./routes/modifiers'));
+app.use('/api/shifts',         require('./routes/shifts'));
+app.use('/api/loyalty',        require('./routes/loyalty'));
 
 // Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));

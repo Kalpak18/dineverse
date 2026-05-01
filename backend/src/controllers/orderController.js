@@ -513,6 +513,21 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     req.io.to(`cafe:${req.cafeId}`).emit('order_updated', updatedOrder);
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
+
+  // Credit loyalty points when staff marks as paid (fire-and-forget)
+  if (status === 'paid' && fromStatus !== 'paid') {
+    const fullOrder = await db.query(
+      `SELECT customer_phone, final_amount FROM orders WHERE id = $1`, [id]
+    ).catch(() => ({ rows: [] }));
+    if (fullOrder.rows.length) {
+      require('./loyaltyController').earnPoints(
+        req.cafeId, id,
+        fullOrder.rows[0].customer_phone,
+        fullOrder.rows[0].final_amount
+      );
+    }
+  }
+
   ok(res, { order: updatedOrder });
 });
 
@@ -991,6 +1006,13 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
      VALUES ($1, $2, 'paid', 'system', 'Razorpay')`,
     [id, updatedOrder.status === 'paid' ? null : updatedOrder.status]
   ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
+
+  // Credit loyalty points (fire-and-forget)
+  require('./loyaltyController').earnPoints(
+    cafeId, id,
+    updatedOrder.customer_phone || null,
+    updatedOrder.final_amount
+  );
 
   // Emit to owner/kitchen via socket
   if (req.io) {
