@@ -2,7 +2,7 @@ const express = require('express');
 const router  = express.Router();
 const ctrl    = require('../controllers/modifierController');
 const { authenticate } = require('../middleware/auth');
-const { checkSubscription } = require('../middleware/checkSubscription');
+const checkSubscription = require('../middleware/checkSubscription');
 
 const auth = [authenticate, checkSubscription];
 

@@ -3,7 +3,7 @@ const router  = express.Router();
 const webhook = require('../controllers/deliveryWebhookController');
 const riders  = require('../controllers/ridersController');
 const { authenticate } = require('../middleware/auth');
-const { checkSubscription } = require('../middleware/checkSubscription');
+const checkSubscription = require('../middleware/checkSubscription');
 
 const auth = [authenticate, checkSubscription];
 
