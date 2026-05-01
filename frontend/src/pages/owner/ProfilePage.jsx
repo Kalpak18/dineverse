@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme, THEMES } from '../../context/ThemeContext';
+import { subscribeToPush, unsubscribeFromPush, getPushPermission } from '../../utils/webPush';
 import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import ImageUpload from '../../components/ImageUpload';
@@ -130,6 +131,31 @@ export default function ProfilePage() {
   const [form, setForm]     = useState(() => buildForm(cafe));
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('branding');
+  const [pushPerm, setPushPerm]   = useState('default');
+  const [pushLoading, setPushLoading] = useState(false);
+
+  useEffect(() => {
+    getPushPermission().then(setPushPerm).catch(() => setPushPerm('unsupported'));
+  }, []);
+
+  const handlePushToggle = useCallback(async () => {
+    setPushLoading(true);
+    try {
+      if (pushPerm === 'granted') {
+        await unsubscribeFromPush();
+        setPushPerm('default');
+        toast('Push notifications turned off');
+      } else {
+        const sub = await subscribeToPush();
+        const perm = await getPushPermission();
+        setPushPerm(perm);
+        if (sub) toast.success('Push notifications enabled');
+        else if (perm === 'denied') toast.error('Notifications are blocked in your browser. Go to browser Settings → Site Settings to allow them.');
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  }, [pushPerm]);
 
   useEffect(() => {
     if (cafe?.id) setForm(buildForm(cafe));
@@ -351,6 +377,61 @@ export default function ProfilePage() {
             ))}
           </div>
           <p className="text-xs text-gray-400">Theme preference is saved on this device. Staff members may see a different theme.</p>
+
+          {/* Notifications */}
+          <div className="border-t border-gray-100 pt-6 space-y-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-1">Notifications</h2>
+              <p className="text-xs text-gray-400">Control how DineVerse alerts you on this device.</p>
+            </div>
+
+            {/* New order push */}
+            <div className={`flex items-center justify-between py-3 px-4 rounded-xl border ${
+              pushPerm === 'unsupported' ? 'bg-gray-50 border-gray-100 opacity-50' : 'bg-white border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔔</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">New order alerts</p>
+                  <p className="text-xs text-gray-400">
+                    {pushPerm === 'denied'
+                      ? 'Blocked in browser settings — click to open instructions'
+                      : pushPerm === 'unsupported'
+                      ? 'Not supported in this browser'
+                      : 'Get a notification when a new order arrives'}
+                  </p>
+                </div>
+              </div>
+              {pushPerm !== 'unsupported' && (
+                <button
+                  type="button"
+                  onClick={pushPerm === 'denied' ? () => toast('Go to browser Settings → Site Settings → Notifications → Allow dine-verse.com', { duration: 6000 }) : handlePushToggle}
+                  disabled={pushLoading}
+                  className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none disabled:opacity-60 ${
+                    pushPerm === 'granted' ? 'bg-brand-500' : 'bg-gray-200'
+                  }`}
+                  role="switch"
+                  aria-checked={pushPerm === 'granted'}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ${
+                    pushPerm === 'granted' ? 'translate-x-5' : 'translate-x-0'
+                  }`} />
+                </button>
+              )}
+            </div>
+
+            {/* Sound alerts — future: sound toggle stored in localStorage */}
+            <div className="flex items-center justify-between py-3 px-4 rounded-xl border bg-white border-gray-200">
+              <div className="flex items-center gap-3">
+                <span className="text-xl">🔊</span>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Order sound alert</p>
+                  <p className="text-xs text-gray-400">Plays a beep when a new order arrives (requires tab to be open)</p>
+                </div>
+              </div>
+              <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full">Always on</span>
+            </div>
+          </div>
         </div>
       )}
 
