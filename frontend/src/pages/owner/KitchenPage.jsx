@@ -248,6 +248,17 @@ const ACTION_COLORS = {
 // Item-level tap-to-cycle constants
 const NEXT_ITEM_STATUS = { pending: 'preparing', preparing: 'ready', ready: 'served' };
 
+// Kitchen never collects payment — that's always the cashier's job.
+// Cap the advance flow at 'served' regardless of order type.
+function kitchenNext(status, orderType) {
+  const next = getNextStatus(status, orderType);
+  return next === 'paid' ? 'served' : next;
+}
+function kitchenLabel(status, orderType) {
+  if (status === 'ready') return 'Mark as Served';
+  return getActionLabel(status, orderType);
+}
+
 const ITEM_ROW_STYLE = {
   pending:   'border-red-500    bg-red-950/25    hover:bg-red-950/40',
   preparing: 'border-yellow-400 bg-yellow-950/25 hover:bg-yellow-950/40',
@@ -351,12 +362,12 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotP
       <div className="mt-3 space-y-1.5">
         {orderCount === 1 ? (
           <>
-            {getNextStatus(status, orders[0].order_type) && (
+            {kitchenNext(status, orders[0].order_type) && (
               <button
                 onClick={() => onAdvance(orders[0])}
                 className={`w-full py-2 rounded-lg text-xs font-bold transition-colors ${ACTION_COLORS[status]}`}
               >
-                {getActionLabel(status, orders[0].order_type)} →
+                {kitchenLabel(status, orders[0].order_type)} →
               </button>
             )}
             <button
@@ -376,7 +387,7 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotP
             </button>
             <div className={`grid gap-1`} style={{ gridTemplateColumns: `repeat(${Math.min(orderCount, 3)}, 1fr)` }}>
               {orders.map((order) => (
-                getNextStatus(order.status, order.order_type) ? (
+                kitchenNext(order.status, order.order_type) ? (
                   <button
                     key={order.id}
                     onClick={() => onAdvance(order)}
@@ -414,8 +425,8 @@ function KitchenHint() {
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate, onMoveItem,
   onAcceptOrder, onRejectOrder, onAcceptItem, onServeSelected, onKotPrint, onKotReprint, onCancelItem, onToggleItem }) {
   const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-  const nextStatus = getNextStatus(status, order.order_type);
-  const actionLabel = getActionLabel(status, order.order_type);
+  const nextStatus = kitchenNext(status, order.order_type);
+  const actionLabel = kitchenLabel(status, order.order_type);
   const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
   return (
     <div className={`rounded-xl border-l-4 p-3 ${overdue ? 'border-red-500 bg-red-950/20' : STATUS_COLORS[status]}`}>
@@ -615,7 +626,7 @@ export default function KitchenPage() {
   );
 
   const handleAdvance = async (order) => {
-    const next = getNextStatus(order.status, order.order_type);
+    const next = kitchenNext(order.status, order.order_type);
     if (!next) return;
     try {
       await updateOrderStatus(order.id, next);
@@ -710,11 +721,11 @@ export default function KitchenPage() {
   };
 
   const handleAdvanceAll = async (groupOrders) => {
-    const toAdvance = groupOrders.filter((o) => getNextStatus(o.status, o.order_type));
+    const toAdvance = groupOrders.filter((o) => kitchenNext(o.status, o.order_type));
     if (!toAdvance.length) return;
     try {
       await Promise.all(toAdvance.map(async (order) => {
-        const next = getNextStatus(order.status, order.order_type);
+        const next = kitchenNext(order.status, order.order_type);
         await updateOrderStatus(order.id, next);
         setOrders((prev) =>
           KITCHEN_STATUSES.includes(next)
@@ -995,8 +1006,6 @@ export default function KitchenPage() {
             ));
             return colOrders.map((order) => {
               const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-              const nextStatus = getNextStatus(mobileTab, order.order_type);
-              const actionLabel = getActionLabel(mobileTab, order.order_type);
               const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
               return <KDSOrderCard key={order.id} order={order} status={mobileTab} now={now} selectedItems={selectedItems} onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} onMoveItem={handleMoveItem} onAcceptOrder={handleAcceptOrder} onRejectOrder={handleRejectOrder} onAcceptItem={handleAcceptItem} onServeSelected={handleServeSelected} onKotPrint={handleKotPrint} onKotReprint={handleKotReprint} onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }} onToggleItem={toggleItemSelection} />;
             });
