@@ -248,9 +248,13 @@ const ACTION_COLORS = {
 // Item-level tap-to-cycle constants
 const NEXT_ITEM_STATUS = { pending: 'preparing', preparing: 'ready', ready: 'served' };
 
-// Kitchen never collects payment — that's always the cashier's job.
-// Cap the advance flow at 'served' regardless of order type.
+// Kitchen flow rules:
+//  - Dine-in ready → served  (waiter brings food to table; cashier bills after)
+//  - Takeaway ready → null   (food is packed, kitchen's job is done;
+//                             cashier handles pickup + payment in Bills tab)
+//  - Kitchen never marks any order as paid
 function kitchenNext(status, orderType) {
+  if (status === 'ready' && orderType === 'takeaway') return null;
   const next = getNextStatus(status, orderType);
   return next === 'paid' ? 'served' : next;
 }
