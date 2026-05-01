@@ -9,9 +9,11 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   const result = await db.query(
     `SELECT
-       -- Use the most recent version of the name as canonical display name
+       -- Most recent name as canonical display name
        (ARRAY_AGG(customer_name ORDER BY created_at DESC))[1]          AS customer_name,
-       customer_phone,
+       -- Most recent phone (non-null preferred)
+       (ARRAY_AGG(customer_phone ORDER BY CASE WHEN customer_phone IS NOT NULL THEN 0 ELSE 1 END, created_at DESC))[1]
+                                                                        AS customer_phone,
        COUNT(*)                                                         AS total_orders,
        COUNT(*) FILTER (WHERE status = 'paid')                         AS paid_orders,
        COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0)   AS total_spend,
@@ -22,7 +24,10 @@ exports.getCustomers = asyncHandler(async (req, res) => {
      FROM orders
      WHERE cafe_id = $1
        AND ($2 = '%%' OR LOWER(customer_name) LIKE $2 OR customer_phone LIKE $2)
-     GROUP BY LOWER(TRIM(customer_name)), customer_phone
+     GROUP BY
+       -- Phone is the identity key when available; name is fallback for walk-ins.
+       -- COALESCE means different name spellings with the same phone → one customer.
+       COALESCE(customer_phone, LOWER(TRIM(customer_name)))
      ORDER BY total_orders DESC, last_visit DESC
      LIMIT $3 OFFSET $4`,
     [req.cafeId, q, parseInt(limit), parseInt(offset)]
@@ -30,7 +35,7 @@ exports.getCustomers = asyncHandler(async (req, res) => {
 
   // Total unique count for pagination
   const countRes = await db.query(
-    `SELECT COUNT(DISTINCT (LOWER(TRIM(customer_name)), customer_phone)) AS total
+    `SELECT COUNT(DISTINCT COALESCE(customer_phone, LOWER(TRIM(customer_name)))) AS total
      FROM orders WHERE cafe_id = $1`,
     [req.cafeId]
   );
