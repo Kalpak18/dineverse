@@ -10,6 +10,7 @@ import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
+import { premiumToast, isPremiumError } from '../../utils/premiumToast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
@@ -165,10 +166,7 @@ export default function OrdersPage() {
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
-      if (err?.response?.data?.error === 'premium_required') {
-        toast.error('Kitchen Pro feature — upgrade your plan to unlock per-item status tracking.', { duration: 5000 });
-        return;
-      }
+      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
       toast.error(getApiError(err));
     }
   };

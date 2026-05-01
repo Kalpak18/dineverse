@@ -5,6 +5,7 @@ import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import toast from 'react-hot-toast';
+import { premiumToast, isPremiumError } from '../../utils/premiumToast';
 
 // ─── KOT print ────────────────────────────────────────────────
 function printKot(kot, cafeName) {
@@ -658,7 +659,8 @@ export default function KitchenPage() {
       if (status === 'served' && data.order.kitchen_mode === 'individual') {
         printKitchenToken(data.order, cafe?.name, [itemId]);
       }
-    } catch {
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
       toast.error('Failed to update item status');
     }
   };
@@ -675,7 +677,8 @@ export default function KitchenPage() {
       toast.success(`"${cancelModal.itemName}" cancelled — customer notified`);
       setCancelModal(null);
       setCancelReason('');
-    } catch {
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('Item cancellation');
       toast.error('Failed to cancel item');
     } finally {
       setCancelling(false);
@@ -700,7 +703,8 @@ export default function KitchenPage() {
     try {
       const { data } = await reorderOrderItems(orderId, reordered);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-    } catch {
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('Item reordering');
       toast.error('Failed to reorder items');
     }
   };
@@ -743,7 +747,10 @@ export default function KitchenPage() {
     try {
       const { data } = await acceptItem(orderId, itemId);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-    } catch { toast.error('Failed to accept item'); }
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('Per-item accept/reject');
+      toast.error('Failed to accept item');
+    }
   };
 
   const toggleItemSelection = (orderId, itemId) => {
@@ -769,7 +776,10 @@ export default function KitchenPage() {
       printKitchenToken(last.data.order, cafe?.name, Array.from(selected));
       setSelectedItems((prev) => ({ ...prev, [orderId]: new Set() }));
       toast.success(`${selected.size} item${selected.size > 1 ? 's' : ''} served`);
-    } catch { toast.error('Failed to serve selected items'); }
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
+      toast.error('Failed to serve selected items');
+    }
   };
 
   const handleKotPrint = async (orderId) => {
@@ -793,7 +803,10 @@ export default function KitchenPage() {
       if (!slips || slips.length === 0) { toast('No KOT slips yet for this order', { icon: 'ℹ️' }); return; }
       const last = slips[slips.length - 1];
       printKot(last, cafe?.name);
-    } catch { toast.error('Could not load KOT history'); }
+    } catch (err) {
+      if (isPremiumError(err)) return premiumToast('KOT history');
+      toast.error('Could not load KOT history');
+    }
   };
 
   const toggleFullscreen = () => {
