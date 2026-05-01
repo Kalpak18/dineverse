@@ -9,12 +9,14 @@ import PasswordInput from '../../components/PasswordInput';
 const ROLES = [
   { value: 'cashier',  label: 'Cashier',  desc: 'Takes orders and processes payments' },
   { value: 'kitchen',  label: 'Kitchen',  desc: 'Views and updates kitchen order queue' },
+  { value: 'waiter',   label: 'Waiter',   desc: 'Serves ready dishes to tables via waiter view' },
   { value: 'manager',  label: 'Manager',  desc: 'Full access like owner (except billing)' },
 ];
 
 const ROLE_BADGE = {
   cashier: 'bg-blue-100 text-blue-700',
   kitchen: 'bg-orange-100 text-orange-700',
+  waiter:  'bg-teal-100 text-teal-700',
   manager: 'bg-purple-100 text-purple-700',
 };
 

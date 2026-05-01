@@ -13,6 +13,26 @@ const PERIODS = [
   { key: 'yearly',  label: 'This Year' },
 ];
 
+function getPeriodRange(period) {
+  const now = new Date();
+  const fmt  = (d) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  const fmts = (d) => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  if (period === 'daily')   return fmt(now);
+  if (period === 'weekly')  {
+    const start = new Date(now); start.setDate(start.getDate() - 6); start.setHours(0, 0, 0, 0);
+    return `${fmts(start)} – ${fmts(now)}, ${now.getFullYear()}`;
+  }
+  if (period === 'monthly') {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return `${fmts(start)} – ${fmts(now)}, ${now.getFullYear()}`;
+  }
+  if (period === 'yearly')  {
+    const start = new Date(now.getFullYear(), 0, 1);
+    return `${fmts(start)} – ${fmts(now)}, ${now.getFullYear()}`;
+  }
+  return '';
+}
+
 function SummaryCard({ label, value, icon, color, sub }) {
   const colors = {
     blue:   'bg-blue-50 text-blue-600',
@@ -210,18 +230,21 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Period selector */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
-        {PERIODS.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setPeriod(key)}
-            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              period === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+      <div className="space-y-1.5">
+        <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+          {PERIODS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                period === key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 pl-1">{getPeriodRange(period)}</p>
       </div>
 
       {loading ? (

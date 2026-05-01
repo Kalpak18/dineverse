@@ -1,127 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, generateOrderKot, getKotHistory } from '../../services/api';
+import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import toast from 'react-hot-toast';
 import { premiumToast, isPremiumError } from '../../utils/premiumToast';
-
-// ─── KOT print ────────────────────────────────────────────────
-function printKot(kot, cafeName) {
-  const items = Array.isArray(kot.items) ? kot.items : [];
-  const isTakeaway = !kot.table_number;
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-
-  const itemRows = items.map((i, idx) => `
-    <tr class="${idx % 2 === 1 ? 'alt' : ''}">
-      <td class="sno">${idx + 1}</td>
-      <td class="qty">${i.quantity}</td>
-      <td class="item">${esc(i.item_name)}</td>
-    </tr>`).join('');
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <title>KOT #${kot.slip_number}</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Courier New',Courier,monospace; font-size:12px; width:80mm; margin:0 auto;
-           padding:4mm 3mm 12mm; background:#fff; color:#000; }
-
-    /* ── Header ── */
-    .cafe-name { text-align:center; font-size:13px; font-weight:900; text-transform:uppercase;
-                 letter-spacing:2px; border-bottom:2px solid #000; padding-bottom:4px; margin-bottom:4px; }
-    .cafe-sub  { text-align:center; font-size:9px; color:#555; letter-spacing:1px;
-                 text-transform:uppercase; margin-bottom:6px; }
-
-    /* ── KOT title bar ── */
-    .kot-title { background:#000; color:#fff; text-align:center; font-size:11px; font-weight:900;
-                 letter-spacing:3px; text-transform:uppercase; padding:3px 0; margin-bottom:6px; }
-
-    /* ── Table / order info ── */
-    .info-row  { display:flex; justify-content:space-between; font-size:10px; margin-bottom:2px; }
-    .info-row .label { color:#555; }
-    .info-row .value { font-weight:700; }
-    .order-id  { font-size:28px; font-weight:900; text-align:center; letter-spacing:2px;
-                 border:2px solid #000; border-radius:4px; padding:4px 0; margin:6px 0; }
-    .order-type { text-align:center; font-size:10px; font-weight:700; text-transform:uppercase;
-                  letter-spacing:2px; margin-bottom:4px; }
-
-    /* ── Separator ── */
-    .sep  { border:none; border-top:1px dashed #888; margin:5px 0; }
-    .sep2 { border:none; border-top:2px solid #000; margin:5px 0; }
-
-    /* ── Items ── */
-    table { width:100%; border-collapse:collapse; }
-    thead th { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:1px;
-               border-bottom:1px solid #000; padding:2px 2px 3px; }
-    th.sno, td.sno { text-align:center; width:10%; }
-    th.qty, td.qty { text-align:center; width:12%; font-weight:900; font-size:13px; }
-    th.item        { text-align:left; }
-    td.item        { font-size:13px; font-weight:700; padding:4px 2px; line-height:1.3; }
-    tr.alt td      { background:#f8f8f8; }
-
-    /* ── Footer ── */
-    .footer { text-align:center; font-size:10px; color:#444; border-top:1px dashed #888;
-              padding-top:5px; margin-top:6px; letter-spacing:1px; }
-    .print-btn { text-align:center; margin-top:10px; }
-
-    @media print {
-      @page { size:80mm auto; margin:0; }
-      body  { padding:3mm 2mm 10mm; }
-      .print-btn { display:none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="cafe-name">${esc(cafeName || 'KITCHEN')}</div>
-  <div class="cafe-sub">Kitchen Order Ticket</div>
-
-  <div class="kot-title">KOT — SLIP #${kot.slip_number}</div>
-
-  <div class="order-id">${isTakeaway ? 'TAKEAWAY' : `TABLE ${esc(String(kot.table_number))}`}</div>
-  ${kot.customer_name ? `<div class="order-type">${esc(kot.customer_name)}</div>` : ''}
-
-  <div class="info-row">
-    <span class="label">Date</span><span class="value">${dateStr}</span>
-  </div>
-  <div class="info-row">
-    <span class="label">Time</span><span class="value">${timeStr}</span>
-  </div>
-
-  <hr class="sep2"/>
-
-  <table>
-    <thead>
-      <tr><th class="sno">#</th><th class="qty">Qty</th><th class="item">Item</th></tr>
-    </thead>
-    <tbody>${itemRows}</tbody>
-  </table>
-
-  <div class="footer">
-    ${items.length} item${items.length !== 1 ? 's' : ''}
-  </div>
-
-  <div class="print-btn">
-    <button onclick="window.print();window.onafterprint=function(){window.close()};"
-      style="font-family:'Courier New',monospace;font-size:12px;font-weight:700;
-             padding:7px 24px;border:2px solid #000;border-radius:4px;
-             background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
-      PRINT KOT
-    </button>
-  </div>
-  <script>window.onload=function(){window.focus();};<\/script>
-</body>
-</html>`;
-
-  const w = window.open('', '_blank', 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1');
-  if (w) { w.document.write(html); w.document.close(); }
-  else alert('Pop-up blocked. Allow pop-ups to print KOT.');
-}
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -164,7 +48,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 <body>
   <div class="cafe-name">${cafeName || 'Kitchen'}</div>
   <div class="token-box">
-    <div class="token-label">Order Token</div>
+    <div class="token-label">Serving Slip · Ready for Service</div>
     <div class="token-num">${isTakeaway ? `TK ${num}` : isDelivery ? `D ${num}` : `#${num}`}</div>
     <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ TABLE ${order.table_number}`}</div>
   </div>
@@ -182,7 +66,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 
   const w = window.open('', '_blank', 'width:380,height=580,toolbar=0,menubar=0,scrollbars=0');
   if (w) { w.document.write(html); w.document.close(); }
-  else alert('Pop-up blocked. Allow pop-ups to print kitchen tokens.');
+  else alert('Pop-up blocked. Allow pop-ups to print serving slips.');
 }
 
 const OVERDUE_MS = 25 * 60 * 1000;
@@ -283,7 +167,7 @@ const ITEM_BADGE_STYLE = {
 const TABLE_GROUP_WINDOW_MS = 30 * 60 * 1000;
 
 // ─── Combined Table Card ──────────────────────────────────────
-function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotPrint, onItemUpdate }) {
+function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onItemUpdate }) {
   const { tableKey, orders } = group;
   const orderCount = orders.length;
   const earliestTs = orders.reduce((min, o) => Math.min(min, new Date(o.created_at).getTime()), Infinity);
@@ -374,12 +258,6 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onKotP
                 {kitchenLabel(status, orders[0].order_type)} →
               </button>
             )}
-            <button
-              onClick={() => onKotPrint(orders[0].id)}
-              className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
-            >
-              📋 Print KOT
-            </button>
           </>
         ) : (
           <>
@@ -417,7 +295,8 @@ function KitchenHint() {
       <span className="text-yellow-400 flex-shrink-0 mt-0.5">💡</span>
       <div className="flex-1 space-y-1">
         <p><strong className="text-white">Kitchen Display</strong> — keep this open on your kitchen screen during service.</p>
-        <p>Use ↑↓ arrows to reorder items by course (starters first). Start → Ready → Serve each item. KOT prints automatically when items are marked ready.</p>
+        <p>Tap any item row to cycle its status: Pending → Cooking → Ready. A serving slip prints automatically when an item is marked ready — place it with the food so the waiter knows which table to deliver to.</p>
+        <p>Switch to <strong className="text-teal-300">🍽️ Waiter</strong> view (top-right toggle) to see all ready orders and mark them served once delivered to the table.</p>
         <p>Cancel unavailable items with a reason — the customer is notified instantly.</p>
       </div>
       <button onClick={() => { localStorage.setItem('dv_hint_kitchen', '1'); setOpen(false); }} className="text-gray-500 hover:text-gray-300 text-lg leading-none flex-shrink-0">×</button>
@@ -425,9 +304,24 @@ function KitchenHint() {
   );
 }
 
+function WaiterHint() {
+  const [open, setOpen] = useState(() => !localStorage.getItem('dv_hint_waiter'));
+  if (!open) return null;
+  return (
+    <div className="bg-teal-900/60 border-b border-teal-800 px-4 py-3 flex items-start gap-3 text-sm text-teal-200 flex-shrink-0">
+      <span className="text-teal-300 flex-shrink-0 mt-0.5">💡</span>
+      <div className="flex-1 space-y-1">
+        <p><strong className="text-white">Waiter View</strong> — shows food that's ready at the pass and waiting to be delivered.</p>
+        <p className="text-xs text-teal-300">Orders appear here the moment kitchen marks them ready. Tap <strong>Serve</strong> on each dish once it's placed on the table, or use <strong>Mark All Served</strong> to clear the whole order at once.</p>
+      </div>
+      <button onClick={() => { localStorage.setItem('dv_hint_waiter', '1'); setOpen(false); }} className="text-teal-600 hover:text-teal-400 text-lg leading-none flex-shrink-0">×</button>
+    </div>
+  );
+}
+
 
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate, onMoveItem,
-  onAcceptOrder, onRejectOrder, onAcceptItem, onServeSelected, onKotPrint, onKotReprint, onCancelItem, onToggleItem }) {
+  onAcceptOrder, onRejectOrder, onAcceptItem, onServeSelected, onCancelItem, onToggleItem }) {
   const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
   const nextStatus = kitchenNext(status, order.order_type);
   const actionLabel = kitchenLabel(status, order.order_type);
@@ -545,16 +439,113 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
         </button>
       )}
 
-      <div className="mt-1">
-        {order.kitchen_mode === 'individual' ? (
-          <button onClick={() => onKotReprint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-purple-900/40 hover:bg-purple-800/60 text-purple-300 transition-colors">
-            📋 Reprint KOT
-          </button>
-        ) : (
-          <button onClick={() => onKotPrint(order.id)} className="w-full py-1.5 rounded-lg text-[11px] font-semibold bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors">
-            📋 Print KOT
-          </button>
-        )}
+    </div>
+  );
+}
+
+// ─── Waiter View ──────────────────────────────────────────────
+// Shows ready orders/items for waiters to pick up and serve.
+function WaiterView({ orders, now, onItemUpdate, onAdvance }) {
+  // Show orders that have at least one ready item, or whole order status = ready
+  const waiterOrders = orders.filter((o) => {
+    if (o.status === 'ready') return true;
+    if (o.kitchen_mode === 'individual') {
+      return (o.items || []).some((i) => i.item_status === 'ready');
+    }
+    return false;
+  }).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  if (waiterOrders.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 py-24 text-gray-600">
+        <span className="text-6xl mb-4 opacity-20">🍽️</span>
+        <p className="text-lg font-medium text-gray-500">Nothing to serve yet</p>
+        <p className="text-sm text-gray-600 mt-1">Ready orders appear here the moment kitchen marks them ready.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-3 md:p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+        {waiterOrders.map((order) => {
+          const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+          const readyItems = order.kitchen_mode === 'individual'
+            ? (order.items || []).filter((i) => i.item_status === 'ready')
+            : (order.items || []);
+          const isWholeOrderReady = order.status === 'ready' && order.kitchen_mode !== 'individual';
+
+          return (
+            <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-teal-950/40 ${overdue ? 'border-red-500' : 'border-teal-400'}`}>
+              {/* Header */}
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <span className="font-bold text-white text-xl">
+                    {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
+                  </span>
+                  {order.order_type === 'dine-in' && (
+                    <span className="ml-2 text-xs text-teal-400 font-semibold">{fmtToken(order.daily_order_number, order.order_type)}</span>
+                  )}
+                </div>
+                <span className="text-xs text-teal-300 bg-teal-900/60 px-2 py-0.5 rounded-full font-semibold">
+                  🛎️ READY
+                </span>
+              </div>
+              <p className="text-sm text-gray-300 mb-0.5">{order.customer_name}</p>
+              <p className="text-xs text-gray-500 mb-3">{fmtTime(order.created_at)}</p>
+
+              {/* Ready items */}
+              <div className="space-y-1.5 mb-3">
+                {isWholeOrderReady ? (
+                  (order.items || []).map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 bg-teal-900/30 rounded-lg px-2 py-1.5">
+                      <span className="w-6 h-6 rounded bg-teal-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                      <span className="flex-1 text-sm font-semibold text-teal-100">{item.item_name}</span>
+                    </div>
+                  ))
+                ) : (
+                  readyItems.map((item) => (
+                    <div key={item.id} className="flex items-center gap-2 bg-teal-900/30 rounded-lg px-2 py-1.5">
+                      <span className="w-6 h-6 rounded bg-teal-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                      <span className="flex-1 text-sm font-semibold text-teal-100">{item.item_name}</span>
+                      <button
+                        onClick={() => onItemUpdate(order.id, item.id, 'served')}
+                        className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors flex-shrink-0"
+                      >
+                        Serve
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {order.notes && (
+                <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
+              )}
+
+              {/* Serve All button */}
+              {isWholeOrderReady ? (
+                <button
+                  onClick={() => onAdvance(order)}
+                  className="w-full py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                >
+                  ✅ Mark All Served
+                </button>
+              ) : readyItems.length > 1 && (
+                <button
+                  onClick={async () => {
+                    for (const item of readyItems) {
+                      await onItemUpdate(order.id, item.id, 'served').catch(() => {});
+                    }
+                  }}
+                  className="w-full py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                >
+                  ✅ Serve All {readyItems.length} Items
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -572,7 +563,7 @@ export default function KitchenPage() {
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  const [kotHistory, setKotHistory] = useState({}); // orderId → slips[]
+  const [staffMode, setStaffMode] = useState('kitchen'); // 'kitchen' | 'waiter'
   const [mobileTab, setMobileTab] = useState('pending');
   const now = useTimer();
 
@@ -656,22 +647,9 @@ export default function KitchenPage() {
         return prev.map((o) => (o.id === orderId ? data.order : o));
       });
 
-      // Auto-generate and print KOT when item is marked ready
-      if (status === 'ready') {
-        try {
-          const { data: kotData } = await generateOrderKot(orderId);
-          printKot(kotData.kot, cafe?.name);
-          // Update KOT history cache
-          setKotHistory((prev) => ({
-            ...prev,
-            [orderId]: [...(prev[orderId] || []), kotData.kot],
-          }));
-        } catch {
-          // KOT may already exist for this batch — silent fail, can reprint manually
-        }
-      }
-
-      if (status === 'served' && data.order.kitchen_mode === 'individual') {
+      // Print serving slip when item is marked ready — placed with food at counter
+      // so waiter knows which table/customer to deliver to without asking kitchen
+      if (status === 'ready' && data.order.kitchen_mode === 'individual') {
         printKitchenToken(data.order, cafe?.name, [itemId]);
       }
     } catch (err) {
@@ -797,33 +775,6 @@ export default function KitchenPage() {
     }
   };
 
-  const handleKotPrint = async (orderId) => {
-    try {
-      const { data } = await generateOrderKot(orderId);
-      printKot(data.kot, cafe?.name);
-      setKotHistory((prev) => ({ ...prev, [orderId]: [...(prev[orderId] || []), data.kot] }));
-    } catch {
-      toast.error('Could not generate KOT');
-    }
-  };
-
-  const handleKotReprint = async (orderId) => {
-    try {
-      let slips = kotHistory[orderId];
-      if (!slips) {
-        const { data } = await getKotHistory(orderId);
-        slips = data.slips;
-        setKotHistory((prev) => ({ ...prev, [orderId]: slips }));
-      }
-      if (!slips || slips.length === 0) { toast('No KOT slips yet for this order', { icon: 'ℹ️' }); return; }
-      const last = slips[slips.length - 1];
-      printKot(last, cafe?.name);
-    } catch (err) {
-      if (isPremiumError(err)) return premiumToast('KOT history');
-      toast.error('Could not load KOT history');
-    }
-  };
-
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -892,31 +843,34 @@ export default function KitchenPage() {
           <span className="text-xs text-gray-500 ml-1">{orders.length} active</span>
         </div>
         <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
-          {/* View mode toggle — desktop only */}
-          <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
-            {[
-              { key: 'individual', label: '☰ Individual' },
-              { key: 'combined',   label: '⊞ By Table'   },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => setViewMode(key)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
-                  viewMode === key ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          {/* Staff mode: Kitchen / Waiter */}
+          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+            <button onClick={() => setStaffMode('kitchen')} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${staffMode === 'kitchen' ? 'bg-orange-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>🍳 Kitchen</button>
+            <button onClick={() => setStaffMode('waiter')} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${staffMode === 'waiter' ? 'bg-teal-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
+              🍽️ Waiter
+              {orders.filter(o => o.status === 'ready' || (o.kitchen_mode === 'individual' && (o.items||[]).some(i => i.item_status === 'ready'))).length > 0 && (
+                <span className="ml-1 bg-teal-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  {orders.filter(o => o.status === 'ready' || (o.kitchen_mode === 'individual' && (o.items||[]).some(i => i.item_status === 'ready'))).length}
+                </span>
+              )}
+            </button>
           </div>
-          {/* View mode — mobile icon toggle */}
-          <button
-            onClick={() => setViewMode((v) => v === 'individual' ? 'combined' : 'individual')}
-            title={viewMode === 'individual' ? 'Switch to By Table' : 'Switch to Individual'}
-            className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300"
-          >
-            {viewMode === 'individual' ? '⊞' : '☰'}
-          </button>
+          {/* View mode toggle — kitchen only, desktop */}
+          {staffMode === 'kitchen' && (
+            <>
+              <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+                {[
+                  { key: 'individual', label: '☰ Individual' },
+                  { key: 'combined',   label: '⊞ By Table'   },
+                ].map(({ key, label }) => (
+                  <button key={key} onClick={() => setViewMode(key)} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>{label}</button>
+                ))}
+              </div>
+              <button onClick={() => setViewMode((v) => v === 'individual' ? 'combined' : 'individual')} className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300">
+                {viewMode === 'individual' ? '⊞' : '☰'}
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => setSoundEnabled((s) => !s)}
@@ -945,10 +899,16 @@ export default function KitchenPage() {
         </div>
       </div>
 
-      <KitchenHint />
+      {staffMode === 'kitchen' ? <KitchenHint /> : <WaiterHint />}
 
+      {/* ── Waiter view ── */}
+      {staffMode === 'waiter' && (
+        <WaiterView orders={orders} now={now} onItemUpdate={handleItemUpdate} onAdvance={handleAdvance} />
+      )}
+
+      {/* ── Kitchen KDS (hidden in waiter mode) ── */}
       {/* ── Mobile: horizontal status tabs + single column ── */}
-      <div className="md:hidden flex-1 flex flex-col overflow-hidden min-h-0">
+      <div className={`md:hidden flex-1 flex flex-col overflow-hidden min-h-0 ${staffMode === 'waiter' ? 'hidden' : ''}`}>
         {/* Status tabs */}
         <div className="flex-shrink-0 flex border-b border-gray-800 bg-gray-900 overflow-x-auto">
           {KITCHEN_STATUSES.map((status) => {
@@ -1004,21 +964,18 @@ export default function KitchenPage() {
                 now={now}
                 onAdvance={handleAdvance}
                 onAdvanceAll={handleAdvanceAll}
-                onKotPrint={handleKotPrint}
                 onItemUpdate={handleItemUpdate}
               />
             ));
             return colOrders.map((order) => {
-              const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-              const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-              return <KDSOrderCard key={order.id} order={order} status={mobileTab} now={now} selectedItems={selectedItems} onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} onMoveItem={handleMoveItem} onAcceptOrder={handleAcceptOrder} onRejectOrder={handleRejectOrder} onAcceptItem={handleAcceptItem} onServeSelected={handleServeSelected} onKotPrint={handleKotPrint} onKotReprint={handleKotReprint} onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }} onToggleItem={toggleItemSelection} />;
+              return <KDSOrderCard key={order.id} order={order} status={mobileTab} now={now} selectedItems={selectedItems} onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} onMoveItem={handleMoveItem} onAcceptOrder={handleAcceptOrder} onRejectOrder={handleRejectOrder} onAcceptItem={handleAcceptItem} onServeSelected={handleServeSelected} onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }} onToggleItem={toggleItemSelection} />;
             });
           })()}
         </div>
       </div>
 
       {/* ── Desktop: 4-column KDS board ── */}
-      <div className="hidden md:flex flex-1 gap-0 overflow-hidden min-h-0">
+      <div className={`flex-1 gap-0 overflow-hidden min-h-0 ${staffMode === 'waiter' ? 'hidden' : 'hidden md:flex'}`}>
         {KITCHEN_STATUSES.map((status) => {
           const colOrders = byStatus[status];
           const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
@@ -1070,7 +1027,6 @@ export default function KitchenPage() {
                       now={now}
                       onAdvance={handleAdvance}
                       onAdvanceAll={handleAdvanceAll}
-                      onKotPrint={handleKotPrint}
                       onItemUpdate={handleItemUpdate}
                     />
                   ))
@@ -1089,8 +1045,6 @@ export default function KitchenPage() {
                       onRejectOrder={handleRejectOrder}
                       onAcceptItem={handleAcceptItem}
                       onServeSelected={handleServeSelected}
-                      onKotPrint={handleKotPrint}
-                      onKotReprint={handleKotReprint}
                       onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
                       onToggleItem={toggleItemSelection}
                     />

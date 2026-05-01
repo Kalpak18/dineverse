@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill,
-  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner } from '../../services/api';
+  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot, getLiveTables } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -15,7 +15,7 @@ import { premiumToast, isPremiumError } from '../../utils/premiumToast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
-import { printKot } from '../../utils/printKot';
+import { printKot, printFullKot } from '../../utils/printKot';
 
 const QUICK_REASONS = [
   'Item(s) out of stock',
@@ -26,7 +26,7 @@ const QUICK_REASONS = [
   'Item unavailable today',
 ];
 
-const TABS = { ORDERS: 'orders', BILLS: 'bills', HISTORY: 'history' };
+const TABS = { ORDERS: 'orders', BILLS: 'bills', TABLES: 'tables', HISTORY: 'history' };
 
 function SearchInput({ value, onChange, placeholder }) {
   return (
@@ -59,8 +59,9 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState(null);
+  const [detailOrderId, setDetailOrderId] = useState(null);
   const [activeTab, setActiveTab] = useState(TABS.ORDERS);
+  const [tables, setTables] = useState([]);
   // Cancel with reason
   const [cancelTarget, setCancelTarget] = useState(null);
   // Billing modal — lifted to top level so OrderCard can open it too
@@ -78,13 +79,17 @@ export default function OrdersPage() {
       const { data } = await getOrders({ limit: 200 });
       setOrders(data.orders || []);
     } catch {
-      toast.error('Failed to load orders');
+      toast.error('Could not load orders — check your connection and refresh.');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
+
+  useEffect(() => {
+    getLiveTables().then(r => setTables(r.data.tables || [])).catch(() => {});
+  }, []);
 
   useSocketIO(
     cafe?.id,
@@ -314,13 +319,14 @@ export default function OrdersPage() {
         storageKey="dv_hint_orders"
         title="Orders — manage every order from receipt to payment"
         items={[
-          { icon: '📋', text: 'Orders tab: incoming live orders. Confirm → Prepare → Ready. Orders with status Pending need your attention first.' },
-          { icon: '🧾', text: 'Bills tab: collect payment. Click "Collect Payment" on a table — multiple rounds are combined into one bill automatically.' },
-          { icon: '🕐', text: 'History tab: all paid orders. Search by date range, reprint any bill, or check daily totals.' },
-          { icon: '💬', text: 'Each order has a chat button — reply to customer questions directly from the order card.' },
-          { icon: '❌', text: 'Cancel an order with a reason (item unavailable, duplicate, etc.) — customer sees the cancellation note.' },
+          { icon: '📋', text: 'Orders tab: incoming live orders. Click any order card to open full details (items, prices, actions). Advance status: Confirm → Prepare → Ready → Served.' },
+          { icon: '🧾', text: 'Bills tab: collect payment. Multiple rounds for the same table are combined into one bill automatically.' },
+          { icon: '🍽️', text: 'Tables tab: live floor view showing every table\'s status (empty / reserved / active / ready / served). Click a table to open its order.' },
+          { icon: '🕐', text: 'History tab: all paid orders. Search by date range and reprint any bill.' },
+          { icon: '💬', text: 'Chat button on each order card lets you reply to customers in real time.' },
+          { icon: '📋', text: 'KOT button (cashier) prints a full Kitchen Order Ticket via the printer. Use it to hand-off new orders to kitchen staff.' },
         ]}
-        tip="Keep this page open on your counter device. New orders arrive in real time with a sound alert."
+        tip="Keep this page open on your counter device. New orders appear in real time with a sound alert."
       />
 
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -329,10 +335,11 @@ export default function OrdersPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
         {[
           { key: TABS.ORDERS,  label: 'Orders',  count: orders.filter(isOrdersTabVisible).length },
           { key: TABS.BILLS,   label: 'Bills',   count: billsCount },
+          { key: TABS.TABLES,  label: 'Tables',  count: tables.length },
           { key: TABS.HISTORY, label: 'History', count: historyFilteredCount },
         ].map(({ key, label, count }) => (
           <button
@@ -424,32 +431,27 @@ export default function OrdersPage() {
                     const newChatId = chatOrderId === o.id ? null : o.id;
                     setChatOrderId(newChatId);
                     setUnreadChats((prev) => ({ ...prev, [o.id]: 0 }));
-                    // Fetch message history the first time this order's chat is opened
                     if (newChatId && !chatLoading[o.id]) {
                       setChatLoading((prev) => ({ ...prev, [o.id]: true }));
                       try {
                         const { data } = await getOwnerMessages(o.id);
                         setChatMessages((prev) => {
-                          // Merge HTTP history with socket messages, dedup by id
                           const all = [...(data.messages || []), ...(prev[o.id] || [])];
                           const merged = [...new Map(all.map((m) => [m.id, m])).values()];
                           merged.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
                           return { ...prev, [o.id]: merged };
                         });
-                      } catch {
-                        // Leave whatever socket messages we already have
-                      } finally {
+                      } catch { } finally {
                         setChatLoading((prev) => ({ ...prev, [o.id]: false }));
                       }
                     }
                   }}
                   onOpenBilling={openOrderBilling}
+                  onOpenDetail={() => setDetailOrderId(order.id)}
                   chatOpen={chatOrderId === order.id}
                   chatUnread={unreadChats[order.id] || 0}
                   chatMessages={chatMessages[order.id] || []}
                   chatMessagesLoading={chatLoading[order.id] || false}
-                  expanded={expandedId === order.id}
-                  onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
                   onOrderUpdated={(updated) => setOrders((prev) => prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o))}
                 />
               ))}
@@ -476,10 +478,37 @@ export default function OrdersPage() {
         />
       )}
 
+      {/* ── Tables Tab ── */}
+      {activeTab === TABS.TABLES && (
+        <TablesView
+          tables={tables}
+          orders={orders}
+          onOpenDetail={(order) => setDetailOrderId(order.id)}
+          onOpenBilling={openOrderBilling}
+          onStatusUpdate={handleStatusUpdate}
+          c={(n) => fmtCurrency(n, cafe?.currency)}
+        />
+      )}
+
       {/* ── History Tab ── */}
       {activeTab === TABS.HISTORY && (
         <HistoryView orders={paidOrders} dateRange={historyDateRange} onDateRangeChange={setHistoryDateRange} />
       )}
+
+      {/* ── Order Detail Modal ── */}
+      {detailOrderId && (() => {
+        const detailOrder = orders.find(o => o.id === detailOrderId);
+        return detailOrder ? (
+          <OrderDetailModal
+            order={detailOrder}
+            cafe={cafe}
+            onClose={() => setDetailOrderId(null)}
+            onStatusUpdate={handleStatusUpdate}
+            onOpenBilling={openOrderBilling}
+            onCancelClick={(o) => { setDetailOrderId(null); setCancelTarget(o); }}
+          />
+        ) : null;
+      })()}
 
       {/* ── Billing Modal (shared: Bills tab + OrderCard print) ── */}
       {billingBill && (
@@ -713,11 +742,12 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
   );
 }
 
-function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle, onOrderUpdated }) {
+function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, onOpenDetail, chatOpen, chatUnread, chatMessages, chatMessagesLoading, onOrderUpdated }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const isPremium = cafe?.plan_tier === 'premium';
   const [advancing, setAdvancing] = useState(false);
+  const [kotPrinting, setKotPrinting] = useState(false);
   const statusCfg = STATUS_CONFIG[order.status] || {};
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
@@ -727,8 +757,17 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
     if (!nextStatus || advancing) return;
     setAdvancing(true);
     try { await onStatusUpdate(order.id, nextStatus); }
-    catch { /* toast already shown by handleStatusUpdate */ }
+    catch { }
     finally { setAdvancing(false); }
+  };
+
+  const handleKotPrint = async () => {
+    setKotPrinting(true);
+    try {
+      const { data } = await generateOrderKot(order.id);
+      printFullKot(data.kot, cafe?.name);
+    } catch { toast.error('Could not generate KOT'); }
+    finally { setKotPrinting(false); }
   };
 
   const borderColor = {
@@ -739,20 +778,17 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
     served:    'border-l-green-400',
   }[order.status] || 'border-l-gray-300';
 
-  // In individual mode hide the main "next status" button unless order is still pending (needs confirm)
   const showNextBtn = nextStatus && (!isIndividual || order.status === 'pending');
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 ${borderColor} flex flex-col`}>
-      {/* Card header */}
-      <div className="px-4 pt-4 pb-3">
+      {/* Card header — click to open detail modal */}
+      <div className="px-4 pt-4 pb-3 cursor-pointer hover:bg-gray-50 transition-colors" onClick={onOpenDetail}>
         <div className="flex items-center justify-between mb-2">
           <span className="font-bold text-gray-900 text-sm">{fmtToken(order.daily_order_number, order.order_type)}</span>
           <div className="flex items-center gap-1.5">
             {isIndividual && (
-              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 uppercase tracking-wide">
-                KOT
-              </span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 uppercase tracking-wide">KOT</span>
             )}
             <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
           </div>
@@ -760,20 +796,29 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         <div className="flex items-center gap-1.5">
           <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
           {order.reservation_id && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
-              🔖 Reserved
-            </span>
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">🔖 Reserved</span>
           )}
         </div>
         <p className="text-xs text-gray-400 mt-0.5">
-          {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}
-          {' · '}{fmtTime(order.created_at)}
+          {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}{' · '}{fmtTime(order.created_at)}
         </p>
+        {/* Item preview */}
+        <div className="mt-2 space-y-0.5">
+          {(order.items || []).slice(0, 3).map((item) => (
+            <div key={item.id} className="flex justify-between text-xs text-gray-500">
+              <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
+              <span className="flex-shrink-0">{c(item.subtotal)}</span>
+            </div>
+          ))}
+          {(order.items || []).length > 3 && (
+            <p className="text-xs text-gray-400 italic">+{order.items.length - 3} more…</p>
+          )}
+        </div>
       </div>
 
-      {/* Items — plain list (combined) or per-item KOT rows (individual) */}
-      <div className="px-4 pb-2">
-        {isIndividual ? (
+      {/* Per-item status rows — individual mode, premium plan only */}
+      {isIndividual && isPremium && (
+        <div className="px-4 pb-2">
           <div className="space-y-1">
             {(order.items || []).map((item) => (
               <ItemKotRow
@@ -787,89 +832,45 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
               />
             ))}
           </div>
-        ) : (
-          <div className="space-y-0.5">
-            {(order.items || []).slice(0, expanded ? undefined : 3).map((item) => (
-              <div key={item.id} className="flex justify-between text-xs text-gray-600">
-                <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
-                <span className="flex-shrink-0">{c(item.subtotal)}</span>
-              </div>
-            ))}
-            {!expanded && (order.items || []).length > 3 && (
-              <p className="text-xs text-gray-400 italic">+{order.items.length - 3} more…</p>
-            )}
-          </div>
-        )}
-        {expanded && order.notes && (
-          <p className="text-xs text-amber-600 mt-1.5 italic">📝 {order.notes}</p>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Kitchen mode toggle (premium only — basic stays combined) */}
+      {/* Kitchen mode toggle (premium only) */}
       {isPremium && !['paid', 'cancelled', 'served'].includes(order.status) && (
         <div className="px-4 pb-2 flex items-center justify-between gap-2">
           <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide shrink-0">Kitchen</span>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] font-medium">
-            <button
-              onClick={() => onKitchenModeToggle(order.id, 'combined')}
-              className={`px-2.5 py-1 transition-colors ${!isIndividual ? 'bg-gray-700 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              Combined
-            </button>
-            <button
-              onClick={() => onKitchenModeToggle(order.id, 'individual')}
-              className={`px-2.5 py-1 transition-colors ${isIndividual ? 'bg-purple-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
-            >
-              Individual
-            </button>
+            <button onClick={() => onKitchenModeToggle(order.id, 'combined')} className={`px-2.5 py-1 transition-colors ${!isIndividual ? 'bg-gray-700 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>Combined</button>
+            <button onClick={() => onKitchenModeToggle(order.id, 'individual')} className={`px-2.5 py-1 transition-colors ${isIndividual ? 'bg-purple-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>Individual</button>
           </div>
         </div>
       )}
 
-      {/* Total + toggle */}
-      <div
-        className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
-        onClick={onToggle}
-      >
+      {/* Total row */}
+      <div className="px-4 py-2.5 border-t border-gray-50 flex items-center justify-between">
         <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
-        <span className="text-xs text-gray-400">{expanded ? '▲ less' : '▼ more'}</span>
+        <span className="text-xs text-gray-400 cursor-pointer hover:text-brand-500" onClick={onOpenDetail}>View details →</span>
       </div>
 
       {/* Action buttons */}
-      <div className="px-3 pb-3 pt-2 flex gap-2 mt-auto">
+      <div className="px-3 pb-3 pt-1 flex gap-1.5 mt-auto flex-wrap">
         {showNextBtn && (
-          <button
-            onClick={handleAdvance}
-            disabled={advancing}
-            className="flex-1 py-2 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-xs font-bold transition-colors"
-          >
+          <button onClick={handleAdvance} disabled={advancing} className="flex-1 min-w-[80px] py-2 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-xs font-bold transition-colors">
             {advancing ? '…' : actionLabel}
           </button>
         )}
-        <button
-          onClick={() => onOpenBilling(order)}
-          className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1"
-        >
+        <button onClick={handleKotPrint} disabled={kotPrinting} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors flex-shrink-0 flex items-center gap-1" title="Print KOT">
+          📋 <span>KOT</span>
+        </button>
+        <button onClick={() => onOpenBilling(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1">
           🖨️ <span>Bill</span>
         </button>
-        <button
-          onClick={() => onChatClick(order)}
-          className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 ${
-            chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50 active:bg-gray-100'
-          }`}
-        >
+        <button onClick={() => onChatClick(order)} className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 ${chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           💬 <span>Chat</span>
-          {chatUnread > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-              {chatUnread}
-            </span>
-          )}
+          {chatUnread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{chatUnread}</span>}
         </button>
-        <button
-          onClick={() => onCancelClick(order)}
-          className="px-2.5 py-1.5 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 active:bg-red-100 transition-colors flex-shrink-0 flex items-center gap-1"
-        >
-          ✕ <span>Cancel</span>
+        <button onClick={() => onCancelClick(order)} className="px-2.5 py-1.5 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors flex-shrink-0 flex items-center gap-1">
+          ✕
         </button>
       </div>
 
@@ -1349,6 +1350,9 @@ function BillingModal({ bill, onConfirm, onClose }) {
   // ── Step 2: Receipt ───────────────────────────────────────────
   if (step === 'receipt') {
     const modeLabel = PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
+    const gstRate = parseInt(cafe?.gst_rate ?? 5);
+    const hasGst = !!(cafe?.gst_number) && gstRate > 0 && bill.taxAmount > 0;
+    const hasBreakdownReceipt = hasGst || bill.discountAmount > 0 || bill.tipAmount > 0 || bill.deliveryFee > 0;
     return overlay(
       <div className="p-5 space-y-4">
         <div className="text-center py-2">
@@ -1356,15 +1360,47 @@ function BillingModal({ bill, onConfirm, onClose }) {
           <h3 className="font-bold text-gray-900 text-lg">Payment Collected!</h3>
           <p className="text-sm text-gray-500 mt-0.5">
             {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ Table ${bill.table_number}`}
-            {' · '}{c(bill.total)}
+            {' · '}{modeLabel}
           </p>
-          <p className="text-xs text-gray-400 mt-1">{modeLabel}</p>
-          {paidCash != null && (
-            <p className="text-xs text-gray-400">
-              Cash: {c(paidCash)} · Change: {c(paidCash - bill.total)}
-            </p>
-          )}
         </div>
+
+        {/* Charge breakdown */}
+        <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+          {hasBreakdownReceipt && bill.subtotal > 0 && (
+            <div className="flex justify-between text-gray-500 text-xs">
+              <span>Subtotal</span><span>{c(bill.subtotal)}</span>
+            </div>
+          )}
+          {hasGst && (
+            <>
+              <div className="flex justify-between text-gray-500 text-xs">
+                <span>CGST @ {gstRate / 2}%</span><span>{c(bill.taxAmount / 2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-500 text-xs">
+                <span>SGST @ {gstRate / 2}%</span><span>{c(bill.taxAmount / 2)}</span>
+              </div>
+            </>
+          )}
+          {bill.discountAmount > 0 && (
+            <div className="flex justify-between text-green-600 text-xs">
+              <span>Discount</span><span>− {c(bill.discountAmount)}</span>
+            </div>
+          )}
+          {bill.tipAmount > 0 && (
+            <div className="flex justify-between text-gray-500 text-xs">
+              <span>🙏 Tip (customer)</span><span>{c(bill.tipAmount)}</span>
+            </div>
+          )}
+          {bill.deliveryFee > 0 && (
+            <div className="flex justify-between text-gray-500 text-xs">
+              <span>🛵 Delivery fee</span><span>{c(bill.deliveryFee)}</span>
+            </div>
+          )}
+          <div className={`flex justify-between font-bold text-gray-900 ${hasBreakdownReceipt ? 'pt-1.5 border-t border-gray-200' : ''}`}>
+            <span>Total Paid</span><span>{c(bill.total)}</span>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-2 pt-1">
           <button
             onClick={() => { doPrint(paidMode, paidCash); onClose(); }}
@@ -1596,8 +1632,15 @@ function OwnerChatPanel({ order, messages, loading }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
+  const hasScrolledRef = useRef(false);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  useEffect(() => {
+    if (!bottomRef.current) return;
+    // First render: jump instantly so the panel opens already at the bottom
+    // Subsequent new messages: smooth scroll
+    bottomRef.current.scrollIntoView({ behavior: hasScrolledRef.current ? 'smooth' : 'instant' });
+    hasScrolledRef.current = true;
+  }, [messages]);
 
   const handleSend = async () => {
     const msg = text.trim();
@@ -1818,6 +1861,221 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                   🖨️ Print
                 </button>
               </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Order Detail Modal ───────────────────────────────────────────────────────
+
+function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling, onCancelClick }) {
+  const c = (n) => fmtCurrency(n, cafe?.currency);
+  const [advancing, setAdvancing] = useState(false);
+  const [kotPrinting, setKotPrinting] = useState(false);
+  const statusCfg = STATUS_CONFIG[order.status] || {};
+  const nextStatus = getNextStatus(order.status, order.order_type);
+  const actionLabel = getActionLabel(order.status, order.order_type);
+  const isIndividual = order.kitchen_mode === 'individual';
+  const showNextBtn = nextStatus && (!isIndividual || order.status === 'pending');
+
+  const subtotal       = parseFloat(order.total_amount)    || 0;
+  const taxAmount      = parseFloat(order.tax_amount)      || 0;
+  const discountAmount = parseFloat(order.discount_amount) || 0;
+  const tipAmount      = parseFloat(order.tip_amount)      || 0;
+  const deliveryFee    = parseFloat(order.delivery_fee)    || 0;
+  const total          = parseFloat(order.final_amount || order.total_amount) || 0;
+
+  const handleAdvance = async () => {
+    if (!nextStatus || advancing) return;
+    setAdvancing(true);
+    try { await onStatusUpdate(order.id, nextStatus); onClose(); }
+    catch { }
+    finally { setAdvancing(false); }
+  };
+
+  const handleKotPrint = async () => {
+    setKotPrinting(true);
+    try {
+      const { data } = await generateOrderKot(order.id);
+      printFullKot(data.kot, cafe?.name);
+    } catch { toast.error('Could not generate KOT'); }
+    finally { setKotPrinting(false); }
+  };
+
+  const ITEM_STATUS_BADGE = {
+    pending:   'bg-gray-100 text-gray-500',
+    preparing: 'bg-orange-100 text-orange-700',
+    ready:     'bg-teal-100 text-teal-700',
+    served:    'bg-green-100 text-green-700',
+    cancelled: 'bg-red-100 text-red-500',
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 px-2 pb-4 sm:px-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden max-h-[92vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-900 text-lg">{fmtToken(order.daily_order_number, order.order_type)}</span>
+            <span className={`badge text-xs ${statusCfg.color}`}>{statusCfg.label}</span>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+          <div>
+            <p className="font-semibold text-gray-800 text-base">{order.customer_name}</p>
+            <p className="text-sm text-gray-400 mt-0.5">
+              {order.order_type === 'takeaway' ? '🥡 Takeaway' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ Table ${order.table_number}`}
+              {' · '}{fmtDateTime(order.created_at)}
+            </p>
+            {order.customer_phone && <p className="text-sm text-gray-400">{order.customer_phone}</p>}
+          </div>
+
+          <div>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Items</p>
+            <div className="space-y-1">
+              {(order.items || []).map((item) => (
+                <div key={item.id} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
+                  <span className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0">{item.quantity}</span>
+                  <span className={`flex-1 text-sm font-medium ${item.item_status === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.item_name}</span>
+                  {isIndividual && item.item_status && (
+                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${ITEM_STATUS_BADGE[item.item_status] || 'bg-gray-100 text-gray-500'}`}>
+                      {item.item_status}
+                    </span>
+                  )}
+                  <span className="text-sm font-medium text-gray-700 flex-shrink-0">{c(item.subtotal)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {order.notes && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-sm text-amber-800">📝 {order.notes}</p>
+            </div>
+          )}
+
+          <div className="bg-gray-50 rounded-xl px-4 py-3 space-y-1.5 text-sm">
+            <div className="flex justify-between text-gray-600"><span>Subtotal</span><span>{c(subtotal)}</span></div>
+            {taxAmount > 0 && <div className="flex justify-between text-gray-500"><span>Tax {order.tax_rate > 0 ? `(${order.tax_rate}%)` : ''}</span><span>{c(taxAmount)}</span></div>}
+            {discountAmount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>− {c(discountAmount)}</span></div>}
+            {tipAmount > 0 && <div className="flex justify-between text-gray-500"><span>Tip</span><span>{c(tipAmount)}</span></div>}
+            {deliveryFee > 0 && <div className="flex justify-between text-gray-500"><span>🛵 Delivery fee</span><span>{c(deliveryFee)}</span></div>}
+            <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
+              <span>Total</span><span>{c(total)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 pt-3 border-t border-gray-100 space-y-2 flex-shrink-0">
+          {showNextBtn && (
+            <button onClick={handleAdvance} disabled={advancing} className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white font-bold text-sm transition-colors">
+              {advancing ? 'Updating…' : actionLabel}
+            </button>
+          )}
+          <div className="flex gap-2">
+            <button onClick={handleKotPrint} disabled={kotPrinting} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
+              📋 {kotPrinting ? 'Generating…' : 'Print KOT'}
+            </button>
+            <button onClick={() => { onClose(); onOpenBilling(order); }} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
+              🖨️ Print Bill
+            </button>
+            <button onClick={() => onCancelClick(order)} className="px-4 py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">
+              ✕ Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tables View ──────────────────────────────────────────────────────────────
+
+function TablesView({ tables, orders, onOpenDetail, onOpenBilling, c }) {
+  const todayStr = new Date().toDateString();
+
+  const ordersByTable = useMemo(() => {
+    const map = {};
+    orders.forEach((o) => {
+      if (o.status === 'cancelled' || o.status === 'paid') return;
+      if (o.order_type === 'takeaway' || o.order_type === 'delivery') return;
+      if (new Date(o.created_at).toDateString() !== todayStr) return;
+      if (!map[o.table_number]) map[o.table_number] = [];
+      map[o.table_number].push(o);
+    });
+    return map;
+  }, [orders, todayStr]);
+
+  const TABLE_STATUS_STYLE = {
+    empty:    { bg: 'bg-gray-50 border-gray-200',     label: 'Empty',    dot: 'bg-gray-300',   text: 'text-gray-500'   },
+    reserved: { bg: 'bg-blue-50 border-blue-200',     label: 'Reserved', dot: 'bg-blue-400',   text: 'text-blue-600'   },
+    occupied: { bg: 'bg-orange-50 border-orange-200', label: 'Active',   dot: 'bg-orange-400', text: 'text-orange-600' },
+    ready:    { bg: 'bg-teal-50 border-teal-200',     label: 'Ready',    dot: 'bg-teal-400',   text: 'text-teal-600'   },
+    served:   { bg: 'bg-green-50 border-green-200',   label: 'Served',   dot: 'bg-green-400',  text: 'text-green-600'  },
+  };
+
+  const getTableState = (table) => {
+    const tOrders = ordersByTable[table.table_number] || [];
+    if (tOrders.length === 0) return table.status === 'reserved' ? 'reserved' : 'empty';
+    if (tOrders.every(o => o.status === 'served')) return 'served';
+    if (tOrders.some(o => o.status === 'ready')) return 'ready';
+    return 'occupied';
+  };
+
+  if (tables.length === 0) {
+    return (
+      <div className="card text-center py-16 text-gray-400">
+        <p className="text-4xl mb-2">🍽️</p>
+        <p className="font-medium text-gray-600">No tables set up yet</p>
+        <p className="text-xs mt-1">Go to Tables → Add tables to your layout. Once added, their live status will appear here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-xs text-blue-700 space-y-0.5">
+        <p className="font-semibold">🍽️ Tables — live floor view</p>
+        <p>Each card shows the current table status. <span className="font-medium">Tap a table</span> to open the full order details, advance its status, print KOT, or collect the bill. The <span className="font-medium text-green-700">💵 Bill</span> button appears automatically when a table is ready to pay.</p>
+        <p className="text-blue-500 mt-0.5">Status colours: <span className="text-gray-500 font-medium">grey = empty</span> · <span className="text-blue-600 font-medium">blue = reserved</span> · <span className="text-orange-600 font-medium">orange = active</span> · <span className="text-teal-600 font-medium">teal = food ready</span> · <span className="text-green-600 font-medium">green = served, awaiting bill</span></p>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
+        {tables.map((table) => {
+          const state = getTableState(table);
+          const style = TABLE_STATUS_STYLE[state];
+          const tOrders = ordersByTable[table.table_number] || [];
+          const latestOrder = tOrders[tOrders.length - 1];
+          const total = tOrders.reduce((s, o) => s + parseFloat(o.final_amount || o.total_amount), 0);
+
+          return (
+            <div
+              key={table.id}
+              onClick={() => latestOrder && onOpenDetail(latestOrder)}
+              className={`rounded-2xl border-2 p-3 flex flex-col items-center gap-1.5 transition-all select-none ${style.bg} ${latestOrder ? 'cursor-pointer hover:shadow-md active:scale-95' : 'cursor-default'}`}
+            >
+              <div className="text-xl font-black text-gray-800">{table.table_number}</div>
+              <div className="flex items-center gap-1">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${style.dot}`} />
+                <span className={`text-[10px] font-semibold ${style.text}`}>{style.label}</span>
+              </div>
+              {tOrders.length > 0 && (
+                <>
+                  <p className="text-[10px] text-gray-500 truncate w-full text-center leading-tight">{tOrders[0].customer_name}</p>
+                  <p className="text-xs font-bold text-gray-700">{c(total)}</p>
+                  {tOrders.some(o => o.status === 'served') && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (latestOrder) onOpenBilling(latestOrder); }}
+                      className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-500 text-white hover:bg-green-600 transition-colors"
+                    >
+                      💵 Bill
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           );
         })}

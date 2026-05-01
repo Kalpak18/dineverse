@@ -120,6 +120,72 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
   win.document.close();
 }
 
+/**
+ * printFullKot — prints a full Kitchen Order Ticket for a whole order.
+ * Uses the `kot` object returned by POST /orders/:id/kot.
+ * 80mm thermal format, no prices (kitchen copy).
+ *
+ * @param {object} kot      — { slip_number, table_number, customer_name, items: [{item_name, quantity}] }
+ * @param {string} cafeName — café display name
+ */
+export function printFullKot(kot, cafeName) {
+  const items = Array.isArray(kot.items) ? kot.items : [];
+  const isTakeaway = !kot.table_number;
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  const itemRows = items.map((i) =>
+    `<tr><td class="qty">${i.quantity}</td><td class="name">${escHtml(i.item_name)}</td></tr>`
+  ).join('');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>KOT #${kot.slip_number}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Courier New',monospace; width:80mm; margin:0 auto; padding:5mm 4mm 10mm; background:#fff; color:#000; }
+    .cafe { text-align:center; font-size:11px; font-weight:bold; text-transform:uppercase; letter-spacing:1px; margin-bottom:3px; }
+    .cafe-sub { text-align:center; font-size:9px; color:#555; letter-spacing:1px; text-transform:uppercase; margin-bottom:5px; }
+    .kot-title { background:#000; color:#fff; text-align:center; font-size:11px; font-weight:900;
+                 letter-spacing:3px; text-transform:uppercase; padding:3px 0; margin-bottom:5px; }
+    .order-id { text-align:center; font-size:22px; font-weight:900; letter-spacing:1px; line-height:1.1; }
+    .order-type { text-align:center; font-size:11px; font-weight:bold; margin-bottom:4px; }
+    .info-row { display:flex; justify-content:space-between; font-size:10px; color:#555; margin-bottom:4px; }
+    .sep { border:none; border-top:1px dashed #aaa; margin:4px 0; }
+    table { width:100%; border-collapse:collapse; margin:4px 0; }
+    .qty { width:28px; font-size:18px; font-weight:900; vertical-align:middle; padding:2px 4px 2px 0; }
+    .name { font-size:14px; font-weight:bold; vertical-align:middle; padding:2px 0; }
+    @media print { @page { size:80mm auto; margin:0; } body { padding:3mm 3mm 10mm; } }
+  </style>
+</head>
+<body>
+  <div class="cafe">${escHtml(cafeName || 'Kitchen')}</div>
+  <div class="cafe-sub">Kitchen Order Ticket</div>
+  <div class="kot-title">KOT — SLIP #${kot.slip_number}</div>
+  <div class="order-id">${isTakeaway ? 'TAKEAWAY' : `TABLE ${escHtml(String(kot.table_number))}`}</div>
+  ${kot.customer_name ? `<div class="order-type">${escHtml(kot.customer_name)}</div>` : ''}
+  <div class="info-row"><span>${dateStr}</span><span>${timeStr}</span></div>
+  <hr class="sep"/>
+  <table><tbody>${itemRows}</tbody></table>
+  <hr class="sep"/>
+  <div style="text-align:center;margin-top:8px;">
+    <button onclick="window.print();window.onafterprint=function(){window.close()};"
+      style="font-family:'Courier New',monospace;font-size:12px;font-weight:bold;padding:7px 24px;
+             border:2px solid #000;border-radius:4px;background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
+      PRINT KOT
+    </button>
+  </div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank', 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1');
+  if (w) { w.document.write(html); w.document.close(); }
+  else alert('Pop-up blocked. Allow pop-ups to print KOT.');
+}
+
 function escHtml(str) {
   return String(str || '')
     .replace(/&/g, '&amp;')

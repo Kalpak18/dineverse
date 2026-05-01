@@ -25,7 +25,7 @@ exports.createStaff = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { name, email, password, role } = req.body;
-  const VALID_ROLES = ['cashier', 'kitchen', 'manager'];
+  const VALID_ROLES = ['cashier', 'kitchen', 'manager', 'waiter'];
   const staffRole = VALID_ROLES.includes(role) ? role : 'cashier';
 
   const existing = await db.query(
@@ -68,8 +68,8 @@ exports.updateStaff = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, role, is_active } = req.body;
 
-  const VALID_ROLES = ['cashier', 'kitchen', 'manager'];
-  if (role && !VALID_ROLES.includes(role)) return fail(res, 'role must be cashier, kitchen, or manager');
+  const VALID_ROLES = ['cashier', 'kitchen', 'manager', 'waiter'];
+  if (role && !VALID_ROLES.includes(role)) return fail(res, 'role must be cashier, kitchen, manager, or waiter');
 
   const result = await db.query(
     `UPDATE cafe_staff

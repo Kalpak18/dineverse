@@ -10,9 +10,9 @@ import NavIcon from './NavIcon';
 // All nav items — filtered by role below
 const ALL_NAV = [
   { to: '/owner/dashboard',    label: 'Dashboard',    icon: 'dashboard',    roles: ['owner', 'manager'] },
-  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier', 'waiter'] },
   { to: '/owner/messages',     label: 'Messages',     icon: 'messages',     roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen'] },
+  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen', 'waiter'] },
   { to: '/owner/menu',         label: 'Menu',         icon: 'menu',         roles: ['owner', 'manager'] },
   { to: '/owner/offers',       label: 'Offers',       icon: 'offers',       roles: ['owner', 'manager'] },
   { to: '/owner/reservations', label: 'Reservations', icon: 'reservations', roles: ['owner', 'manager', 'cashier'] },
@@ -35,6 +35,7 @@ const ROLE_BADGE = {
   cashier: { label: 'Cashier',  cls: 'bg-blue-100 text-blue-700' },
   kitchen: { label: 'Kitchen',  cls: 'bg-orange-100 text-orange-700' },
   manager: { label: 'Manager',  cls: 'bg-purple-100 text-purple-700' },
+  waiter:  { label: 'Waiter',   cls: 'bg-teal-100 text-teal-700' },
 };
 
 // Always accessible even when subscription expired (owner only)

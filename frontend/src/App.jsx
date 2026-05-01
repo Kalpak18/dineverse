@@ -66,7 +66,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import InstallBanner from './components/InstallBanner';
 
 // Staff default landing based on role
-const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard' };
+const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/kitchen' };
 
 function CitySlugRedirect() {
   const { slug } = useParams();
