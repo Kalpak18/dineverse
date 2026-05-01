@@ -3,7 +3,9 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme, THEMES } from '../../context/ThemeContext';
 import { subscribeToPush, unsubscribeFromPush, getPushPermission } from '../../utils/webPush';
 import { SOUND_TUNES, playNotificationSound } from '../../hooks/useSocketIO';
-import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute } from '../../services/api';
+import { updateProfile, getOutlets, createOutlet, switchOutlet, deleteCafe, getRouteStatus, connectRoute,
+  getRiders, createRider, updateRider, deleteRider,
+  getDeliveryPlatforms, saveDeliveryPlatform, deleteDeliveryPlatform } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import ImageUpload from '../../components/ImageUpload';
 import MapPicker from '../../components/MapPicker';
@@ -118,6 +120,7 @@ function buildForm(cafe) {
     country:         cafe?.country         || 'India',
     currency:        cafe?.currency        || 'INR',
     delivery_enabled:    cafe?.delivery_enabled    ?? false,
+    delivery_mode:       cafe?.delivery_mode       || 'self',
     delivery_radius_km:  cafe?.delivery_radius_km  ?? 5,
     delivery_fee_base:   cafe?.delivery_fee_base   ?? 0,
     delivery_fee_per_km: cafe?.delivery_fee_per_km ?? 0,
@@ -135,6 +138,13 @@ export default function ProfilePage() {
   const [pushPerm, setPushPerm]   = useState('default');
   const [pushLoading, setPushLoading] = useState(false);
   const [selectedTune, setSelectedTune] = useState(() => localStorage.getItem('dv_sound_tune') || 'classic');
+
+  // Delivery — riders + platforms
+  const [riders, setRiders]           = useState([]);
+  const [platforms, setPlatforms]     = useState([]);
+  const [newRider, setNewRider]       = useState({ name: '', phone: '' });
+  const [newPlatform, setNewPlatform] = useState({ platform: '', api_key: '', display_name: '' });
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
 
   useEffect(() => {
     getPushPermission().then(setPushPerm).catch(() => setPushPerm('unsupported'));
@@ -163,6 +173,12 @@ export default function ProfilePage() {
     if (cafe?.id) setForm(buildForm(cafe));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cafe?.id]);
+
+  useEffect(() => {
+    if (activeTab !== 'delivery') return;
+    getRiders().then(r => setRiders(r.data.riders)).catch(() => {});
+    getDeliveryPlatforms().then(r => setPlatforms(r.data.platforms)).catch(() => {});
+  }, [activeTab]);
 
   // Outlets
   const [outlets, setOutlets]               = useState([]);
@@ -661,55 +677,241 @@ export default function ProfilePage() {
 
       {/* ── DELIVERY TAB ── */}
       {activeTab === 'delivery' && (
-        <div className="card space-y-4">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Delivery Settings</h2>
+        <div className="space-y-4">
 
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-800">Accept delivery orders</p>
-              <p className="text-xs text-gray-400 mt-0.5">Customers can choose Delivery at checkout</p>
+          {/* Enable + zone settings */}
+          <div className="card space-y-4">
+            <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Delivery Settings</h2>
+
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-800">Accept delivery orders</p>
+                <p className="text-xs text-gray-400 mt-0.5">Customers can choose Delivery at checkout</p>
+              </div>
+              <button type="button" onClick={() => setForm((f) => ({ ...f, delivery_enabled: !f.delivery_enabled }))}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.delivery_enabled ? 'bg-brand-500' : 'bg-gray-200'}`}>
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.delivery_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
             </div>
-            <button type="button" onClick={() => setForm((f) => ({ ...f, delivery_enabled: !f.delivery_enabled }))}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${form.delivery_enabled ? 'bg-brand-500' : 'bg-gray-200'}`}>
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${form.delivery_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+
+            {form.delivery_enabled && (
+              <div className="space-y-4 border-t border-gray-100 pt-4">
+                {/* Delivery mode */}
+                <div>
+                  <label className="label">Who handles delivery?</label>
+                  <div className="grid grid-cols-1 gap-2">
+                    {[
+                      { value: 'self',        icon: '🛵', title: 'My own riders',         desc: 'You assign your own delivery staff to each order' },
+                      { value: 'third_party', icon: '📦', title: 'Third-party courier',    desc: 'Dispatch to Dunzo, Porter, Shadowfax, Wefast, etc.' },
+                      { value: 'both',        icon: '🔀', title: 'Both',                   desc: 'Use your own riders or dispatch to a courier — your choice per order' },
+                    ].map(({ value, icon, title, desc }) => (
+                      <label key={value}
+                        className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+                          form.delivery_mode === value ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'
+                        }`}>
+                        <input type="radio" name="delivery_mode" value={value} checked={form.delivery_mode === value}
+                          onChange={() => setForm((f) => ({ ...f, delivery_mode: value }))} className="mt-0.5" />
+                        <span className="text-xl">{icon}</span>
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">{title}</p>
+                          <p className="text-xs text-gray-400">{desc}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Radius (km)</label>
+                    <input type="number" min="0.5" step="0.5" className="input" value={form.delivery_radius_km}
+                      onChange={(e) => setForm((f) => ({ ...f, delivery_radius_km: parseFloat(e.target.value) || 5 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Est. Time (min)</label>
+                    <input type="number" min="5" step="5" className="input" value={form.delivery_est_mins}
+                      onChange={(e) => setForm((f) => ({ ...f, delivery_est_mins: parseInt(e.target.value) || 30 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Base Fee (₹)</label>
+                    <input type="number" min="0" step="1" className="input" value={form.delivery_fee_base}
+                      onChange={(e) => setForm((f) => ({ ...f, delivery_fee_base: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div>
+                    <label className="label">Per-km Fee (₹)</label>
+                    <input type="number" min="0" step="0.5" className="input" value={form.delivery_fee_per_km}
+                      onChange={(e) => setForm((f) => ({ ...f, delivery_fee_per_km: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Min. Order for Delivery (₹)</label>
+                  <input type="number" min="0" step="10" className="input" value={form.delivery_min_order}
+                    onChange={(e) => setForm((f) => ({ ...f, delivery_min_order: parseFloat(e.target.value) || 0 }))} />
+                </div>
+              </div>
+            )}
+
+            <button type="button" disabled={saving} onClick={() => saveTab()} className="btn-primary w-full">
+              {saving ? 'Saving…' : 'Save Delivery Settings'}
             </button>
           </div>
 
-          {form.delivery_enabled && (
-            <div className="space-y-4 border-t border-gray-100 pt-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="label">Radius (km)</label>
-                  <input type="number" min="0.5" step="0.5" className="input" value={form.delivery_radius_km}
-                    onChange={(e) => setForm((f) => ({ ...f, delivery_radius_km: parseFloat(e.target.value) || 5 }))} />
-                </div>
-                <div>
-                  <label className="label">Est. Time (min)</label>
-                  <input type="number" min="5" step="5" className="input" value={form.delivery_est_mins}
-                    onChange={(e) => setForm((f) => ({ ...f, delivery_est_mins: parseInt(e.target.value) || 30 }))} />
-                </div>
-                <div>
-                  <label className="label">Base Fee (₹)</label>
-                  <input type="number" min="0" step="1" className="input" value={form.delivery_fee_base}
-                    onChange={(e) => setForm((f) => ({ ...f, delivery_fee_base: parseFloat(e.target.value) || 0 }))} />
-                </div>
-                <div>
-                  <label className="label">Per-km Fee (₹)</label>
-                  <input type="number" min="0" step="0.5" className="input" value={form.delivery_fee_per_km}
-                    onChange={(e) => setForm((f) => ({ ...f, delivery_fee_per_km: parseFloat(e.target.value) || 0 }))} />
-                </div>
-              </div>
+          {/* Rider pool — shown for self / both modes */}
+          {form.delivery_enabled && ['self', 'both'].includes(form.delivery_mode) && (
+            <div className="card space-y-3">
               <div>
-                <label className="label">Min. Order for Delivery (₹)</label>
-                <input type="number" min="0" step="10" className="input" value={form.delivery_min_order}
-                  onChange={(e) => setForm((f) => ({ ...f, delivery_min_order: parseFloat(e.target.value) || 0 }))} />
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Your Riders</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Add your delivery staff — you'll assign them to orders from the Orders page.</p>
+              </div>
+
+              {/* Rider list */}
+              {riders.length > 0 && (
+                <div className="space-y-2">
+                  {riders.map((r) => (
+                    <div key={r.id} className={`flex items-center justify-between px-3 py-2 rounded-xl border ${r.is_active ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                        {r.phone && <p className="text-xs text-gray-400">{r.phone}</p>}
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await updateRider(r.id, { is_active: !r.is_active });
+                          setRiders((prev) => prev.map((x) => x.id === r.id ? { ...x, is_active: !x.is_active } : x));
+                        }}
+                        className="text-xs text-gray-400 hover:text-red-500 transition-colors px-2 py-1"
+                      >
+                        {r.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add new rider */}
+              <div className="flex gap-2 pt-1">
+                <input type="text" placeholder="Rider name" value={newRider.name}
+                  onChange={(e) => setNewRider((r) => ({ ...r, name: e.target.value }))}
+                  className="input flex-1" />
+                <input type="tel" placeholder="Phone" value={newRider.phone}
+                  onChange={(e) => setNewRider((r) => ({ ...r, phone: e.target.value }))}
+                  className="input w-32" />
+                <button
+                  type="button"
+                  disabled={!newRider.name.trim() || deliveryLoading}
+                  onClick={async () => {
+                    if (!newRider.name.trim()) return;
+                    setDeliveryLoading(true);
+                    try {
+                      const { data } = await createRider(newRider);
+                      setRiders((prev) => [...prev, data.rider]);
+                      setNewRider({ name: '', phone: '' });
+                      toast.success('Rider added');
+                    } catch { toast.error('Failed to add rider'); }
+                    finally { setDeliveryLoading(false); }
+                  }}
+                  className="btn-primary px-4 whitespace-nowrap disabled:opacity-50"
+                >
+                  + Add
+                </button>
               </div>
             </div>
           )}
 
-          <button type="button" disabled={saving} onClick={() => saveTab()} className="btn-primary w-full">
-            {saving ? 'Saving…' : 'Save Delivery Settings'}
-          </button>
+          {/* Third-party platforms — shown for third_party / both modes */}
+          {form.delivery_enabled && ['third_party', 'both'].includes(form.delivery_mode) && (
+            <div className="card space-y-3">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Courier Platforms</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Enter your API key from each platform. You'll pick which one to use per order.</p>
+              </div>
+
+              {/* Configured platforms */}
+              {platforms.length > 0 && (
+                <div className="space-y-2">
+                  {platforms.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between px-3 py-2 rounded-xl border border-gray-200 bg-white">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${p.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
+                        <p className="text-sm font-medium text-gray-800 capitalize">{p.platform}</p>
+                        <span className="text-xs text-gray-400">{p.has_api_key ? '🔑 API key set' : '⚠️ No API key'}</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          await deleteDeliveryPlatform(p.id);
+                          setPlatforms((prev) => prev.filter((x) => x.id !== p.id));
+                          toast('Platform removed');
+                        }}
+                        className="text-xs text-red-400 hover:text-red-600 px-2 py-1"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add platform */}
+              <div className="space-y-2 border-t border-gray-100 pt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="label">Platform</label>
+                    <select className="input" value={newPlatform.platform}
+                      onChange={(e) => setNewPlatform((p) => ({ ...p, platform: e.target.value }))}>
+                      <option value="">Select…</option>
+                      <option value="dunzo">Dunzo</option>
+                      <option value="porter">Porter</option>
+                      <option value="shadowfax">Shadowfax</option>
+                      <option value="wefast">Wefast (Borzo)</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  {newPlatform.platform === 'other' && (
+                    <div>
+                      <label className="label">Name</label>
+                      <input type="text" placeholder="e.g. EKart" className="input"
+                        value={newPlatform.display_name}
+                        onChange={(e) => setNewPlatform((p) => ({ ...p, display_name: e.target.value }))} />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="label">API Key</label>
+                  <input type="password" placeholder="Paste your API key from the platform" className="input"
+                    value={newPlatform.api_key}
+                    onChange={(e) => setNewPlatform((p) => ({ ...p, api_key: e.target.value }))} />
+                </div>
+                <button
+                  type="button"
+                  disabled={!newPlatform.platform || !newPlatform.api_key.trim() || deliveryLoading}
+                  onClick={async () => {
+                    setDeliveryLoading(true);
+                    try {
+                      const { data } = await saveDeliveryPlatform(newPlatform);
+                      setPlatforms((prev) => {
+                        const exists = prev.find((p) => p.platform === data.platform.platform);
+                        return exists ? prev.map((p) => p.platform === data.platform.platform ? data.platform : p) : [...prev, data.platform];
+                      });
+                      setNewPlatform({ platform: '', api_key: '', display_name: '' });
+                      toast.success('Platform saved');
+                    } catch { toast.error('Failed to save platform'); }
+                    finally { setDeliveryLoading(false); }
+                  }}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  Save Platform
+                </button>
+              </div>
+
+              {/* Aggregator note */}
+              <div className="rounded-xl bg-blue-50 border border-blue-200 p-3">
+                <p className="text-xs font-semibold text-blue-700 mb-1">📲 Zomato / Swiggy orders</p>
+                <p className="text-xs text-blue-600">
+                  Zomato and Swiggy orders come in via UrbanPiper integration — their riders handle delivery automatically.
+                  Contact your account manager to get your webhook URL set up.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -258,4 +258,20 @@ export const markAllRead       = ()   => api.patch('/notifications/read-all');
 export const markOneRead       = (id) => api.patch(`/notifications/${id}/read`);
 export const clearNotifications= ()   => api.delete('/notifications');
 
+// ─── Delivery — riders ────────────────────────────────────────
+export const getRiders    = ()           => api.get('/delivery/riders');
+export const createRider  = (data)       => api.post('/delivery/riders', data);
+export const updateRider  = (id, data)   => api.patch(`/delivery/riders/${id}`, data);
+export const deleteRider  = (id)         => api.delete(`/delivery/riders/${id}`);
+export const assignRider  = (orderId, data) => api.post(`/delivery/orders/${orderId}/assign`, data);
+export const updateSelfDeliveryStatus = (orderId, status) =>
+  api.patch(`/delivery/orders/${orderId}/status`, { status });
+
+// ─── Delivery — third-party platforms ────────────────────────
+export const getDeliveryPlatforms  = ()           => api.get('/delivery/platforms');
+export const saveDeliveryPlatform  = (data)       => api.post('/delivery/platforms', data);
+export const deleteDeliveryPlatform= (id)         => api.delete(`/delivery/platforms/${id}`);
+export const dispatchToPartner     = (orderId, platform) =>
+  api.post(`/delivery/orders/${orderId}/dispatch`, { platform });
+
 export default api;

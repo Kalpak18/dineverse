@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill } from '../../services/api';
+import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill,
+  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -449,6 +450,7 @@ export default function OrdersPage() {
                   chatMessagesLoading={chatLoading[order.id] || false}
                   expanded={expandedId === order.id}
                   onToggle={() => setExpandedId(expandedId === order.id ? null : order.id)}
+                  onOrderUpdated={(updated) => setOrders((prev) => prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o))}
                 />
               ))}
             </div>
@@ -505,7 +507,213 @@ export default function OrdersPage() {
 
 // ─── Order Card (Grid Item) ───────────────────────────────────────────────
 
-function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle }) {
+const DELIVERY_STATUS_STEPS = [
+  { key: 'pending',          label: 'Pending',         icon: '🕐' },
+  { key: 'assigned',         label: 'Rider Assigned',  icon: '🛵' },
+  { key: 'picked_up',        label: 'Picked Up',       icon: '📦' },
+  { key: 'out_for_delivery', label: 'On the Way',      icon: '🚀' },
+  { key: 'delivered',        label: 'Delivered',       icon: '✅' },
+];
+
+const DELIVERY_NEXT_STATUS = {
+  assigned: 'picked_up', picked_up: 'out_for_delivery', out_for_delivery: 'delivered',
+};
+
+const PLATFORM_LABELS = { dunzo: 'Dunzo', porter: 'Porter', shadowfax: 'Shadowfax', wefast: 'Wefast' };
+
+function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
+  const { cafe } = useAuth();
+  const [riders, setRiders]           = useState([]);
+  const [platforms, setPlatforms]     = useState([]);
+  const [loading, setLoading]         = useState(false);
+  const [showAssign, setShowAssign]   = useState(false);
+  const [selectedRider, setSelectedRider] = useState('');
+  const [manualName, setManualName]   = useState('');
+  const [manualPhone, setManualPhone] = useState('');
+
+  useEffect(() => {
+    if (['self', 'both'].includes(cafeDeliveryMode)) {
+      getRiders().then(r => setRiders(r.data.riders.filter(x => x.is_active))).catch(() => {});
+    }
+    if (['third_party', 'both'].includes(cafeDeliveryMode)) {
+      getDeliveryPlatforms().then(r => setPlatforms(r.data.platforms.filter(x => x.is_active && x.has_api_key))).catch(() => {});
+    }
+  }, [cafeDeliveryMode]);
+
+  const currentStep = DELIVERY_STATUS_STEPS.findIndex(s => s.key === order.delivery_status);
+  const nextSelfStatus = DELIVERY_NEXT_STATUS[order.delivery_status];
+  const canAssign = !order.delivery_status || order.delivery_status === 'pending';
+  const isSelfManaged = order.delivery_partner === 'self' || (!order.delivery_partner && ['self', 'both'].includes(cafeDeliveryMode));
+
+  const handleAssign = async () => {
+    const riderId    = selectedRider && selectedRider !== '__manual' ? selectedRider : null;
+    const riderName  = riderId ? null : manualName.trim();
+    const riderPhone = riderId ? null : manualPhone.trim();
+    if (!riderId && !riderName) return toast.error('Enter rider name');
+    setLoading(true);
+    try {
+      const { data } = await assignRider(order.id, { rider_id: riderId, rider_name: riderName, rider_phone: riderPhone });
+      onOrderUpdated(data.order);
+      setShowAssign(false);
+      toast.success(`Rider assigned`);
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed to assign rider'); }
+    finally { setLoading(false); }
+  };
+
+  const handleStatusAdvance = async () => {
+    if (!nextSelfStatus) return;
+    setLoading(true);
+    try {
+      const { data } = await updateSelfDeliveryStatus(order.id, nextSelfStatus);
+      onOrderUpdated(data.order);
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed'); }
+    finally { setLoading(false); }
+  };
+
+  const handleDispatch = async (platform) => {
+    setLoading(true);
+    try {
+      const { data } = await dispatchToPartner(order.id, platform);
+      onOrderUpdated(data.order);
+      toast.success(`Dispatched to ${PLATFORM_LABELS[platform] || platform}`);
+    } catch (err) { toast.error(err?.response?.data?.message || 'Dispatch failed'); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="border-t border-gray-100 px-3 pt-3 pb-3 space-y-3">
+      {/* Delivery address */}
+      {order.delivery_address && (
+        <p className="text-xs text-gray-500 flex items-start gap-1">
+          <span>📍</span>
+          <span>{[order.delivery_address, order.delivery_address2, order.delivery_city].filter(Boolean).join(', ')}</span>
+        </p>
+      )}
+
+      {/* Status timeline */}
+      {order.delivery_status && (
+        <div className="flex items-center gap-1 overflow-x-auto pb-1">
+          {DELIVERY_STATUS_STEPS.filter(s => s.key !== 'failed').map((step, idx) => {
+            const done    = idx <= currentStep;
+            const active  = idx === currentStep;
+            return (
+              <div key={step.key} className="flex items-center gap-1 flex-shrink-0">
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-semibold ${
+                  active ? 'bg-brand-500 text-white' : done ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                }`}>
+                  <span>{step.icon}</span><span className="hidden sm:inline">{step.label}</span>
+                </div>
+                {idx < DELIVERY_STATUS_STEPS.length - 2 && (
+                  <span className={`text-[10px] ${done ? 'text-green-400' : 'text-gray-300'}`}>›</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Rider info */}
+      {order.driver_name && (
+        <div className="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+          <span>🛵</span>
+          <span className="font-medium">{order.driver_name}</span>
+          {order.driver_phone && <a href={`tel:${order.driver_phone}`} className="text-brand-500 underline">{order.driver_phone}</a>}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="space-y-2">
+        {/* Self-managed: assign rider */}
+        {canAssign && ['self', 'both'].includes(cafeDeliveryMode) && !order.delivery_partner && (
+          <>
+            {!showAssign ? (
+              <button onClick={() => setShowAssign(true)}
+                className="w-full py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold transition-colors">
+                🛵 Assign Rider
+              </button>
+            ) : (
+              <div className="space-y-2 border border-gray-200 rounded-xl p-3">
+                <p className="text-xs font-semibold text-gray-700">Assign rider</p>
+                {riders.length > 0 && (
+                  <select className="input text-sm" value={selectedRider}
+                    onChange={(e) => setSelectedRider(e.target.value)}>
+                    <option value="">Select from pool…</option>
+                    {riders.map(r => <option key={r.id} value={r.id}>{r.name}{r.phone ? ` · ${r.phone}` : ''}</option>)}
+                    <option value="__manual">Enter manually…</option>
+                  </select>
+                )}
+                {(!riders.length || selectedRider === '__manual') && (
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Rider name" value={manualName}
+                      onChange={e => setManualName(e.target.value)} className="input flex-1 text-sm" />
+                    <input type="tel" placeholder="Phone" value={manualPhone}
+                      onChange={e => setManualPhone(e.target.value)} className="input w-28 text-sm" />
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => setShowAssign(false)} className="flex-1 py-1.5 rounded-lg border border-gray-200 text-gray-500 text-xs">Cancel</button>
+                  <button onClick={handleAssign} disabled={loading}
+                    className="flex-1 py-1.5 rounded-lg bg-brand-500 text-white text-xs font-semibold disabled:opacity-60">
+                    {loading ? '…' : 'Assign'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Self-managed: advance status */}
+        {isSelfManaged && nextSelfStatus && (
+          <button onClick={handleStatusAdvance} disabled={loading}
+            className="w-full py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white text-xs font-semibold transition-colors disabled:opacity-60">
+            {loading ? '…' : `Mark ${DELIVERY_STATUS_STEPS.find(s => s.key === nextSelfStatus)?.label} ${DELIVERY_STATUS_STEPS.find(s => s.key === nextSelfStatus)?.icon}`}
+          </button>
+        )}
+
+        {/* Third-party dispatch */}
+        {canAssign && ['third_party', 'both'].includes(cafeDeliveryMode) && platforms.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {platforms.map(p => (
+              <button key={p.id} onClick={() => handleDispatch(p.platform)} disabled={loading}
+                className="flex-1 py-1.5 px-3 rounded-xl border border-orange-200 text-orange-600 bg-orange-50 hover:bg-orange-100 text-xs font-semibold transition-colors disabled:opacity-60 whitespace-nowrap">
+                📦 Request {PLATFORM_LABELS[p.platform] || p.platform}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Driver tracking link */}
+        {order.delivery_token && (
+          <button
+            onClick={() => {
+              const url = `${window.location.origin}/driver/${order.id}/${order.delivery_token}`;
+              navigator.clipboard.writeText(url).then(() => toast.success('Driver link copied!'), () => toast.error('Copy failed'));
+            }}
+            className="w-full py-1.5 rounded-xl border border-gray-200 text-gray-500 text-xs font-medium hover:bg-gray-50 transition-colors"
+          >
+            📋 Copy Driver Tracking Link
+          </button>
+        )}
+      </div>
+
+      {/* Map */}
+      {cafe?.latitude && order.delivery_lat && (
+        <div className="rounded-xl overflow-hidden">
+          <DeliveryMap
+            cafeLat={parseFloat(cafe.latitude)} cafeLng={parseFloat(cafe.longitude)} cafeLabel={cafe.name || 'Restaurant'}
+            customerLat={parseFloat(order.delivery_lat)} customerLng={parseFloat(order.delivery_lng)}
+            deliveryAddress={order.delivery_address}
+            driverLat={order.driver_lat ? parseFloat(order.driver_lat) : undefined}
+            driverLng={order.driver_lng ? parseFloat(order.driver_lng) : undefined}
+            height="220px"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, chatOpen, chatUnread, chatMessages, chatMessagesLoading, expanded, onToggle, onOrderUpdated }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const isPremium = cafe?.plan_tier === 'premium';
@@ -665,42 +873,13 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </button>
       </div>
 
-      {/* Delivery section — map + driver link (delivery orders only) */}
+      {/* Delivery panel */}
       {order.order_type === 'delivery' && (
-        <div className="border-t border-gray-50 px-3 pt-3 pb-3 space-y-2">
-          {order.delivery_address && (
-            <p className="text-xs text-gray-500">🛵 <span className="font-medium">{order.delivery_address}</span></p>
-          )}
-          {order.delivery_token && (
-            <button
-              onClick={() => {
-                const url = `${window.location.origin}/driver/${order.id}/${order.delivery_token}`;
-                navigator.clipboard.writeText(url).then(
-                  () => toast.success('Driver link copied!'),
-                  () => toast.error('Copy failed')
-                );
-              }}
-              className="w-full py-1.5 rounded-xl border border-orange-200 text-orange-600 text-xs font-semibold hover:bg-orange-50 active:bg-orange-100 transition-colors"
-            >
-              📋 Copy Driver Tracking Link
-            </button>
-          )}
-          {cafe?.latitude && order.delivery_lat && (
-            <div className="rounded-xl overflow-hidden">
-              <DeliveryMap
-                cafeLat={parseFloat(cafe.latitude)}
-                cafeLng={parseFloat(cafe.longitude)}
-                cafeLabel={cafe.name || 'Restaurant'}
-                customerLat={parseFloat(order.delivery_lat)}
-                customerLng={parseFloat(order.delivery_lng)}
-                deliveryAddress={order.delivery_address}
-                driverLat={order.driver_lat ? parseFloat(order.driver_lat) : undefined}
-                driverLng={order.driver_lng ? parseFloat(order.driver_lng) : undefined}
-                height="220px"
-              />
-            </div>
-          )}
-        </div>
+        <DeliveryPanel
+          order={order}
+          cafeDeliveryMode={cafe?.delivery_mode || 'self'}
+          onOrderUpdated={onOrderUpdated}
+        />
       )}
 
       {/* Inline chat panel */}
