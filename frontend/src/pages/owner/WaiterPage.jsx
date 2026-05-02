@@ -95,8 +95,25 @@ export default function WaiterPage() {
     }
   };
 
-  const readyOrders   = orders.filter((o) => o.status === 'ready').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  const activeOrders  = orders.filter((o) => o.status !== 'ready').sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  const byTime = (a, b) => new Date(a.created_at) - new Date(b.created_at);
+
+  // All items ready → waiter can serve the whole order at once
+  const readyOrders = orders
+    .filter((o) => o.status === 'ready')
+    .sort(byTime);
+
+  // Individual KDS mode: some items are ready, others still cooking →
+  // waiter serves only the ready items; cannot mark the whole order done yet
+  const partialOrders = orders
+    .filter((o) => o.status !== 'ready' && o.kitchen_mode === 'individual' &&
+      (o.items || []).some((i) => i.item_status === 'ready'))
+    .sort(byTime);
+
+  // Nothing ready yet — waiter just needs visibility
+  const inKitchenOrders = orders
+    .filter((o) => o.status !== 'ready' &&
+      !(o.kitchen_mode === 'individual' && (o.items || []).some((i) => i.item_status === 'ready')))
+    .sort(byTime);
 
   if (loading) return <LoadingSpinner />;
 
@@ -128,9 +145,14 @@ export default function WaiterPage() {
               {readyOrders.length} ready
             </span>
           )}
-          {activeOrders.length > 0 && (
+          {partialOrders.length > 0 && (
+            <span className="text-xs font-bold bg-orange-700 text-white px-2 py-0.5 rounded-full">
+              {partialOrders.length} partial
+            </span>
+          )}
+          {inKitchenOrders.length > 0 && (
             <span className="text-xs font-medium bg-gray-700 text-gray-300 px-2 py-0.5 rounded-full">
-              {activeOrders.length} in kitchen
+              {inKitchenOrders.length} cooking
             </span>
           )}
           <button onClick={fetchOrders} className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
@@ -210,12 +232,76 @@ export default function WaiterPage() {
             </section>
           )}
 
-          {/* ── In kitchen ── */}
-          {activeOrders.length > 0 && (
+          {/* ── Partial ready (individual KDS — some items at the pass, rest still cooking) ── */}
+          {partialOrders.length > 0 && (
             <section>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 px-1">🍳 In Kitchen ({activeOrders.length})</p>
+              <p className="text-xs font-bold text-orange-400 uppercase tracking-widest mb-2 px-1">⚡ Items Ready — Deliver Now ({partialOrders.length})</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {activeOrders.map((order) => {
+                {partialOrders.map((order) => {
+                  const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+                  const readyItems    = (order.items || []).filter((i) => i.item_status === 'ready');
+                  const cookingItems  = (order.items || []).filter((i) => !['ready','served','cancelled'].includes(i.item_status));
+                  return (
+                    <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-orange-950/30 ${overdue ? 'border-red-500' : 'border-orange-500'}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-white text-xl">
+                          {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
+                        </span>
+                        <span className="text-[10px] text-orange-300 bg-orange-900/60 px-2 py-0.5 rounded-full font-bold">PARTIAL</span>
+                      </div>
+                      {order.customer_name && <p className="text-sm text-gray-300 mb-0.5">{order.customer_name}</p>}
+                      <p className="text-xs text-gray-500 mb-2">{fmtTime(order.created_at)}</p>
+
+                      {readyItems.length > 0 && (
+                        <>
+                          <p className="text-[10px] text-orange-400 font-semibold uppercase mb-1">Deliver now</p>
+                          <div className="space-y-1.5 mb-2">
+                            {readyItems.map((item) => (
+                              <div key={item.id} className="flex items-center gap-2 bg-orange-900/30 rounded-lg px-2 py-1.5">
+                                <span className="w-6 h-6 rounded bg-orange-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
+                                <span className="flex-1 text-sm font-semibold text-orange-100">{item.item_name}</span>
+                                <button
+                                  onClick={() => handleItemServe(order.id, item.id)}
+                                  className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-700 hover:bg-emerald-600 text-white font-bold transition-colors flex-shrink-0"
+                                >
+                                  Serve
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {cookingItems.length > 0 && (
+                        <>
+                          <p className="text-[10px] text-gray-500 font-semibold uppercase mb-1">Still cooking</p>
+                          <div className="space-y-1 mb-2">
+                            {cookingItems.map((item) => (
+                              <div key={item.id} className="flex items-center gap-2 opacity-50">
+                                <span className="text-xs text-gray-600 w-5 text-right">{item.quantity}×</span>
+                                <span className="text-xs text-gray-500">{item.item_name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+
+                      {order.notes && (
+                        <p className="text-xs text-amber-400 mt-1 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* ── In kitchen ── */}
+          {inKitchenOrders.length > 0 && (
+            <section>
+              <p className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 px-1">🍳 In Kitchen ({inKitchenOrders.length})</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {inKitchenOrders.map((order) => {
                   const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
                   const cfg = STATUS_LABEL[order.status] || {};
                   return (
