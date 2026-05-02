@@ -26,9 +26,14 @@ export default function ShiftPage() {
         getCurrentShift(),
         getShifts({ limit: 20 }),
       ]);
-      setShift(cur.data.shift);
-      setHistory(hist.data.shifts);
-    } catch { toast.error('Could not load shift data — check your connection and refresh.'); }
+      setShift(cur.data.shift || null);
+      setHistory(hist.data.shifts || []);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status !== 404) toast.error('Could not reach the server — check your connection.');
+      setShift(null);
+      setHistory([]);
+    }
     finally { setLoading(false); }
   };
 

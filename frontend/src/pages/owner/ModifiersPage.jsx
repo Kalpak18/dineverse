@@ -23,7 +23,7 @@ export default function ModifiersPage() {
     setLoading(true);
     try {
       const { data } = await getModifierGroups();
-      const g = data.data.groups;
+      const g = data.groups || [];
       setGroups(g);
       if (activeGroup) {
         const refreshed = g.find((x) => x.id === activeGroup.id);
@@ -31,7 +31,12 @@ export default function ModifiersPage() {
       } else {
         setActiveGroup(g[0] || null);
       }
-    } catch { toast.error('Could not load add-on groups — check your connection and refresh.'); }
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status !== 404) toast.error('Could not reach the server — check your connection.');
+      setGroups([]);
+      setActiveGroup(null);
+    }
     finally { setLoading(false); }
   };
 
