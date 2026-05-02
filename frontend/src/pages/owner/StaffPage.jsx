@@ -127,9 +127,10 @@ export default function StaffPage() {
         storageKey="dv_hint_staff"
         title="Staff — give your team their own logins with the right level of access"
         items={[
-          { icon: '💰', text: 'Cashier: can see Orders, Bills, Kitchen queue, Reservations, Waitlist. Perfect for counter staff.' },
-          { icon: '🍳', text: 'Kitchen: sees only the Kitchen display. Can update order status (Preparing → Ready).' },
-          { icon: '🧑‍💼', text: 'Manager: sees everything except Billing and Profile — use for shift managers.' },
+          { icon: '💰', text: 'Cashier: Orders, Bills, Messages, Shifts. Accepts orders, collects payment, prints bills.' },
+          { icon: '🍳', text: 'Kitchen: Kitchen display only. Advances orders Confirmed → Preparing → Ready (and per-item in KDS mode).' },
+          { icon: '🍽️', text: 'Waiter: Waiter view only. Marks ready dishes as served once delivered to the table.' },
+          { icon: '🧑‍💼', text: 'Manager: Full access like owner — Orders, Kitchen, Analytics, Menu, Staff, and more.' },
           { icon: '🔐', text: 'Staff log in at the same /owner/login page with their own email + password.' },
           { icon: '🔴', text: 'Deactivate a staff account instantly — they lose access immediately. Re-enable anytime.' },
         ]}

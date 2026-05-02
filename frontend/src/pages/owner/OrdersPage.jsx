@@ -319,12 +319,12 @@ export default function OrdersPage() {
         storageKey="dv_hint_orders"
         title="Orders — manage every order from receipt to payment"
         items={[
-          { icon: '📋', text: 'Orders tab: incoming live orders. Click any order card to open full details (items, prices, actions). Advance status: Confirm → Prepare → Ready → Served.' },
-          { icon: '🧾', text: 'Bills tab: collect payment. Multiple rounds for the same table are combined into one bill automatically.' },
-          { icon: '🍽️', text: 'Tables tab: live floor view showing every table\'s status (empty / reserved / active / ready / served). Click a table to open its order.' },
-          { icon: '🕐', text: 'History tab: all paid orders. Search by date range and reprint any bill.' },
-          { icon: '💬', text: 'Chat button on each order card lets you reply to customers in real time.' },
-          { icon: '📋', text: 'KOT button (cashier) prints a full Kitchen Order Ticket via the printer. Use it to hand-off new orders to kitchen staff.' },
+          { icon: '📋', text: 'Orders tab: live incoming orders. Advance each order: Accept → Preparing → Ready → Served → Bill. Dine-in and delivery go through all steps; takeaway skips Served.' },
+          { icon: '💳', text: 'Prepaid orders (paid online) show a 💳 badge and a "Mark Complete" button — no billing modal needed.' },
+          { icon: '🧾', text: 'Bills tab: collect cash or card payment. Multiple rounds for the same dine-in table are merged into one bill automatically.' },
+          { icon: '🍽️', text: 'Tables tab: live floor view — empty, reserved, active, ready, served. Click a table to open its order.' },
+          { icon: '🕐', text: 'History tab: all paid orders. Filter by date range, search by order number, and reprint any receipt.' },
+          { icon: '💬', text: 'Chat button on each card lets you message the customer in real time (e.g. "Your order is almost ready!").' },
         ]}
         tip="Keep this page open on your counter device. New orders appear in real time with a sound alert."
       />
@@ -781,7 +781,9 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
     served:    'border-l-green-400',
   }[order.status] || 'border-l-gray-300';
 
-  const showNextBtn = nextStatus && (!isIndividual || order.status === 'pending');
+  // Individual mode: kitchen/waiter handle intermediate states; only show
+  // advance button at the bookends — 'pending' (accept) and 'served' (collect payment).
+  const showNextBtn = nextStatus && (!isIndividual || ['pending', 'served'].includes(order.status));
 
   return (
     <div className={`bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 ${borderColor} flex flex-col`}>
@@ -1895,7 +1897,7 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
   const nextStatus = getNextStatus(order.status, order.order_type);
   const actionLabel = getActionLabel(order.status, order.order_type);
   const isIndividual = order.kitchen_mode === 'individual';
-  const showNextBtn = nextStatus && (!isIndividual || order.status === 'pending');
+  const showNextBtn = nextStatus && (!isIndividual || ['pending', 'served'].includes(order.status));
 
   const subtotal       = parseFloat(order.total_amount)    || 0;
   const taxAmount      = parseFloat(order.tax_amount)      || 0;

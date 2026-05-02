@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getOffers, createOffer, updateOffer, deleteOffer } from '../../services/api';
+import { getOffers, createOffer, updateOffer, deleteOffer, getMenuItems } from '../../services/api';
 import { fmtCurrency, currencySymbol } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
@@ -10,15 +10,33 @@ const EMPTY_FORM = {
   name: '', description: '', offer_type: 'percentage', discount_value: '',
   min_order_amount: '', active_from: '', active_until: '',
   active_days: [], combo_price: '', coupon_code: '',
+  combo_items: [],
   is_active: true,
 };
 
-function OfferForm({ initial, onSave, onCancel }) {
+function OfferForm({ initial, onSave, onCancel, menuItems }) {
   const { cafe: _of } = useAuth();
   const sym = currencySymbol(_of?.currency);
   const [form, setForm] = useState(initial || EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const toggleComboItem = (itemId, itemName, itemPrice) => {
+    setForm((f) => {
+      const exists = f.combo_items.find((ci) => ci.menu_item_id === itemId);
+      if (exists) return { ...f, combo_items: f.combo_items.filter((ci) => ci.menu_item_id !== itemId) };
+      return { ...f, combo_items: [...f.combo_items, { menu_item_id: itemId, quantity: 1, item_name: itemName, unit_price: itemPrice }] };
+    });
+  };
+
+  const setComboQty = (itemId, qty) => {
+    setForm((f) => ({
+      ...f,
+      combo_items: f.combo_items.map((ci) =>
+        ci.menu_item_id === itemId ? { ...ci, quantity: Math.max(1, parseInt(qty) || 1) } : ci
+      ),
+    }));
+  };
 
   const toggleDay = (d) =>
     setForm((f) => ({
@@ -33,6 +51,7 @@ function OfferForm({ initial, onSave, onCancel }) {
     if (!form.name.trim()) return toast.error('Offer name is required');
     if (form.offer_type !== 'combo' && !form.discount_value) return toast.error('Discount value is required');
     if (form.offer_type === 'combo' && !form.combo_price) return toast.error('Combo price is required');
+    if (form.offer_type === 'combo' && form.combo_items.length < 2) return toast.error('Select at least 2 items for a combo');
     setSaving(true);
     try {
       const payload = {
@@ -40,6 +59,7 @@ function OfferForm({ initial, onSave, onCancel }) {
         discount_value:   parseFloat(form.discount_value) || 0,
         min_order_amount: parseFloat(form.min_order_amount) || 0,
         combo_price:      form.combo_price ? parseFloat(form.combo_price) : null,
+        combo_items:      form.offer_type === 'combo' ? form.combo_items.map(({ menu_item_id, quantity }) => ({ menu_item_id, quantity })) : null,
         active_from:      form.active_from || null,
         active_until:     form.active_until || null,
         active_days:      form.active_days.length ? form.active_days : null,
@@ -84,6 +104,7 @@ function OfferForm({ initial, onSave, onCancel }) {
             <label className="label">Combo Price ({sym}) *</label>
             <input className="input" type="number" min="1" placeholder="e.g. 250"
               value={form.combo_price} onChange={set('combo_price')} />
+            <p className="text-xs text-gray-400 mt-1">Total price for the whole combo bundle</p>
           </div>
         )}
         <div>
@@ -92,6 +113,53 @@ function OfferForm({ initial, onSave, onCancel }) {
             value={form.min_order_amount} onChange={set('min_order_amount')} />
         </div>
       </div>
+
+      {/* Combo items picker */}
+      {form.offer_type === 'combo' && (
+        <div>
+          <label className="label">Items in this combo * <span className="text-gray-400 font-normal">(select ≥ 2)</span></label>
+          <div className="border border-gray-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
+            {menuItems.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">Add menu items first</p>
+            ) : (
+              menuItems.filter((i) => i.is_available !== false).map((item) => {
+                const selected = form.combo_items.find((ci) => ci.menu_item_id === item.id);
+                return (
+                  <div key={item.id}
+                    className={`flex items-center gap-3 px-3 py-2 border-b border-gray-100 last:border-0 transition-colors ${selected ? 'bg-brand-50' : 'hover:bg-gray-50'}`}
+                  >
+                    <input type="checkbox" checked={!!selected}
+                      onChange={() => toggleComboItem(item.id, item.name, item.price)}
+                      className="w-4 h-4 rounded accent-brand-500 flex-shrink-0" />
+                    <span className="flex-1 text-sm font-medium text-gray-800">{item.name}</span>
+                    <span className="text-xs text-gray-400">{sym}{parseFloat(item.price).toFixed(2)}</span>
+                    {selected && (
+                      <div className="flex items-center gap-1.5 ml-2">
+                        <span className="text-xs text-gray-500">Qty</span>
+                        <input type="number" min="1" value={selected.quantity}
+                          onChange={(e) => setComboQty(item.id, e.target.value)}
+                          className="w-14 text-xs text-center border border-gray-300 rounded-lg px-1 py-0.5 focus:outline-none focus:border-brand-400" />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          {form.combo_items.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {form.combo_items.map((ci) => (
+                <span key={ci.menu_item_id} className="text-xs bg-brand-100 text-brand-700 px-2 py-0.5 rounded-full font-medium">
+                  {ci.item_name} ×{ci.quantity}
+                </span>
+              ))}
+              <span className="text-xs text-gray-400 self-center ml-1">
+                Normal total: {sym}{form.combo_items.reduce((s, ci) => s + (parseFloat(ci.unit_price) || 0) * ci.quantity, 0).toFixed(2)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
@@ -186,6 +254,14 @@ function OfferBadge({ offer }) {
             <span className="text-xs bg-brand-100 text-brand-700 font-bold px-2 py-0.5 rounded-full">{label}</span>
             {!offer.is_active && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Paused</span>}
           </div>
+          {offer.offer_type === 'combo' && offer.combo_items && (() => {
+            const items = typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items;
+            return items.length > 0 && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                {items.map((ci) => `${ci.item_name || 'Item'} ×${ci.quantity}`).join(' + ')}
+              </p>
+            );
+          })()}
           {offer.description && <p className="text-xs text-gray-500 mt-0.5">{offer.description}</p>}
           <p className="text-xs text-gray-400 mt-1">{timeLabel}{dayLabel}{minLabel}</p>
           {offer.coupon_code && (
@@ -215,14 +291,16 @@ export default function OffersPage() {
   const { cafe } = useAuth();
   const sym = currencySymbol(cafe?.currency);
   const [offers, setOffers] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
 
   const load = async () => {
     try {
-      const { data } = await getOffers();
-      setOffers(data.offers);
+      const [offersRes, itemsRes] = await Promise.all([getOffers(), getMenuItems()]);
+      setOffers(offersRes.data.offers);
+      setMenuItems(itemsRes.data.items || []);
     } catch { toast.error('Failed to load offers'); }
     finally { setLoading(false); }
   };
@@ -271,12 +349,25 @@ export default function OffersPage() {
       </div>
 
       {(showForm && !editing) && (
-        <OfferForm onSave={handleCreate} onCancel={() => setShowForm(false)} />
+        <OfferForm menuItems={menuItems} onSave={handleCreate} onCancel={() => setShowForm(false)} />
       )}
 
       {editing && (
         <OfferForm
-          initial={{ ...editing, active_days: editing.active_days || [] }}
+          menuItems={menuItems}
+          initial={{
+            ...editing,
+            active_days: editing.active_days || [],
+            combo_items: (() => {
+              const raw = editing.combo_items
+                ? (typeof editing.combo_items === 'string' ? JSON.parse(editing.combo_items) : editing.combo_items)
+                : [];
+              return raw.map((ci) => {
+                const found = menuItems.find((m) => m.id === ci.menu_item_id);
+                return { ...ci, item_name: found?.name || ci.item_name || '', unit_price: found?.price || ci.unit_price || 0 };
+              });
+            })(),
+          }}
           onSave={handleUpdate}
           onCancel={() => setEditing(null)}
         />
