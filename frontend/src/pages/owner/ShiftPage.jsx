@@ -1,18 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { getCurrentShift, getShifts, openShift, closeShift } from '../../services/api';
 import toast from 'react-hot-toast';
 import { fmtCurrency, fmtDateTime } from '../../utils/formatters';
 import PageHint from '../../components/PageHint';
-
-const api = (path, opts = {}) =>
-  fetch('/api' + path, {
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}`, 'Content-Type': 'application/json' },
-    ...opts,
-  }).then(async (r) => {
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.message || 'Request failed');
-    return data;
-  });
 
 export default function ShiftPage() {
   const { cafe } = useAuth();
@@ -32,8 +23,8 @@ export default function ShiftPage() {
     setLoading(true);
     try {
       const [cur, hist] = await Promise.all([
-        api('/shifts/current'),
-        api('/shifts?limit=20'),
+        getCurrentShift(),
+        getShifts({ limit: 20 }),
       ]);
       setShift(cur.data.shift);
       setHistory(hist.data.shifts);
@@ -46,14 +37,11 @@ export default function ShiftPage() {
   const handleOpen = async () => {
     setOpening(true);
     try {
-      const data = await api('/shifts/open', {
-        method: 'POST',
-        body: JSON.stringify({ opening_balance: parseFloat(openBal) || 0, notes }),
-      });
-      setShift(data.data.shift);
+      const { data } = await openShift({ opening_balance: parseFloat(openBal) || 0, notes });
+      setShift(data.shift);
       setOpenBal(''); setNotes('');
       toast.success('Shift opened');
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(e.response?.data?.message || e.message); }
     finally { setOpening(false); }
   };
 
@@ -61,15 +49,12 @@ export default function ShiftPage() {
     if (!closeBal && closeBal !== '0') return toast.error('Enter closing cash balance');
     setClosing(true);
     try {
-      const data = await api('/shifts/close', {
-        method: 'POST',
-        body: JSON.stringify({ closing_balance: parseFloat(closeBal) || 0, notes }),
-      });
+      const { data } = await closeShift({ closing_balance: parseFloat(closeBal) || 0, notes });
       setShift(null);
-      setHistory((prev) => [data.data.shift, ...prev]);
+      setHistory((prev) => [data.shift, ...prev]);
       setCloseBal(''); setNotes('');
       toast.success('Shift closed');
-    } catch (e) { toast.error(e.message); }
+    } catch (e) { toast.error(e.response?.data?.message || e.message); }
     finally { setClosing(false); }
   };
 
