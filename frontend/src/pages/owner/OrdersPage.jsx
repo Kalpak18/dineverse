@@ -750,7 +750,10 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
   const [kotPrinting, setKotPrinting] = useState(false);
   const statusCfg = STATUS_CONFIG[order.status] || {};
   const nextStatus = getNextStatus(order.status, order.order_type);
-  const actionLabel = getActionLabel(order.status, order.order_type);
+  const rawActionLabel = getActionLabel(order.status, order.order_type);
+  const actionLabel = order.payment_verified && (nextStatus === 'paid' || order.status === 'served')
+    ? '✓ Mark Complete'
+    : rawActionLabel;
   const isIndividual = order.kitchen_mode === 'individual';
 
   const handleAdvance = async () => {
@@ -795,6 +798,9 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </div>
         <div className="flex items-center gap-1.5">
           <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
+          {order.payment_verified && order.status !== 'paid' && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">💳 Prepaid</span>
+          )}
           {order.reservation_id && (
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">🔖 Reserved</span>
           )}
@@ -864,6 +870,12 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </button>
         {order.status === 'paid' ? (
           <span className="px-2.5 py-1.5 rounded-xl border border-green-200 text-green-600 text-xs font-medium flex-shrink-0 flex items-center gap-1">✓ Paid</span>
+        ) : order.payment_verified ? (
+          <button onClick={async () => { setAdvancing(true); try { await onStatusUpdate(order.id, 'paid'); } catch { } finally { setAdvancing(false); } }}
+            disabled={advancing}
+            className="px-2.5 py-1.5 rounded-xl border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 disabled:opacity-60">
+            💳 <span>Mark Complete</span>
+          </button>
         ) : (
           <button onClick={() => onOpenBilling(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1">
             🖨️ <span>Bill</span>

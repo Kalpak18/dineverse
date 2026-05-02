@@ -464,19 +464,21 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
 
-  // Fetch current status to enforce state-machine transitions
+  // Fetch current status + payment flag to enforce state-machine transitions
   const currentRow = await db.query(
-    'SELECT status FROM orders WHERE id = $1 AND cafe_id = $2',
+    'SELECT status, payment_verified FROM orders WHERE id = $1 AND cafe_id = $2',
     [id, req.cafeId]
   );
   if (currentRow.rows.length === 0) return fail(res, 'Order not found', 404);
-  const currentStatus = currentRow.rows[0].status;
+  const { status: currentStatus, payment_verified: isPrepaid } = currentRow.rows[0];
 
+  // Prepaid orders (Razorpay already charged) may be completed from any active state —
+  // staff don't need to open the billing modal; they just mark it done.
   const TRANSITIONS = {
-    pending:   ['confirmed', 'cancelled'],
-    confirmed: ['preparing', 'cancelled'],
-    preparing: ['ready', 'cancelled'],
-    ready:     ['served'],
+    pending:   ['confirmed', 'cancelled', ...(isPrepaid ? ['paid'] : [])],
+    confirmed: ['preparing', 'cancelled', ...(isPrepaid ? ['paid'] : [])],
+    preparing: ['ready',    'cancelled', ...(isPrepaid ? ['paid'] : [])],
+    ready:     ['served',                ...(isPrepaid ? ['paid'] : [])],
     served:    ['paid'],
     paid:      [],
     cancelled: [],
@@ -1015,10 +1017,11 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
       return fail(res, 'Payment verification temporarily unavailable. Please try again in a moment.', 503);
     }
 
-    // Mark paid inside the transaction so the lock is held until commit
+    // Mark payment received but keep order in the active queue so kitchen can fulfil it.
+    // status stays 'confirmed' — staff marks it 'served'/'paid' once food is delivered.
     const updated = await payClient.query(
       `UPDATE orders
-       SET status = 'paid', payment_id = $1, payment_verified = true, updated_at = NOW()
+       SET status = 'confirmed', payment_id = $1, payment_verified = true, updated_at = NOW()
        WHERE id = $2
        RETURNING id, order_number,
                  COALESCE(daily_order_number, order_number) AS daily_order_number,
@@ -1036,11 +1039,11 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     payClient.release();
   }
 
-  // Log the paid event so analytics can track orders that skip 'served' (e.g. online payment)
+  // Audit: log the prepaid event
   db.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
-     VALUES ($1, $2, 'paid', 'system', 'Razorpay')`,
-    [id, updatedOrder.status === 'paid' ? null : updatedOrder.status]
+     VALUES ($1, $2, 'confirmed', 'system', 'Razorpay — prepaid')`,
+    [id, 'pending']
   ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
 
   // Credit loyalty points (fire-and-forget)
