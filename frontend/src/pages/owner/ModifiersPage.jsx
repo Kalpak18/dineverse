@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
+import PageHint from '../../components/PageHint';
 import {
   getModifierGroups, createModifierGroup, updateModifierGroup, deleteModifierGroup,
   createModifierOption, updateModifierOption, deleteModifierOption,
@@ -30,7 +31,7 @@ export default function ModifiersPage() {
       } else {
         setActiveGroup(g[0] || null);
       }
-    } catch { toast.error('Failed to load modifier groups'); }
+    } catch { toast.error('Could not load add-on groups — check your connection and refresh.'); }
     finally { setLoading(false); }
   };
 
@@ -126,6 +127,18 @@ export default function ModifiersPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-4">
+      <PageHint
+        storageKey="dv_hint_modifiers"
+        title="Add-ons — let customers customise orders with sizes, extras, and options"
+        items={[
+          { icon: '➕', text: 'Create a Modifier Group first (e.g. "Size", "Add-ons", "Spice Level"), then add options inside it (e.g. Small / Medium / Large with prices).' },
+          { icon: '💰', text: 'Each option can have an extra charge. Leave it at ₹0 for free choices like spice preference.' },
+          { icon: '✅', text: '"Required" groups force the customer to choose before they can add to cart (e.g. must pick a size). Optional groups are shown but skippable.' },
+          { icon: '🔗', text: 'After creating groups here, go to Menu → edit a menu item → Modifier Groups to attach them to specific items.' },
+          { icon: '📱', text: 'Customers see the options when adding items to cart. Selected extras appear on the order card and KOT.' },
+        ]}
+        tip='Start simple: "Size" (Small +₹0 / Regular +₹20 / Large +₹40) and "Add-ons" (Extra Cheese +₹30, Extra Sauce +₹10). You can add more groups later.'
+      />
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Modifier Groups</h1>

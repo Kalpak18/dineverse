@@ -265,6 +265,14 @@ export default function NavIcon({ name, className = 'w-[18px] h-[18px] flex-shri
         </svg>
       );
 
+    case 'waiter':
+      return (
+        <svg {...p}>
+          <path d="M12 2a2 2 0 110 4 2 2 0 010-4z" />
+          <path d="M4 10h16M4 10a8 8 0 0016 0M12 14v6M9 20h6" />
+        </svg>
+      );
+
     default:
       return null;
   }

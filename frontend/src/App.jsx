@@ -47,6 +47,7 @@ import MessagesPage from './pages/owner/MessagesPage';
 import ShiftPage from './pages/owner/ShiftPage';
 import LoyaltyPage from './pages/owner/LoyaltyPage';
 import ModifiersPage from './pages/owner/ModifiersPage';
+import WaiterPage from './pages/owner/WaiterPage';
 
 // Admin pages
 import AdminLoginPage from './pages/admin/AdminLoginPage';
@@ -66,7 +67,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 import InstallBanner from './components/InstallBanner';
 
 // Staff default landing based on role
-const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/kitchen' };
+const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/waiter' };
 
 function CitySlugRedirect() {
   const { slug } = useParams();
@@ -190,6 +191,7 @@ export default function App() {
         <Route path="shift" element={<ShiftPage />} />
         <Route path="loyalty" element={<LoyaltyPage />} />
         <Route path="modifiers" element={<ModifiersPage />} />
+        <Route path="waiter" element={<WaiterPage />} />
         <Route path="profile" element={<ProfilePage />} />
       </Route>
 

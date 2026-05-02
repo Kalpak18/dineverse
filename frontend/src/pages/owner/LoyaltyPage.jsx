@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { fmtCurrency, fmtDateTime } from '../../utils/formatters';
 import { useAuth } from '../../context/AuthContext';
+import PageHint from '../../components/PageHint';
 import {
   getLoyaltyProgram, saveLoyaltyProgram,
   getLoyaltyCustomers, adjustLoyaltyPoints, getLoyaltyTransactions,
@@ -20,6 +21,19 @@ export default function LoyaltyPage() {
         <h1 className="text-xl font-bold text-gray-900">Loyalty Program</h1>
         <span className="text-2xl">🎁</span>
       </div>
+
+      <PageHint
+        storageKey="dv_hint_loyalty"
+        title="Loyalty — reward repeat customers and bring them back more often"
+        items={[
+          { icon: '🎁', text: 'Customers earn points on every paid order automatically. They can redeem points for a discount on future visits.' },
+          { icon: '⚙️', text: 'Program tab: set how many points per ₹1 spent, the rupee value per point, and a max redeem % to protect your margins.' },
+          { icon: '👥', text: 'Customers tab: see each member\'s point balance. Use "Adjust" to manually credit/deduct points (e.g. for a complaint or birthday gift).' },
+          { icon: '📋', text: 'Transactions tab: search by phone to see a customer\'s full earn and redeem history.' },
+          { icon: '🔄', text: 'Points are awarded automatically when cashier marks an order paid — no manual step needed at the counter.' },
+        ]}
+        tip="Simple rule that works: ₹1 = 1 point, 100 points = ₹10 off. Easy for customers to understand and motivating enough to return."
+      />
 
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
         {TABS.map((t) => (
@@ -172,7 +186,7 @@ function CustomersTab({ c }) {
     try {
       const { data } = await getLoyaltyCustomers({ search: q, limit: 50 });
       setCustomers(data.data.customers);
-    } catch { toast.error('Failed to load customers'); }
+    } catch { toast.error('Could not load loyalty members — check your connection and try again.'); }
     finally { setLoading(false); }
   };
 

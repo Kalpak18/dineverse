@@ -14,7 +14,7 @@ function isValidIdentifier(val) {
   return false;
 }
 
-const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/kitchen' };
+const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/waiter' };
 
 export default function LoginPage() {
   const { login, role, staffRole } = useAuth();

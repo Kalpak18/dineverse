@@ -304,20 +304,6 @@ function KitchenHint() {
   );
 }
 
-function WaiterHint() {
-  const [open, setOpen] = useState(() => !localStorage.getItem('dv_hint_waiter'));
-  if (!open) return null;
-  return (
-    <div className="bg-teal-900/60 border-b border-teal-800 px-4 py-3 flex items-start gap-3 text-sm text-teal-200 flex-shrink-0">
-      <span className="text-teal-300 flex-shrink-0 mt-0.5">💡</span>
-      <div className="flex-1 space-y-1">
-        <p><strong className="text-white">Waiter View</strong> — shows food that's ready at the pass and waiting to be delivered.</p>
-        <p className="text-xs text-teal-300">Orders appear here the moment kitchen marks them ready. Tap <strong>Serve</strong> on each dish once it's placed on the table, or use <strong>Mark All Served</strong> to clear the whole order at once.</p>
-      </div>
-      <button onClick={() => { localStorage.setItem('dv_hint_waiter', '1'); setOpen(false); }} className="text-teal-600 hover:text-teal-400 text-lg leading-none flex-shrink-0">×</button>
-    </div>
-  );
-}
 
 
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate, onMoveItem,
@@ -443,113 +429,6 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
   );
 }
 
-// ─── Waiter View ──────────────────────────────────────────────
-// Shows ready orders/items for waiters to pick up and serve.
-function WaiterView({ orders, now, onItemUpdate, onAdvance }) {
-  // Show orders that have at least one ready item, or whole order status = ready
-  const waiterOrders = orders.filter((o) => {
-    if (o.status === 'ready') return true;
-    if (o.kitchen_mode === 'individual') {
-      return (o.items || []).some((i) => i.item_status === 'ready');
-    }
-    return false;
-  }).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-
-  if (waiterOrders.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 py-24 text-gray-600">
-        <span className="text-6xl mb-4 opacity-20">🍽️</span>
-        <p className="text-lg font-medium text-gray-500">Nothing to serve yet</p>
-        <p className="text-sm text-gray-600 mt-1">Ready orders appear here the moment kitchen marks them ready.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex-1 overflow-y-auto p-3 md:p-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {waiterOrders.map((order) => {
-          const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
-          const readyItems = order.kitchen_mode === 'individual'
-            ? (order.items || []).filter((i) => i.item_status === 'ready')
-            : (order.items || []);
-          const isWholeOrderReady = order.status === 'ready' && order.kitchen_mode !== 'individual';
-
-          return (
-            <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-teal-950/40 ${overdue ? 'border-red-500' : 'border-teal-400'}`}>
-              {/* Header */}
-              <div className="flex items-center justify-between mb-2">
-                <div>
-                  <span className="font-bold text-white text-xl">
-                    {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
-                  </span>
-                  {order.order_type === 'dine-in' && (
-                    <span className="ml-2 text-xs text-teal-400 font-semibold">{fmtToken(order.daily_order_number, order.order_type)}</span>
-                  )}
-                </div>
-                <span className="text-xs text-teal-300 bg-teal-900/60 px-2 py-0.5 rounded-full font-semibold">
-                  🛎️ READY
-                </span>
-              </div>
-              <p className="text-sm text-gray-300 mb-0.5">{order.customer_name}</p>
-              <p className="text-xs text-gray-500 mb-3">{fmtTime(order.created_at)}</p>
-
-              {/* Ready items */}
-              <div className="space-y-1.5 mb-3">
-                {isWholeOrderReady ? (
-                  (order.items || []).map((item) => (
-                    <div key={item.id} className="flex items-center gap-2 bg-teal-900/30 rounded-lg px-2 py-1.5">
-                      <span className="w-6 h-6 rounded bg-teal-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                      <span className="flex-1 text-sm font-semibold text-teal-100">{item.item_name}</span>
-                    </div>
-                  ))
-                ) : (
-                  readyItems.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2 bg-teal-900/30 rounded-lg px-2 py-1.5">
-                      <span className="w-6 h-6 rounded bg-teal-800 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                      <span className="flex-1 text-sm font-semibold text-teal-100">{item.item_name}</span>
-                      <button
-                        onClick={() => onItemUpdate(order.id, item.id, 'served')}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition-colors flex-shrink-0"
-                      >
-                        Serve
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {order.notes && (
-                <p className="text-xs text-amber-400 mb-2 bg-amber-950/30 rounded px-2 py-1">📝 {order.notes}</p>
-              )}
-
-              {/* Serve All button */}
-              {isWholeOrderReady ? (
-                <button
-                  onClick={() => onAdvance(order)}
-                  className="w-full py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                >
-                  ✅ Mark All Served
-                </button>
-              ) : readyItems.length > 1 && (
-                <button
-                  onClick={async () => {
-                    for (const item of readyItems) {
-                      await onItemUpdate(order.id, item.id, 'served').catch(() => {});
-                    }
-                  }}
-                  className="w-full py-2 rounded-lg text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
-                >
-                  ✅ Serve All {readyItems.length} Items
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export default function KitchenPage() {
   const { cafe } = useAuth();
@@ -563,7 +442,6 @@ export default function KitchenPage() {
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  const [staffMode, setStaffMode] = useState('kitchen'); // 'kitchen' | 'waiter'
   const [mobileTab, setMobileTab] = useState('pending');
   const now = useTimer();
 
@@ -843,34 +721,18 @@ export default function KitchenPage() {
           <span className="text-xs text-gray-500 ml-1">{orders.length} active</span>
         </div>
         <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
-          {/* Staff mode: Kitchen / Waiter */}
-          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
-            <button onClick={() => setStaffMode('kitchen')} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${staffMode === 'kitchen' ? 'bg-orange-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>🍳 Kitchen</button>
-            <button onClick={() => setStaffMode('waiter')} className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${staffMode === 'waiter' ? 'bg-teal-700 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
-              🍽️ Waiter
-              {orders.filter(o => o.status === 'ready' || (o.kitchen_mode === 'individual' && (o.items||[]).some(i => i.item_status === 'ready'))).length > 0 && (
-                <span className="ml-1 bg-teal-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                  {orders.filter(o => o.status === 'ready' || (o.kitchen_mode === 'individual' && (o.items||[]).some(i => i.item_status === 'ready'))).length}
-                </span>
-              )}
-            </button>
+          {/* View mode toggle — desktop */}
+          <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+            {[
+              { key: 'individual', label: '☰ Individual' },
+              { key: 'combined',   label: '⊞ By Table'   },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => setViewMode(key)} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>{label}</button>
+            ))}
           </div>
-          {/* View mode toggle — kitchen only, desktop */}
-          {staffMode === 'kitchen' && (
-            <>
-              <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
-                {[
-                  { key: 'individual', label: '☰ Individual' },
-                  { key: 'combined',   label: '⊞ By Table'   },
-                ].map(({ key, label }) => (
-                  <button key={key} onClick={() => setViewMode(key)} className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>{label}</button>
-                ))}
-              </div>
-              <button onClick={() => setViewMode((v) => v === 'individual' ? 'combined' : 'individual')} className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300">
-                {viewMode === 'individual' ? '⊞' : '☰'}
-              </button>
-            </>
-          )}
+          <button onClick={() => setViewMode((v) => v === 'individual' ? 'combined' : 'individual')} className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300">
+            {viewMode === 'individual' ? '⊞' : '☰'}
+          </button>
 
           <button
             onClick={() => setSoundEnabled((s) => !s)}
@@ -899,16 +761,10 @@ export default function KitchenPage() {
         </div>
       </div>
 
-      {staffMode === 'kitchen' ? <KitchenHint /> : <WaiterHint />}
+      <KitchenHint />
 
-      {/* ── Waiter view ── */}
-      {staffMode === 'waiter' && (
-        <WaiterView orders={orders} now={now} onItemUpdate={handleItemUpdate} onAdvance={handleAdvance} />
-      )}
-
-      {/* ── Kitchen KDS (hidden in waiter mode) ── */}
       {/* ── Mobile: horizontal status tabs + single column ── */}
-      <div className={`md:hidden flex-1 flex flex-col overflow-hidden min-h-0 ${staffMode === 'waiter' ? 'hidden' : ''}`}>
+      <div className="md:hidden flex-1 flex flex-col overflow-hidden min-h-0">
         {/* Status tabs */}
         <div className="flex-shrink-0 flex border-b border-gray-800 bg-gray-900 overflow-x-auto">
           {KITCHEN_STATUSES.map((status) => {
@@ -975,7 +831,7 @@ export default function KitchenPage() {
       </div>
 
       {/* ── Desktop: 4-column KDS board ── */}
-      <div className={`flex-1 gap-0 overflow-hidden min-h-0 ${staffMode === 'waiter' ? 'hidden' : 'hidden md:flex'}`}>
+      <div className="flex-1 gap-0 overflow-hidden min-h-0 hidden md:flex">
         {KITCHEN_STATUSES.map((status) => {
           const colOrders = byStatus[status];
           const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };

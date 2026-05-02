@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { fmtCurrency, fmtDateTime } from '../../utils/formatters';
+import PageHint from '../../components/PageHint';
 
 const api = (path, opts = {}) =>
   fetch('/api' + path, {
@@ -36,7 +37,7 @@ export default function ShiftPage() {
       ]);
       setShift(cur.data.shift);
       setHistory(hist.data.shifts);
-    } catch { toast.error('Failed to load shift data'); }
+    } catch { toast.error('Could not load shift data — check your connection and refresh.'); }
     finally { setLoading(false); }
   };
 
@@ -76,6 +77,18 @@ export default function ShiftPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-4 space-y-4">
+      <PageHint
+        storageKey="dv_hint_shift"
+        title="Shift — track daily cash flow and reconcile your till at end of service"
+        items={[
+          { icon: '🟢', text: 'Open a shift at the start of service by entering your opening cash float (e.g. ₹500). This is the starting cash in your drawer.' },
+          { icon: '💰', text: 'During service the shift tracks live revenue, order count, and cash sales automatically as orders are paid.' },
+          { icon: '🔒', text: 'At end of day: count the cash in your till, enter it as "Closing Cash", then close the shift. A full summary is generated.' },
+          { icon: '📊', text: 'Shift History shows all past shifts — click any row to see a breakdown by payment mode (Cash / UPI / Card) and the cash variance.' },
+          { icon: '⚠️', text: 'Cash Variance = Closing Cash − Expected Cash. Negative means cash is missing; positive means overage. Investigate any large gaps.' },
+        ]}
+        tip="Run one shift per service day. Open when you start taking orders, close when the last bill is paid. This gives you an accurate daily reconciliation."
+      />
       <h1 className="text-xl font-bold text-gray-900">Cash Register</h1>
 
       {/* Current shift status */}

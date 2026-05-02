@@ -10,9 +10,10 @@ import NavIcon from './NavIcon';
 // All nav items — filtered by role below
 const ALL_NAV = [
   { to: '/owner/dashboard',    label: 'Dashboard',    icon: 'dashboard',    roles: ['owner', 'manager'] },
-  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier', 'waiter'] },
+  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/waiter',       label: 'Waiter',       icon: 'waiter',       roles: ['owner', 'manager', 'waiter'] },
   { to: '/owner/messages',     label: 'Messages',     icon: 'messages',     roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen', 'waiter'] },
+  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen'] },
   { to: '/owner/menu',         label: 'Menu',         icon: 'menu',         roles: ['owner', 'manager'] },
   { to: '/owner/offers',       label: 'Offers',       icon: 'offers',       roles: ['owner', 'manager'] },
   { to: '/owner/reservations', label: 'Reservations', icon: 'reservations', roles: ['owner', 'manager', 'cashier'] },
