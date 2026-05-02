@@ -412,7 +412,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
       `SELECT o.id, o.order_number,
               COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
               o.customer_name, o.customer_phone, o.table_number,
-              o.order_type, o.status, o.kitchen_mode,
+              o.order_type, o.status, o.kitchen_mode, o.accepted,
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
               o.payment_verified, o.cancellation_reason,
@@ -841,7 +841,7 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
               o.delivery_phone, o.delivery_instructions, o.delivery_status,
               o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason,
-              o.kitchen_mode
+              o.kitchen_mode, o.accepted
        FROM orders o WHERE o.id = $1${cafeFilter}`,
       params
     ),
