@@ -10,7 +10,7 @@ const { sendPasswordResetEmail, sendBroadcastEmail } = require('../services/emai
 const { notify } = require('../services/notificationService');
 
 const generateAdminToken = (adminId) =>
-  jwt.sign({ adminId, role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  jwt.sign({ adminId, role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
 // ─── POST /api/admin/setup (one-time, only when no admins exist) ─
 exports.setup = asyncHandler(async (req, res) => {

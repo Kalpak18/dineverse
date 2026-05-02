@@ -62,9 +62,9 @@ export default function CartPage() {
   });
 
   const isDelivery = session?.order_type === 'delivery';
-  const deliveryFeeBase = parseFloat(session?.delivery_fee_base || 0);
-  const deliveryEstMins = parseInt(session?.delivery_est_mins || 30);
-  const deliveryMinOrder = parseFloat(session?.delivery_min_order || 0);
+  const deliveryFeeBase  = Math.max(0, parseFloat(session?.delivery_fee_base  ?? 0) || 0);
+  const deliveryEstMins  = parseInt(session?.delivery_est_mins || 30);
+  const deliveryMinOrder = Math.max(0, parseFloat(session?.delivery_min_order ?? 0) || 0);
 
   const TIP_OPTIONS = [0, 10, 20, 50];
   const [cafeOpen, setCafeOpen] = useState(session?.is_open !== false);
@@ -103,7 +103,7 @@ export default function CartPage() {
   const taxInclusive = session?.tax_inclusive === true; // default false — add tax on top
 
   let taxableAmt, totalTax, grandTotal;
-  const discountAmt = offerPreview?.applied ? parseFloat(offerPreview.discount_amount || 0) : 0;
+  const discountAmt = offerPreview?.applied ? Math.min(total, Math.max(0, parseFloat(offerPreview.discount_amount || 0))) : 0;
 
   if (hasGst) {
     if (taxInclusive) {
@@ -219,7 +219,7 @@ export default function CartPage() {
     setOfferPreview(null);
   };
 
-  if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
+  if (!session || !['dine-in', 'takeaway', 'delivery'].includes(session.order_type)) return <Navigate to={`/cafe/${slug}`} replace />;
 
   if (items.length === 0) {
     return (
@@ -682,7 +682,7 @@ export default function CartPage() {
           )}
           <button
             onClick={() => setShowConfirm(true)}
-            disabled={loading || !cafeOpen}
+            disabled={loading || !cafeOpen || (isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder)}
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span>{loading ? 'Placing order...' : 'Place Order'}</span>

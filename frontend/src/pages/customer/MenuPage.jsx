@@ -594,12 +594,16 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
       {/* Image */}
       <div className="relative aspect-square bg-gray-100 overflow-hidden">
         {item.image_url ? (
-          <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-100">
-            <span className="text-4xl opacity-30">🍽️</span>
-          </div>
-        )}
+          <img
+            src={item.image_url}
+            alt={item.name}
+            className="w-full h-full object-cover"
+            onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
+          />
+        ) : null}
+        <div className={`w-full h-full items-center justify-center bg-gray-100 ${item.image_url ? 'hidden' : 'flex'}`} style={{ display: item.image_url ? 'none' : 'flex' }}>
+          <span className="text-4xl opacity-30">🍽️</span>
+        </div>
         {/* Veg / non-veg indicator */}
         <span className="absolute top-2 left-2 bg-white rounded-sm p-0.5 shadow-sm">
           <FoodDot isVeg={item.is_veg} />

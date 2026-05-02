@@ -73,7 +73,7 @@ export function CartProvider({ children }) {
     try { sessionStorage.removeItem(STORAGE_KEY); sessionStorage.removeItem('dv_cart_currency'); } catch { /* ignore */ }
   }, []);
 
-  const total     = state.items.reduce((sum, i) => sum + parseFloat(i.price) * i.quantity, 0);
+  const total     = state.items.reduce((sum, i) => { const p = parseFloat(i.price ?? 0); return sum + (isNaN(p) ? 0 : p * i.quantity); }, 0);
   const itemCount = state.items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (

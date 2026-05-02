@@ -464,6 +464,27 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
 
+  // Fetch current status to enforce state-machine transitions
+  const currentRow = await db.query(
+    'SELECT status FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, req.cafeId]
+  );
+  if (currentRow.rows.length === 0) return fail(res, 'Order not found', 404);
+  const currentStatus = currentRow.rows[0].status;
+
+  const TRANSITIONS = {
+    pending:   ['confirmed', 'cancelled'],
+    confirmed: ['preparing', 'cancelled'],
+    preparing: ['ready', 'cancelled'],
+    ready:     ['served'],
+    served:    ['paid'],
+    paid:      [],
+    cancelled: [],
+  };
+  if (!TRANSITIONS[currentStatus]?.includes(status)) {
+    return fail(res, `Cannot move order from "${currentStatus}" to "${status}"`, 400);
+  }
+
   // Build dynamic SET clause
   const setClauses = ['status = $1'];
   const params = [status];
@@ -695,6 +716,19 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
       [id]
     );
 
+    // Restore stock for tracked items in this order
+    await client.query(
+      `UPDATE menu_items mi
+       SET stock_quantity = mi.stock_quantity + oi.quantity,
+           is_available   = true
+       FROM order_items oi
+       WHERE oi.order_id = $1
+         AND oi.menu_item_id = mi.id
+         AND mi.track_stock = true
+         AND mi.stock_quantity IS NOT NULL`,
+      [id]
+    );
+
     // Audit log — inside the same transaction so it only persists if update succeeds
     await client.query(
       `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
@@ -748,9 +782,11 @@ exports.getTableBill = asyncHandler(async (req, res) => {
     return ok(res, { orders: [], combined_total: 0, cafe_name: cafeName });
   }
 
-  // Verify the requester is one of the customers at this table
+  // Require customer_name to prevent arbitrary table enumeration
   const { customer_name } = req.query;
-  if (customer_name) {
+  const anyOrderHasName = ordersResult.rows.some((o) => !!o.customer_name?.trim());
+  if (anyOrderHasName) {
+    if (!customer_name?.trim()) return fail(res, 'customer_name is required to view this bill', 400);
     const nameMatch = ordersResult.rows.some(
       (o) => o.customer_name && o.customer_name.trim().toLowerCase() === customer_name.trim().toLowerCase()
     );

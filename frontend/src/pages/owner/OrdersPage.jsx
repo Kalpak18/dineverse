@@ -862,9 +862,13 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         <button onClick={handleKotPrint} disabled={kotPrinting} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors flex-shrink-0 flex items-center gap-1" title="Print KOT">
           📋 <span>KOT</span>
         </button>
-        <button onClick={() => onOpenBilling(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1">
-          🖨️ <span>Bill</span>
-        </button>
+        {order.status === 'paid' ? (
+          <span className="px-2.5 py-1.5 rounded-xl border border-green-200 text-green-600 text-xs font-medium flex-shrink-0 flex items-center gap-1">✓ Paid</span>
+        ) : (
+          <button onClick={() => onOpenBilling(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1">
+            🖨️ <span>Bill</span>
+          </button>
+        )}
         <button onClick={() => onChatClick(order)} className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 ${chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
           💬 <span>Chat</span>
           {chatUnread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{chatUnread}</span>}

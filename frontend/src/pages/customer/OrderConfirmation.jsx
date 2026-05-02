@@ -112,7 +112,7 @@ export default function OrderConfirmation() {
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      reconnectionAttempts: 10,
+      reconnectionAttempts: Infinity,
     });
     socketRef.current = socket;
 
@@ -424,7 +424,7 @@ export default function OrderConfirmation() {
                 Connection lost. Your order status may be out of date.{' '}
                 <button
                   className="underline font-medium"
-                  onClick={() => window.location.reload()}
+                  onClick={() => { orders.forEach((o) => pollOrder(o)); }}
                 >
                   Refresh
                 </button>{' '}

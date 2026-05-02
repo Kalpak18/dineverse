@@ -7,31 +7,28 @@ const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
 
 // ─── Pricing config ───────────────────────────────────────────
-// Basic: ₹499/mo base | Premium (KDS + KOT): ₹999/mo base
-// Longer commitments get a discount (~10% at 2yr, ~11% at 3yr).
-// ── TESTING MODE — all plans set to ₹10 ─────────────────────
-// TODO: restore real prices before go-live
-const TEST_PRICE = 1000; // ₹10 in paise
+// Basic (Essential): ₹499/mo | Premium (Kitchen Pro): ₹999/mo
+// Longer commitments: 10% off at 2yr, 11% off at 3yr.
 const PLANS = {
   // ── Basic (Essential) tier ───────────────────────────────────
-  'basic_1month':  { label: 'Essential · 1 Month',   price_paise: TEST_PRICE, months:  1, tier: 'basic' },
-  'basic_3month':  { label: 'Essential · 3 Months',  price_paise: TEST_PRICE, months:  3, tier: 'basic' },
-  'basic_6month':  { label: 'Essential · 6 Months',  price_paise: TEST_PRICE, months:  6, tier: 'basic' },
-  'basic_1year':   { label: 'Essential · 1 Year',    price_paise: TEST_PRICE, months: 12, tier: 'basic' },
-  'basic_2year':   { label: 'Essential · 2 Years',   price_paise: TEST_PRICE, months: 24, tier: 'basic' },
-  'basic_3year':   { label: 'Essential · 3 Years',   price_paise: TEST_PRICE, months: 36, tier: 'basic' },
+  'basic_1month':  { label: 'Essential · 1 Month',   price_paise:  49900, months:  1, tier: 'basic' },
+  'basic_3month':  { label: 'Essential · 3 Months',  price_paise: 149700, months:  3, tier: 'basic' },
+  'basic_6month':  { label: 'Essential · 6 Months',  price_paise: 299400, months:  6, tier: 'basic' },
+  'basic_1year':   { label: 'Essential · 1 Year',    price_paise: 598800, months: 12, tier: 'basic' },
+  'basic_2year':   { label: 'Essential · 2 Years',   price_paise:1077840, months: 24, tier: 'basic' },
+  'basic_3year':   { label: 'Essential · 3 Years',   price_paise:1596132, months: 36, tier: 'basic' },
   // ── Premium (Kitchen Pro) tier ──────────────────────────────
-  'premium_1month':  { label: 'Kitchen Pro · 1 Month',   price_paise: TEST_PRICE, months:  1, tier: 'premium' },
-  'premium_3month':  { label: 'Kitchen Pro · 3 Months',  price_paise: TEST_PRICE, months:  3, tier: 'premium' },
-  'premium_6month':  { label: 'Kitchen Pro · 6 Months',  price_paise: TEST_PRICE, months:  6, tier: 'premium' },
-  'premium_1year':   { label: 'Kitchen Pro · 1 Year',    price_paise: TEST_PRICE, months: 12, tier: 'premium' },
-  'premium_2year':   { label: 'Kitchen Pro · 2 Years',   price_paise: TEST_PRICE, months: 24, tier: 'premium' },
-  'premium_3year':   { label: 'Kitchen Pro · 3 Years',   price_paise: TEST_PRICE, months: 36, tier: 'premium' },
+  'premium_1month':  { label: 'Kitchen Pro · 1 Month',   price_paise:  99900, months:  1, tier: 'premium' },
+  'premium_3month':  { label: 'Kitchen Pro · 3 Months',  price_paise: 299700, months:  3, tier: 'premium' },
+  'premium_6month':  { label: 'Kitchen Pro · 6 Months',  price_paise: 599400, months:  6, tier: 'premium' },
+  'premium_1year':   { label: 'Kitchen Pro · 1 Year',    price_paise:1198800, months: 12, tier: 'premium' },
+  'premium_2year':   { label: 'Kitchen Pro · 2 Years',   price_paise:2157840, months: 24, tier: 'premium' },
+  'premium_3year':   { label: 'Kitchen Pro · 3 Years',   price_paise:3192132, months: 36, tier: 'premium' },
   // ── Legacy keys — old payment records still resolve correctly
-  '1year':  { label: '1 Year Plan',  price_paise: TEST_PRICE, months: 12, tier: 'basic' },
-  '2year':  { label: '2 Year Plan',  price_paise: TEST_PRICE, months: 24, tier: 'basic' },
-  '3year':  { label: '3 Year Plan',  price_paise: TEST_PRICE, months: 36, tier: 'basic' },
-  yearly:   { label: '1 Year Plan',  price_paise: TEST_PRICE, months: 12, tier: 'basic' },
+  '1year':  { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
+  '2year':  { label: '2 Year Plan',  price_paise: 1077840, months: 24, tier: 'basic' },
+  '3year':  { label: '3 Year Plan',  price_paise: 1596132, months: 36, tier: 'basic' },
+  yearly:   { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
 };
 
 // Support both RAZORPAY_KEY_ID (production) and RAZORPAY_TEST_KEY_ID (legacy/dev)
@@ -220,7 +217,7 @@ exports.verifyPayment = asyncHandler(async (req, res) => {
 // ─── POST /api/payments/webhook ──────────────────────────────
 // Called by Razorpay servers — no auth middleware, raw body required.
 // Verifies X-Razorpay-Signature and activates subscription on payment.captured.
-exports.webhookHandler = async (req, res) => {
+exports.webhookHandler = asyncHandler(async (req, res) => {
   const signature = req.headers['x-razorpay-signature'];
   const secret    = process.env.RAZORPAY_WEBHOOK_SECRET;
 
@@ -331,7 +328,7 @@ exports.webhookHandler = async (req, res) => {
     record.cafe_id, record.plan_type, base.toISOString());
 
   res.status(200).json({ ok: true });
-};
+});
 
 // ─── GET /api/payments/history ────────────────────────────────
 exports.getHistory = asyncHandler(async (req, res) => {

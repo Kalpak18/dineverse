@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
@@ -68,6 +68,25 @@ import InstallBanner from './components/InstallBanner';
 
 // Staff default landing based on role
 const STAFF_DEFAULT = { cashier: '/owner/orders', kitchen: '/owner/kitchen', manager: '/owner/dashboard', waiter: '/owner/waiter' };
+
+// Pages each staff role is allowed to visit (startsWith match). null = no restriction.
+const STAFF_ALLOWED = {
+  kitchen: ['/owner/kitchen', '/owner/help', '/owner/profile'],
+  waiter:  ['/owner/waiter',  '/owner/help', '/owner/profile'],
+  cashier: ['/owner/orders', '/owner/billing', '/owner/messages', '/owner/shift', '/owner/help', '/owner/profile'],
+  manager: null,
+};
+
+function StaffGuard({ children }) {
+  const { role, staffRole } = useAuth();
+  const location = useLocation();
+  if (role !== 'STAFF' || staffRole === 'manager') return children;
+  const allowed = STAFF_ALLOWED[staffRole];
+  if (!allowed) return children;
+  const ok = allowed.some((p) => location.pathname.startsWith(p));
+  if (!ok) return <Navigate to={STAFF_DEFAULT[staffRole] || '/owner/orders'} replace />;
+  return children;
+}
 
 function CitySlugRedirect() {
   const { slug } = useParams();
@@ -166,7 +185,9 @@ export default function App() {
         path="/owner"
         element={
           <ProtectedRoute>
-            <OwnerLayout />
+            <StaffGuard>
+              <OwnerLayout />
+            </StaffGuard>
           </ProtectedRoute>
         }
       >
