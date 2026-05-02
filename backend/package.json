@@ -4,7 +4,7 @@
   "description": "Multi-tenant café ordering platform backend",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",
+    "start": "node scripts/migrate.js && node src/app.js",
     "dev": "nodemon src/app.js",
     "db:migrate": "node scripts/migrate.js"
   },
