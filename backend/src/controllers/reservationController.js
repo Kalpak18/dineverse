@@ -153,13 +153,13 @@ exports.createPublicReservation = asyncHandler(async (req, res) => {
 exports.getReservations = asyncHandler(async (req, res) => {
   const { date, status } = req.query;
 
-  // Auto-expire: mark pending reservations where 15-min grace has passed as no_show
+  // Auto-expire: mark pending reservations where reservation time has passed as cancelled
   await db.query(
     `UPDATE reservations
-     SET status = 'no_show'
+     SET status = 'cancelled'
      WHERE cafe_id = $1
        AND status  = 'pending'
-       AND (reserved_date + reserved_time + INTERVAL '15 minutes') < NOW()`,
+       AND (reserved_date + reserved_time) < NOW()`,
     [req.cafeId]
   );
 

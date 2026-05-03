@@ -7,6 +7,7 @@ const db = require('../config/database');
 const OTP_TTL_MINUTES = 5;
 
 function generate6Digit() {
+  if (process.env.NODE_ENV === 'development') return '123456';
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 

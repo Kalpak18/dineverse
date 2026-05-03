@@ -347,6 +347,55 @@ async function sendExpiryReminders() {
   }
 }
 
+async function autoCancelExpiredReservations() {
+  logger.info('[Reservation] Running auto-cancel expired reservations job');
+
+  const result = await db.query(
+    `UPDATE reservations
+     SET status = 'cancelled', updated_at = NOW()
+     WHERE status = 'pending'
+       AND (reserved_date + reserved_time) < NOW()
+     RETURNING id, cafe_id, customer_name, reserved_date, reserved_time`
+  );
+
+  if (result.rows.length > 0) {
+    logger.info('[Reservation] Auto-cancelled %d expired reservations', result.rows.length);
+
+    // Group by cafe_id and notify owners
+    const byCafe = {};
+    result.rows.forEach((res) => {
+      if (!byCafe[res.cafe_id]) byCafe[res.cafe_id] = [];
+      byCafe[res.cafe_id].push(res);
+    });
+
+    for (const [cafeId, reservations] of Object.entries(byCafe)) {
+      try {
+        const cafeRes = await db.query('SELECT email FROM cafes WHERE id = $1', [cafeId]);
+        if (cafeRes.rows.length > 0) {
+          const cafeEmail = cafeRes.rows[0].email;
+          const count = reservations.length;
+          const firstRes = reservations[0];
+
+          // Import notify function (it needs to be available in this scope)
+          const { notify } = require('./notificationService');
+
+          notify(null, cafeId, cafeEmail, {
+            type:  'reservation_auto_cancelled',
+            title: `${count} reservation${count > 1 ? 's' : ''} auto-cancelled`,
+            body:  `Expired reservations from ${firstRes.reserved_date} were automatically cancelled`,
+            refId: firstRes.id,
+            email: true,
+          }).catch(() => {});
+        }
+      } catch (err) {
+        logger.error('[Reservation] Failed to notify cafe %s: %s', cafeId, err.message);
+      }
+    }
+  } else {
+    logger.info('[Reservation] No expired reservations to cancel');
+  }
+}
+
 module.exports = function initReportScheduler() {
   if (!process.env.BREVO_API_KEY) {
     logger.warn('[Report] BREVO_API_KEY not set — skipping report scheduler');
@@ -366,5 +415,12 @@ module.exports = function initReportScheduler() {
     );
   }, { timezone: 'UTC' });
 
-  logger.info('[Report] Daily report + expiry reminder schedulers started');
+  // Run reservation auto-cancel every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    autoCancelExpiredReservations().catch((err) =>
+      logger.error('[Reservation] Auto-cancel error: %s', err.message)
+    );
+  }, { timezone: 'UTC' });
+
+  logger.info('[Report] Daily report + expiry reminder + reservation auto-cancel schedulers started');
 };
