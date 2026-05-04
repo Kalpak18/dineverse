@@ -194,7 +194,7 @@ exports.previewOffer = asyncHandler(async (req, res) => {
 // POST /offers/cafe/:slug/validate-coupon  { coupon_code, items, total }
 exports.validateCoupon = asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const { coupon_code, total = 0 } = req.body;
+  const { coupon_code, items = [], total = 0 } = req.body;
 
   if (!coupon_code?.trim()) return fail(res, 'Coupon code is required', 400);
 
@@ -241,17 +241,14 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
     return fail(res, 'This coupon is not valid right now', 400);
   }
 
-  // Calculate discount
-  let discountAmount = 0;
-  let finalAmount    = orderTotal;
-
-  if (offer.offer_type === 'percentage') {
-    discountAmount = parseFloat(((finalAmount * parseFloat(offer.discount_value)) / 100).toFixed(2));
-    finalAmount    = parseFloat((finalAmount - discountAmount).toFixed(2));
-  } else if (offer.offer_type === 'fixed') {
-    discountAmount = Math.min(parseFloat(offer.discount_value), finalAmount);
-    finalAmount    = parseFloat((finalAmount - discountAmount).toFixed(2));
+  const discountAmount = await calculateOfferDiscount(offer, items, orderTotal);
+  if (discountAmount <= 0) {
+    return fail(res, offer.offer_type === 'combo'
+      ? 'This coupon requires the matching combo items in your cart'
+      : 'This coupon cannot be applied to this order', 400);
   }
+
+  const finalAmount = parseFloat((orderTotal - discountAmount).toFixed(2));
 
   ok(res, {
     applied:         true,
@@ -263,6 +260,45 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
     final_amount:    Math.max(0, finalAmount),
   });
 });
+
+const calculateOfferDiscount = async (offer, items, total) => {
+  if (!offer || !offer.offer_type) return 0;
+  total = parseFloat(total) || 0;
+
+  if (offer.offer_type === 'percentage') {
+    return parseFloat(((total * parseFloat(offer.discount_value)) / 100).toFixed(2));
+  }
+
+  if (offer.offer_type === 'fixed') {
+    return parseFloat(Math.min(parseFloat(offer.discount_value) || 0, total).toFixed(2));
+  }
+
+  if (offer.offer_type === 'combo' && offer.combo_items && offer.combo_price) {
+    const comboItems = typeof offer.combo_items === 'string'
+      ? JSON.parse(offer.combo_items) : offer.combo_items;
+    const orderItemMap = {};
+    items.forEach((i) => { orderItemMap[i.menu_item_id] = (orderItemMap[i.menu_item_id] || 0) + i.quantity; });
+    const comboMatches = comboItems.every(
+      (ci) => (orderItemMap[ci.menu_item_id] || 0) >= ci.quantity
+    );
+    if (!comboMatches) return 0;
+
+    const comboItemIds = comboItems.map((ci) => ci.menu_item_id);
+    const { rows: menuPrices } = await db.query(
+      'SELECT id, price FROM menu_items WHERE id = ANY($1)',
+      [comboItemIds]
+    );
+    const priceMap = {};
+    menuPrices.forEach((row) => { priceMap[row.id] = parseFloat(row.price) || 0; });
+
+    const normalComboTotal = comboItems.reduce((sum, ci) => {
+      return sum + (priceMap[ci.menu_item_id] || 0) * ci.quantity;
+    }, 0);
+    return parseFloat(Math.max(normalComboTotal - parseFloat(offer.combo_price), 0).toFixed(2));
+  }
+
+  return 0;
+};
 
 // ─── Helper: apply best offer to an order total ────────────────
 // Returns { offerId, discountAmount, finalAmount }
@@ -287,26 +323,7 @@ exports.applyBestOffer = async (cafeId, items, total) => {
   let bestOffer = null;
 
   for (const offer of offers) {
-    let discount = 0;
-    if (offer.offer_type === 'percentage') {
-      discount = (total * parseFloat(offer.discount_value)) / 100;
-    } else if (offer.offer_type === 'fixed') {
-      discount = parseFloat(offer.discount_value);
-    } else if (offer.offer_type === 'combo' && offer.combo_items && offer.combo_price) {
-      // Check if all combo items are present in the order
-      const comboItems = typeof offer.combo_items === 'string'
-        ? JSON.parse(offer.combo_items) : offer.combo_items;
-      const orderItemMap = {};
-      items.forEach((i) => { orderItemMap[i.menu_item_id] = (orderItemMap[i.menu_item_id] || 0) + i.quantity; });
-      const comboMatches = comboItems.every(
-        (ci) => (orderItemMap[ci.menu_item_id] || 0) >= ci.quantity
-      );
-      if (comboMatches) {
-        // Calculate what combo items cost at normal price vs combo price
-        discount = total - parseFloat(offer.combo_price);
-        if (discount < 0) discount = 0;
-      }
-    }
+    const discount = await calculateOfferDiscount(offer, items, total);
     if (discount > bestDiscount) {
       bestDiscount = discount;
       bestOffer = offer;
@@ -345,18 +362,12 @@ exports.applyCoupon = async (cafeId, couponCode, items, total) => {
   if (rows.length === 0) return { offerId: null, discountAmount: 0, finalAmount: total };
 
   const offer = rows[0];
-  let discountAmount = 0;
+  const discountAmount = await calculateOfferDiscount(offer, items, total);
+  if (discountAmount <= 0) return { offerId: null, discountAmount: 0, finalAmount: total };
 
-  if (offer.offer_type === 'percentage') {
-    discountAmount = (total * parseFloat(offer.discount_value)) / 100;
-  } else if (offer.offer_type === 'fixed') {
-    discountAmount = parseFloat(offer.discount_value);
-  }
-
-  discountAmount = Math.min(discountAmount, total);
   return {
     offerId:        offer.id,
-    discountAmount: parseFloat(discountAmount.toFixed(2)),
+    discountAmount: discountAmount,
     finalAmount:    parseFloat((total - discountAmount).toFixed(2)),
   };
 };

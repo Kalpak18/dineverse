@@ -44,6 +44,7 @@ export const createOwnerAccount = (data) => api.post('/auth/create-account', dat
 export const completeCafeSetup = (data) => api.post('/auth/complete-setup', data);
 export const registerCafe = (data) => api.post('/auth/register', data);
 export const loginCafe = (data) => api.post('/auth/login', data); // data: { identifier, password }
+export const refreshAuthToken = (refreshToken) => api.post('/auth/refresh', { refreshToken });
 export const checkSlugAvailability = (slug) => api.get('/auth/check-slug', { params: { slug } });
 export const getMe = () => api.get('/auth/me');
 export const updateProfile = (data) => api.patch('/auth/me', data);

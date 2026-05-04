@@ -12,6 +12,7 @@ const {
   forgotPassword,
   validateResetPassword, resetPassword,
   createOutlet, getOutlets, switchOutlet,
+  refreshToken,
 } = require('../controllers/authController');
 
 router.post('/send-otp', otpLimiter, sendOtp);
@@ -23,6 +24,7 @@ router.post('/register', authLimiter, validateRegister, register);
 router.post('/login', authLimiter, validateLogin, login);
 router.post('/forgot-password', otpLimiter, forgotPassword);
 router.post('/reset-password', authLimiter, validateResetPassword, resetPassword);
+router.post('/refresh', authLimiter, refreshToken);
 router.get('/me', authenticate, getMe);
 router.patch('/me', authenticate, requireOwner, updateProfile); // staff cannot change café settings
 router.delete('/me', authenticate, requireOwner, deleteCafe);   // deactivate or hard-delete café

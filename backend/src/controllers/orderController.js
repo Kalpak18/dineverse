@@ -201,8 +201,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
       return { menu_item_id: i.menu_item_id, quantity: i.quantity, unit_price: menuItem.price, item_name: menuItem.name };
     });
 
-    // Apply best active offer
-    // Apply offer
+    // Apply best active offer or coupon code
     let offerId = null;
     let discountAmount = 0;
     let finalAmount = total;
@@ -219,10 +218,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
       finalAmount = result.finalAmount;
     }
 
-    // 🔒 SAFETY FIX — ADD HERE
-    if (offerId && typeof offerId === 'string' && offerId.length > 20) {
-      logger.error('❌ offerId too long:', offerId);
-      offerId = offerId.slice(0, 20);
+    if (offerId && typeof offerId === 'string' && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(offerId)) {
+      logger.error('Invalid offerId format, ignoring offer:', offerId);
+      offerId = null;
     }
 
     // ── Tax calculation ────────────────────────────────────────

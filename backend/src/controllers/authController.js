@@ -21,6 +21,34 @@ const generateToken = (cafeId, slug, role = 'OWNER', staffId = null, rootCafeId 
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '24h' });
 };
 
+const generateRefreshToken = () => {
+  return crypto.randomBytes(64).toString('hex');
+};
+
+const storeRefreshToken = async (cafeId, refreshToken) => {
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  await db.query(
+    'INSERT INTO refresh_tokens (cafe_id, token, expires_at) VALUES ($1, $2, $3)',
+    [cafeId, refreshToken, expiresAt]
+  );
+};
+
+const validateRefreshToken = async (refreshToken) => {
+  const result = await db.query(
+    'SELECT cafe_id FROM refresh_tokens WHERE token = $1 AND expires_at > NOW() AND revoked = FALSE',
+    [refreshToken]
+  );
+  return result.rows[0] || null;
+};
+
+const revokeRefreshToken = async (refreshToken) => {
+  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE token = $1', [refreshToken]);
+};
+
+const revokeAllRefreshTokens = async (cafeId) => {
+  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE cafe_id = $1', [cafeId]);
+};
+
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
 const generateSetupSlug = () => `setup-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
@@ -406,7 +434,9 @@ exports.login = asyncHandler(async (req, res) => {
 
       const { password_hash, token_version, ...cafeData } = cafe;
       const token = generateToken(cafe.id, cafe.slug, 'OWNER', null, null, null, token_version);
-      return ok(res, { token, cafe: cafeData, role: 'OWNER' }, 'Login successful');
+      const refreshToken = generateRefreshToken();
+      await storeRefreshToken(cafe.id, refreshToken);
+      return ok(res, { token, refreshToken, cafe: cafeData, role: 'OWNER' }, 'Login successful');
     }
 
     // 2. Check staff accounts — match by email
@@ -430,8 +460,11 @@ exports.login = asyncHandler(async (req, res) => {
       if (!isValid) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
 
       const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role);
+      const refreshToken = generateRefreshToken();
+      await storeRefreshToken(staff.cafe_id, refreshToken);
       return ok(res, {
         token,
+        refreshToken,
         cafe: { id: staff.cafe_id, slug: staff.slug, name: staff.cafe_name },
         role: 'STAFF',
         staffRole: staff.staff_role,
@@ -833,4 +866,30 @@ exports.deleteCafe = asyncHandler(async (req, res) => {
   await db.query('DELETE FROM cafes WHERE id = $1', [req.cafeId]);
   logger.info('Café hard-deleted: %s (%s)', cafe.name, req.cafeId);
   ok(res, {}, 'Café and all associated data permanently deleted.');
+});
+
+// ─── Refresh Token ────────────────────────────────────────────
+exports.refreshToken = asyncHandler(async (req, res) => {
+  const { refreshToken } = req.body;
+  if (!refreshToken) return fail(res, 'Refresh token is required', 400);
+
+  const cafeData = await validateRefreshToken(refreshToken);
+  if (!cafeData) return fail(res, 'Invalid or expired refresh token', 401);
+
+  // Get cafe details for token generation
+  const cafeResult = await db.query(
+    'SELECT slug, COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1 AND is_active = true',
+    [cafeData.cafe_id]
+  );
+  if (cafeResult.rows.length === 0) return fail(res, 'Account not found or deactivated', 401);
+
+  const cafe = cafeResult.rows[0];
+  const newToken = generateToken(cafeData.cafe_id, cafe.slug, 'OWNER', null, null, null, cafe.token_version);
+
+  // Optionally rotate refresh token for security
+  const newRefreshToken = generateRefreshToken();
+  await storeRefreshToken(cafeData.cafe_id, newRefreshToken);
+  await revokeRefreshToken(refreshToken); // Revoke old one
+
+  ok(res, { token: newToken, refreshToken: newRefreshToken }, 'Token refreshed successfully');
 });

@@ -38,13 +38,44 @@ export function AuthProvider({ children }) {
         setStaffRole(sr);
         setStaffInfo(data.staff || null);
       }
-    } catch {
-      localStorage.removeItem('dineverse_token');
-      localStorage.removeItem('dineverse_role');
-      localStorage.removeItem('dineverse_staff_role');
-      clearCafeCache();
-      setCafe(null);
-      setRole(null);
+    } catch (error) {
+      // Try to refresh token if access token is expired
+      const refreshToken = localStorage.getItem('dineverse_refresh_token');
+      if (refreshToken) {
+        try {
+          const { data } = await refreshAuthToken(refreshToken);
+          localStorage.setItem('dineverse_token', data.token);
+          localStorage.setItem('dineverse_refresh_token', data.refreshToken);
+          // Retry getMe with new token
+          const { data: meData } = await getMe();
+          setCafe(meData.cafe);
+          writeCafeCache(meData.cafe);
+          const storedRole = localStorage.getItem('dineverse_role') || 'OWNER';
+          setRole(storedRole);
+          if (storedRole === 'STAFF') {
+            const sr = meData.staffRole || localStorage.getItem('dineverse_staff_role') || null;
+            setStaffRole(sr);
+            setStaffInfo(meData.staff || null);
+          }
+        } catch (refreshError) {
+          // Refresh failed, logout
+          localStorage.removeItem('dineverse_token');
+          localStorage.removeItem('dineverse_refresh_token');
+          localStorage.removeItem('dineverse_role');
+          localStorage.removeItem('dineverse_staff_role');
+          clearCafeCache();
+          setCafe(null);
+          setRole(null);
+        }
+      } else {
+        // No refresh token, logout
+        localStorage.removeItem('dineverse_token');
+        localStorage.removeItem('dineverse_role');
+        localStorage.removeItem('dineverse_staff_role');
+        clearCafeCache();
+        setCafe(null);
+        setRole(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -66,6 +97,7 @@ export function AuthProvider({ children }) {
   const login = async (identifier, password) => {
     const { data } = await loginCafe({ identifier, password });
     localStorage.setItem('dineverse_token', data.token);
+    localStorage.setItem('dineverse_refresh_token', data.refreshToken);
     localStorage.setItem('dineverse_role', data.role || 'OWNER');
     setCafe(data.cafe);
     writeCafeCache(data.cafe);
@@ -122,6 +154,7 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     localStorage.removeItem('dineverse_token');
+    localStorage.removeItem('dineverse_refresh_token');
     localStorage.removeItem('dineverse_role');
     localStorage.removeItem('dineverse_staff_role');
     clearCafeCache();
