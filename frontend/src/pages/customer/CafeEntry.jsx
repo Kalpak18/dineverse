@@ -6,6 +6,7 @@ import SOCKET_URL from '../../utils/socketUrl';
 import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist, getWaitlistPosition, checkReservationByPhone } from '../../services/api';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
+import { loadWaitlist, upsertWaitlist, removeWaitlist } from '../../utils/cafeWaitlistStorage';
 import { trackVisit } from '../../utils/visitedCafes';
 import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import { fmtCurrency } from '../../utils/formatters';
@@ -236,9 +237,13 @@ export default function CafeEntry() {
     const stored = loadReservations(slug);
     stored.forEach((r) => socket.emit('track_reservation', r.id));
 
+    const storedWaitlist = loadWaitlist(slug);
+    storedWaitlist.forEach((w) => socket.emit('track_waitlist', w.id));
+
     socket.on('connect', () => {
       socket.emit('join_menu', slug);
       loadReservations(slug).forEach((r) => socket.emit('track_reservation', r.id));
+      loadWaitlist(slug).forEach((w) => socket.emit('track_waitlist', w.id));
     });
     socket.emit('join_menu', slug);
 
@@ -255,6 +260,47 @@ export default function CafeEntry() {
       } else if (updated.status === 'cancelled') {
         toast.error('Your reservation was cancelled by the café.', { duration: 6000 });
         pushNotification(slug, { title: 'Reservation Cancelled', body: 'Your table reservation was cancelled by the café.', type: 'reservation' });
+      } else if (updated.status === 'completed') {
+        toast.success('Thank you for dining with us!', { duration: 4000 });
+        pushNotification(slug, { title: 'Reservation Completed', body: 'Thanks for visiting!', type: 'reservation' });
+      } else if (updated.status === 'no_show') {
+        toast.info('Your reservation expired.', { duration: 4000 });
+        pushNotification(slug, { title: 'Reservation Expired', body: 'Your reservation time has passed.', type: 'reservation' });
+      }
+    });
+
+    socket.on('waitlist_called', (data) => {
+      const { entry, table_number } = data;
+      if (entry && entry.id) {
+        upsertWaitlist(slug, { ...entry, status: 'seated', notified_at: new Date().toISOString() });
+        toast.success(`🎉 Your table is ready! ${table_number ? `Seat: ${table_number}` : ''}`, { duration: 8000 });
+        pushNotification(slug, {
+          title: '🎉 Your Table is Ready!',
+          body: table_number ? `Please proceed to ${table_number}` : 'Please check in at the counter.',
+          type: 'waitlist'
+        });
+      }
+    });
+
+    socket.on('waitlist_update', (data) => {
+      const { action, entry } = data;
+      if (action === 'updated' && entry) {
+        upsertWaitlist(slug, entry);
+        if (entry.status === 'cancelled') {
+          toast.error('Your waitlist entry has been cancelled.', { duration: 6000 });
+          pushNotification(slug, {
+            title: 'Waitlist Cancelled',
+            body: 'Your waitlist entry was cancelled. Please try again later.',
+            type: 'waitlist'
+          });
+        } else if (entry.status === 'no_show') {
+          toast.warning('You were marked as no-show.', { duration: 6000 });
+          pushNotification(slug, {
+            title: 'No-Show Recorded',
+            body: 'Your waitlist entry was marked as no-show.',
+            type: 'waitlist'
+          });
+        }
       }
     });
 
