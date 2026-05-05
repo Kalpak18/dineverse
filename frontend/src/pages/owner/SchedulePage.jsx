@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { updateProfile } from '../../services/api';
 import { getWeekSchedule, defaultSchedule, formatTime } from '../../utils/scheduleUtils';
+import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
 const TIMEZONES = [
@@ -76,7 +77,7 @@ export default function SchedulePage() {
       if (data?.cafe) updateCafe(data.cafe);
       toast.success('Schedule saved');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to save schedule');
+      toast.error(getApiError(err));
     } finally {
       setSaving(false);
     }
@@ -96,7 +97,7 @@ export default function SchedulePage() {
       setSchedule(defaultSchedule());
       toast.success('Schedule cleared — using manual toggle');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to clear schedule');
+      toast.error(getApiError(err));
     } finally {
       setSaving(false);
     }

@@ -78,7 +78,7 @@ export default function CartPage() {
   // Upsell suggestions — debounced, only when cart has items
   useEffect(() => {
     if (!items.length) { setSuggestions([]); return; }
-    const ids = items.map((i) => i.id).filter(Boolean);
+    const ids = items.map((i) => i.menu_item_id || i.id).filter(Boolean);
     if (!ids.length) return;
     const t = setTimeout(() => {
       getUpsellSuggestions(slug, ids)
@@ -124,6 +124,13 @@ export default function CartPage() {
   }
   const allOrders    = loadOrders(slug);
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
+  const availableTables = tableAreas
+    .filter((area) => !tableForm.area_id || String(area.id) === String(tableForm.area_id))
+    .flatMap((area) => area.tables.map((table) => ({ ...table, area_name: area.name })));
+  const tableQuery = tableForm.table_number.toLowerCase();
+  const tableSuggestions = availableTables
+    .filter((table) => !tableQuery || table.label.toLowerCase().includes(tableQuery))
+    .slice(0, 12);
   // Detect "new session" — previous orders exist but all are paid/cancelled
   const needsTableConfirm = allOrders.length > 0 && activeOrders.length === 0;
 
@@ -132,11 +139,15 @@ export default function CartPage() {
     if (!needsTableConfirm) return;
     setTableForm({
       order_type:   session?.order_type || 'dine-in',
-      table_number: session?.order_type === 'dine-in' ? (session?.table_number || '') : '',
+      table_number: '',
       area_id: '',
     });
     setShowTableModal(true);
-    // Load tables for the dropdown
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsTableConfirm]);
+
+  useEffect(() => {
+    if (!showTableModal) return;
     const { date, time } = (() => {
       const d = new Date();
       return {
@@ -147,8 +158,7 @@ export default function CartPage() {
     getCafeTables(slug, { date, time })
       .then(({ data }) => setTableAreas(data.areas || []))
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [needsTableConfirm]);
+  }, [showTableModal, slug]);
 
   const handleConfirmTable = () => {
     if (tableForm.order_type === 'dine-in' && !tableForm.table_number.trim()) {
@@ -164,6 +174,7 @@ export default function CartPage() {
       ...session,
       order_type:   tableForm.order_type,
       table_number: tableLabel,
+      area_id:      tableForm.order_type === 'dine-in' ? tableForm.area_id : '',
     };
     localStorage.setItem(`session_${slug}`, JSON.stringify(updated));
     setShowTableModal(false);
@@ -178,7 +189,13 @@ export default function CartPage() {
     offerDebounce.current = setTimeout(async () => {
       try {
         const payload = {
-          items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+          items: items.map((i) => ({
+            menu_item_id: i.menu_item_id || i.id,
+            quantity: i.quantity,
+            variant_id: i.variant_id || null,
+            selected_modifiers: i.selected_modifiers || [],
+            modifier_total: i.modifier_total || 0,
+          })),
           total,
         };
         const { data } = await previewOffer(slug, payload);
@@ -196,7 +213,13 @@ export default function CartPage() {
     try {
       const { data } = await validateCoupon(slug, {
         coupon_code: couponInput.trim(),
-        items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+        items: items.map((i) => ({
+          menu_item_id: i.menu_item_id || i.id,
+          quantity: i.quantity,
+          variant_id: i.variant_id || null,
+          selected_modifiers: i.selected_modifiers || [],
+          modifier_total: i.modifier_total || 0,
+        })),
         total,
       });
       setOfferPreview(data);
@@ -268,7 +291,14 @@ export default function CartPage() {
         client_order_id: orderIdRef.current,
         coupon_code: couponApplied ? couponInput.trim() : null,
         ...(session.reservation_id && { reservation_id: session.reservation_id }),
-        items: items.map((i) => ({ menu_item_id: i.id, quantity: i.quantity })),
+        items: items.map((i) => ({
+          menu_item_id: i.menu_item_id || i.id,
+          quantity: i.quantity,
+          variant_id: i.variant_id || null,
+          variant_name: i.variant_name || null,
+          selected_modifiers: i.selected_modifiers || [],
+          modifier_total: i.modifier_total || 0,
+        })),
         ...(isDelivery && {
           delivery_address:      deliveryForm.delivery_address.trim(),
           delivery_address2:     deliveryForm.delivery_address2.trim() || undefined,
@@ -327,7 +357,7 @@ export default function CartPage() {
               setTableForm({
                 order_type:   session?.order_type || 'dine-in',
                 table_number: session?.order_type === 'dine-in' ? (session?.table_number || '') : '',
-                area_id: '',
+                area_id:      session?.area_id || '',
               });
               setShowTableModal(true);
             }}
@@ -343,7 +373,15 @@ export default function CartPage() {
           <div key={item.id} className="flex items-center gap-3 border border-gray-100 rounded-xl p-3">
             <div className="flex-1">
               <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
-              <p className="text-xs text-gray-400 mt-0.5">{c(parseFloat(item.price))} each</p>
+              <div className="text-xs text-gray-400 mt-1 space-y-1">
+                <p>{c(parseFloat(item.price))} each</p>
+                {item.variant_name && <p>Variant: {item.variant_name}</p>}
+                {item.selected_modifiers?.length > 0 && (
+                  <p>
+                    Add-ons: {item.selected_modifiers.map((mod) => mod.option_name || mod.group_name).join(', ')}
+                  </p>
+                )}
+              </div>
             </div>
             <QuantityControl
               qty={item.quantity}
@@ -365,7 +403,7 @@ export default function CartPage() {
             {suggestions.map((s) => (
               <button
                 key={s.id}
-                onClick={() => addItem({ id: s.id, name: s.name, price: s.price, image_url: s.image_url })}
+                onClick={() => addItem({ id: s.id, menu_item_id: s.id, name: s.name, price: s.price, image_url: s.image_url })}
                 className="flex-shrink-0 w-28 bg-white border border-gray-100 rounded-xl p-2 text-left hover:border-brand-300 transition-colors shadow-sm"
               >
                 {s.image_url ? (
@@ -605,7 +643,7 @@ export default function CartPage() {
             </div>
           )}
 
-          {offerPreview?.applied && discountAmt > 0 && (
+          {offerPreview?.applied && discountAmt > 0 && (!hasGst || taxInclusive) && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
               <span>-{c(discountAmt)}</span>
@@ -714,6 +752,7 @@ export default function CartPage() {
                   {[
                     { key: 'dine-in',  label: '🍽️ Dine In' },
                     { key: 'takeaway', label: '🥡 Takeaway' },
+                    { key: 'delivery', label: '🛵 Delivery' },
                   ].map(({ key, label }) => (
                     <button
                       key={key}
@@ -729,7 +768,22 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* Table number for dine-in */}
+              {tableForm.order_type === 'dine-in' && tableAreas.length > 0 && (
+                <div>
+                  <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Area</label>
+                  <select
+                    className="input"
+                    value={tableForm.area_id}
+                    onChange={(e) => setTableForm((f) => ({ ...f, area_id: e.target.value, table_number: '' }))}
+                  >
+                    <option value="">All areas</option>
+                    {tableAreas.map((area) => (
+                      <option key={area.id} value={area.id}>{area.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {tableForm.order_type === 'dine-in' && (
                 <div>
                   <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5 block">Table Number</label>
@@ -749,34 +803,27 @@ export default function CartPage() {
                       onBlur={() => setTimeout(() => setTableDropOpen(false), 150)}
                     />
                     {/* Suggestions from fetched tables */}
-                    {tableDropOpen && tableAreas.length > 0 && (() => {
-                      const q = tableForm.table_number.toLowerCase();
-                      const sugg = tableAreas
-                        .flatMap((a) => a.tables.filter((t) => !t.is_reserved))
-                        .filter((t) => !q || t.label.toLowerCase().includes(q))
-                        .slice(0, 6);
-                      return sugg.length > 0 ? (
-                        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
-                          {sugg.map((t) => (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onMouseDown={(e) => {
-                                e.preventDefault();
-                                setTableForm((f) => ({ ...f, table_number: t.label }));
-                                setTableDropOpen(false);
-                              }}
-                              className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 flex items-center justify-between"
-                            >
-                              <span className="font-medium text-gray-800">{t.label}</span>
-                              {t.area_name && t.area_name !== 'General' && (
-                                <span className="text-xs text-gray-400">{t.area_name}</span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      ) : null;
-                    })()}
+                    {tableDropOpen && tableSuggestions.length > 0 && (
+                      <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-y-auto max-h-64">
+                        {tableSuggestions.map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setTableForm((f) => ({ ...f, table_number: t.label, area_id: String(t.area_id) }));
+                              setTableDropOpen(false);
+                            }}
+                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-brand-50 flex items-center justify-between"
+                          >
+                            <span className="font-medium text-gray-800">{t.label}</span>
+                            {t.area_name && t.area_name !== 'General' && (
+                              <span className="text-xs text-gray-400">{t.area_name}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -784,6 +831,12 @@ export default function CartPage() {
               {tableForm.order_type === 'takeaway' && (
                 <p className="text-xs text-gray-500 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2">
                   Your order will be ready for pickup at the counter.
+                </p>
+              )}
+
+              {tableForm.order_type === 'delivery' && (
+                <p className="text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                  Delivery details will be collected in the cart before checkout.
                 </p>
               )}
 

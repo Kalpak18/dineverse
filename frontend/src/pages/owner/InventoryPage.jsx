@@ -20,10 +20,7 @@ export default function InventoryPage() {
       const { data } = await getInventory();
       setItems(data.items || []);
     } catch (err) {
-      // subscription_expired is handled globally by the interceptor — don't double-toast
-      if (err?.response?.data?.error !== 'subscription_expired') {
-        setLoadError(true);
-      }
+      setLoadError(true);
     } finally { setLoading(false); }
   }, []);
 

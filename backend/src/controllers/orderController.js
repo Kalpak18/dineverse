@@ -168,25 +168,30 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     // Validate all items belong to this café and are available — multi-tenant scoped
     const itemIds = items.map((i) => i.menu_item_id);
+    const uniqueItemIds = [...new Set(itemIds)];
     const menuResult = await client.query(
-      `SELECT id, name, price, track_stock, stock_quantity FROM menu_items
+      `SELECT id, category_id, name, price, track_stock, stock_quantity FROM menu_items
        WHERE id = ANY($1) AND cafe_id = $2 AND is_available = true
        FOR UPDATE`,
-      [itemIds, cafeId]
+      [uniqueItemIds, cafeId]
     );
 
-    if (menuResult.rows.length !== itemIds.length) {
+    if (menuResult.rows.length !== uniqueItemIds.length) {
       await client.query('ROLLBACK');
       return fail(res, 'One or more items are unavailable or invalid');
     }
 
     const menuMap = {};
     menuResult.rows.forEach((item) => { menuMap[item.id] = item; });
+    const quantitiesByItem = items.reduce((acc, item) => {
+      acc[item.menu_item_id] = (acc[item.menu_item_id] || 0) + item.quantity;
+      return acc;
+    }, {});
 
     // Stock check — reject if any tracked item has insufficient quantity
-    for (const i of items) {
-      const mi = menuMap[i.menu_item_id];
-      if (mi.track_stock && mi.stock_quantity !== null && mi.stock_quantity < i.quantity) {
+    for (const [menuItemId, quantity] of Object.entries(quantitiesByItem)) {
+      const mi = menuMap[menuItemId];
+      if (mi.track_stock && mi.stock_quantity !== null && mi.stock_quantity < quantity) {
         await client.query('ROLLBACK');
         return fail(res, `"${mi.name}" only has ${mi.stock_quantity} left in stock`);
       }
@@ -194,12 +199,163 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     // Calculate total server-side (never trust client price)
     let total = 0;
-    const orderItems = items.map((i) => {
-      const menuItem = menuMap[i.menu_item_id];
-      const subtotal = parseFloat(menuItem.price) * i.quantity;
-      total += subtotal;
-      return { menu_item_id: i.menu_item_id, quantity: i.quantity, unit_price: menuItem.price, item_name: menuItem.name };
+    const variantIds = items
+      .filter((i) => i.variant_id)
+      .map((i) => i.variant_id);
+
+    const [variantResult, availableVariantsResult, modifierGroupsResult] = await Promise.all([
+      variantIds.length > 0
+        ? client.query(
+            `SELECT id, item_id, name, price FROM item_variants
+             WHERE id = ANY($1) AND is_available = true`,
+            [variantIds]
+          )
+        : Promise.resolve({ rows: [] }),
+      client.query(
+        `SELECT id, item_id FROM item_variants
+         WHERE item_id = ANY($1) AND is_available = true`,
+        [uniqueItemIds]
+      ),
+      client.query(
+        `WITH effective_groups AS (
+           SELECT mi.id AS item_id, cmg.group_id, cmg.sort_order, 0 AS source_rank
+           FROM menu_items mi
+           JOIN category_modifier_groups cmg ON cmg.category_id = mi.category_id
+           WHERE mi.id = ANY($1) AND mi.cafe_id = $2
+           UNION ALL
+           SELECT img.item_id, img.group_id, img.sort_order, 1 AS source_rank
+           FROM item_modifier_groups img
+           WHERE img.item_id = ANY($1)
+         ),
+         deduped AS (
+           SELECT DISTINCT ON (item_id, group_id) item_id, group_id, sort_order, source_rank
+           FROM effective_groups
+           ORDER BY item_id, group_id, source_rank DESC, sort_order
+         )
+         SELECT d.item_id, g.id AS group_id, g.name AS group_name,
+                g.selection_type, g.is_required, g.min_selections, g.max_selections,
+                o.id AS option_id, o.name AS option_name, o.price AS option_price
+         FROM deduped d
+         JOIN modifier_groups g ON g.id = d.group_id AND g.cafe_id = $2
+         LEFT JOIN modifier_options o ON o.group_id = g.id AND o.is_available = true
+         ORDER BY d.item_id, d.source_rank, d.sort_order, g.sort_order, o.sort_order`,
+        [uniqueItemIds, cafeId]
+      ),
+    ]);
+
+    const variantMap = variantResult.rows.reduce((acc, variant) => {
+      acc[variant.id] = variant;
+      return acc;
+    }, {});
+    const variantsByItem = availableVariantsResult.rows.reduce((acc, variant) => {
+      acc[variant.item_id] = acc[variant.item_id] || [];
+      acc[variant.item_id].push(variant);
+      return acc;
+    }, {});
+
+    const modifierGroupsByItem = {};
+    modifierGroupsResult.rows.forEach((row) => {
+      modifierGroupsByItem[row.item_id] = modifierGroupsByItem[row.item_id] || {};
+      const group = modifierGroupsByItem[row.item_id][row.group_id] || {
+        id: row.group_id,
+        name: row.group_name,
+        selection_type: row.selection_type,
+        is_required: row.is_required,
+        min_selections: parseInt(row.min_selections, 10) || 0,
+        max_selections: parseInt(row.max_selections, 10) || 1,
+        options: {},
+      };
+      if (row.option_id) {
+        group.options[row.option_id] = {
+          id: row.option_id,
+          name: row.option_name,
+          price: parseFloat(row.option_price) || 0,
+        };
+      }
+      modifierGroupsByItem[row.item_id][row.group_id] = group;
     });
+
+    const orderItems = [];
+    for (const i of items) {
+      const menuItem = menuMap[i.menu_item_id];
+      if (!menuItem) {
+        await client.query('ROLLBACK');
+        return fail(res, 'Invalid item in order', 400);
+      }
+
+      let unitPrice = parseFloat(menuItem.price) || 0;
+      let variantName = null;
+      if (i.variant_id) {
+        const variant = variantMap[i.variant_id];
+        if (!variant || variant.item_id !== i.menu_item_id) {
+          await client.query('ROLLBACK');
+          return fail(res, 'Invalid variant selection', 400);
+        }
+        unitPrice = parseFloat(variant.price) || unitPrice;
+        variantName = variant.name;
+      } else if ((variantsByItem[i.menu_item_id] || []).length > 0) {
+        await client.query('ROLLBACK');
+        return fail(res, `Please select a variant for "${menuItem.name}"`, 400);
+      }
+
+      const groups = Object.values(modifierGroupsByItem[i.menu_item_id] || {});
+      const submittedModifiers = Array.isArray(i.selected_modifiers) ? i.selected_modifiers : [];
+      const selectedByGroup = {};
+      for (const mod of submittedModifiers) {
+        const groupId = mod?.group_id;
+        const optionId = mod?.option_id;
+        const group = groups.find((g) => g.id === groupId);
+        const option = group?.options?.[optionId];
+        if (!group || !option) {
+          await client.query('ROLLBACK');
+          return fail(res, `Invalid or unavailable add-on selected for "${menuItem.name}"`, 400);
+        }
+        selectedByGroup[groupId] = selectedByGroup[groupId] || [];
+        if (!selectedByGroup[groupId].some((selected) => selected.option_id === optionId)) {
+          selectedByGroup[groupId].push({
+            group_id: group.id,
+            group_name: group.name,
+            option_id: option.id,
+            option_name: option.name,
+            price: option.price,
+          });
+        }
+      }
+
+      for (const group of groups) {
+        const selections = selectedByGroup[group.id] || [];
+        const minSelections = group.is_required || selections.length > 0 ? group.min_selections : 0;
+        const maxSelections = group.selection_type === 'single' ? 1 : group.max_selections;
+        if (group.is_required && selections.length === 0) {
+          await client.query('ROLLBACK');
+          return fail(res, `Please select ${group.name} for "${menuItem.name}"`, 400);
+        }
+        if (selections.length < minSelections) {
+          await client.query('ROLLBACK');
+          return fail(res, `Please select at least ${minSelections} option(s) for ${group.name}`, 400);
+        }
+        if (selections.length > maxSelections) {
+          await client.query('ROLLBACK');
+          return fail(res, `Please select no more than ${maxSelections} option(s) for ${group.name}`, 400);
+        }
+      }
+
+      const selectedModifiers = groups.flatMap((group) => selectedByGroup[group.id] || []);
+      const modifierTotal = selectedModifiers.reduce((sum, mod) => sum + mod.price, 0);
+      const subtotal = parseFloat((unitPrice + modifierTotal) * i.quantity).toFixed(2);
+      total += parseFloat(subtotal);
+
+      orderItems.push({
+        menu_item_id: i.menu_item_id,
+        quantity: i.quantity,
+        unit_price: unitPrice + modifierTotal,
+        item_name: i.item_name || menuItem.name,
+        variant_id: i.variant_id || null,
+        variant_name: variantName,
+        selected_modifiers: selectedModifiers,
+        modifier_total: modifierTotal,
+      });
+    }
 
     // Apply best active offer or coupon code
     let offerId = null;
@@ -304,34 +460,46 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     // Bulk insert order items
     const valuePlaceholders = orderItems
-      .map((_, i) => `($1, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, $${i * 4 + 5})`)
+      .map((_, i) => `($1, $${i * 8 + 2}, $${i * 8 + 3}, $${i * 8 + 4}, $${i * 8 + 5}, $${i * 8 + 6}, $${i * 8 + 7}, $${i * 8 + 8}, $${i * 8 + 9})`)
       .join(', ');
-    const itemValues = orderItems.flatMap((oi) => [oi.menu_item_id, oi.quantity, oi.unit_price, oi.item_name]);
+    const itemValues = orderItems.flatMap((oi) => [
+      oi.menu_item_id,
+      oi.quantity,
+      oi.unit_price,
+      oi.item_name,
+      oi.variant_id,
+      oi.variant_name,
+      JSON.stringify(oi.selected_modifiers),
+      oi.modifier_total,
+    ]);
     await client.query(
-      `INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price, item_name) VALUES ${valuePlaceholders}`,
+      `INSERT INTO order_items
+         (order_id, menu_item_id, quantity, unit_price, item_name,
+          variant_id, variant_name, selected_modifiers, modifier_total)
+       VALUES ${valuePlaceholders}`,
       [order.id, ...itemValues]
     );
 
     // Decrement stock and auto-disable sold-out items
-    for (const i of items) {
-      const mi = menuMap[i.menu_item_id];
+    for (const [menuItemId, quantity] of Object.entries(quantitiesByItem)) {
+      const mi = menuMap[menuItemId];
       if (mi.track_stock && mi.stock_quantity !== null) {
-        const newQty = mi.stock_quantity - i.quantity;
+        const newQty = mi.stock_quantity - quantity;
         await client.query(
           `UPDATE menu_items
            SET stock_quantity = $1,
                is_available   = CASE WHEN $1 <= 0 THEN false ELSE is_available END
            WHERE id = $2`,
-          [newQty, i.menu_item_id]
+          [newQty, menuItemId]
         );
         if (newQty <= 0) {
-          req.io?.to(`cafe:${cafeId}`).emit('item_sold_out', { menu_item_id: i.menu_item_id, name: mi.name });
+          req.io?.to(`cafe:${cafeId}`).emit('item_sold_out', { menu_item_id: menuItemId, name: mi.name });
           // Persist + email alert for sold-out (fire-and-forget, outside transaction)
           notify(req.io, cafeId, cafeEmail, {
             type:  'item_sold_out',
             title: `"${mi.name}" is sold out`,
             body:  'Stock hit zero — the item has been hidden from the menu.',
-            refId: i.menu_item_id,
+            refId: menuItemId,
             email: true,
           }).catch(() => {});
         }
@@ -426,7 +594,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
   const orderIds = ordersResult.rows.map((o) => o.id);
   const itemsResult = orderIds.length > 0
     ? await db.query(
-        'SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, subtotal, item_status FROM order_items WHERE order_id = ANY($1)',
+        'SELECT id, order_id, menu_item_id, item_name, quantity, unit_price, subtotal, variant_id, variant_name, selected_modifiers, modifier_total, item_status FROM order_items WHERE order_id = ANY($1)',
         [orderIds]
       )
     : { rows: [] };
@@ -457,18 +625,22 @@ exports.getOrderById = asyncHandler(async (req, res) => {
 // ─── Owner/Staff: update order status ─────────────────────────
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { status, cash_received, cancellation_reason } = req.body;
+  const { status, cash_received, cancellation_reason, payment_mode } = req.body;
 
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
 
-  // Fetch current status + payment flag to enforce state-machine transitions
+  // Fetch current status + payment flag + transfer flag to set commission_status correctly
   const currentRow = await db.query(
-    'SELECT status, payment_verified FROM orders WHERE id = $1 AND cafe_id = $2',
+    `SELECT status, payment_verified, razorpay_transfer_id,
+            COALESCE(payment_mode, '') AS payment_mode
+     FROM orders WHERE id = $1 AND cafe_id = $2`,
     [id, req.cafeId]
   );
   if (currentRow.rows.length === 0) return fail(res, 'Order not found', 404);
-  const { status: currentStatus, payment_verified: isPrepaid } = currentRow.rows[0];
+  const { status: currentStatus, payment_verified: isPrepaid,
+          razorpay_transfer_id: existingTransferId,
+          payment_mode: existingPaymentMode } = currentRow.rows[0];
 
   // Prepaid orders (Razorpay already charged) may be completed from any active state —
   // staff don't need to open the billing modal; they just mark it done.
@@ -497,6 +669,12 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   if (status === 'paid' && cash_received != null) {
     setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1} - total_amount`);
     params.push(cash_received);
+  }
+  // Record payment_mode when supplied by staff (cash/upi/card/online)
+  const validModes = ['cash', 'upi', 'card', 'online'];
+  if (status === 'paid' && payment_mode && validModes.includes(payment_mode)) {
+    setClauses.push(`payment_mode = $${idx++}`);
+    params.push(payment_mode);
   }
 
   params.push(id, req.cafeId);
@@ -535,18 +713,41 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
-  // Credit loyalty points when staff marks as paid (fire-and-forget)
+  // On first paid transition: record commission amount, payment_mode, and commission_status
   if (status === 'paid' && fromStatus !== 'paid') {
-    const fullOrder = await db.query(
-      `SELECT customer_phone, final_amount FROM orders WHERE id = $1`, [id]
-    ).catch(() => ({ rows: [] }));
-    if (fullOrder.rows.length) {
-      require('./loyaltyController').earnPoints(
-        req.cafeId, id,
-        fullOrder.rows[0].customer_phone,
-        fullOrder.rows[0].final_amount
+    db.query(
+      `SELECT customer_phone, final_amount, razorpay_transfer_id, payment_mode
+       FROM orders WHERE id = $1`, [id]
+    ).then(async (fullOrder) => {
+      if (!fullOrder.rows.length) return;
+      const { customer_phone, final_amount, razorpay_transfer_id: transferId,
+              payment_mode: dbPaymentMode } = fullOrder.rows[0];
+
+      const commissionRate   = req.commissionRate ?? 5;
+      const commissionAmount = parseFloat(((parseFloat(final_amount) || 0) * commissionRate / 100).toFixed(2));
+
+      // Determine how this commission will be collected:
+      //   auto_deducted → Razorpay transfer already sent to café (online prepaid order)
+      //   cash_due      → in-person payment; café owes DineVerse this amount
+      const resolvedMode     = payment_mode || dbPaymentMode || 'cash';
+      const commissionStatus = transferId ? 'auto_deducted' : 'cash_due';
+
+      await db.query(
+        `UPDATE orders
+         SET commission_amount  = $1,
+             commission_status  = $2,
+             payment_mode       = COALESCE(payment_mode, $3)
+         WHERE id = $4`,
+        [commissionAmount, commissionStatus, resolvedMode, id]
+      ).catch((e) => logger.warn('commission write failed: %s', e.message));
+
+      logger.info(
+        'Order %s paid: ₹%s commission (%s%) — status=%s mode=%s',
+        id, commissionAmount, commissionRate, commissionStatus, resolvedMode
       );
-    }
+
+      require('./loyaltyController').earnPoints(req.cafeId, id, customer_phone, final_amount);
+    }).catch((e) => logger.warn('post-paid hooks failed for order %s: %s', id, e.message));
   }
 
   ok(res, { order: updatedOrder });
@@ -845,6 +1046,7 @@ async function getOrderWithItems(orderId, cafeId = null) {
     ),
     db.query(
       `SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal,
+              variant_id, variant_name, selected_modifiers, modifier_total,
               item_status, accepted, cancellation_reason,
               COALESCE(sort_order, 0) AS sort_order,
               preparing_at, ready_at, served_at, cancelled_at
@@ -1037,12 +1239,62 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     payClient.release();
   }
 
+  // Mark order as online payment so updateOrderStatus knows commission was auto-deducted
+  db.query(
+    `UPDATE orders SET payment_mode = 'online' WHERE id = $1`,
+    [id]
+  ).catch((e) => logger.warn('payment_mode update failed for order %s: %s', id, e.message));
+
   // Audit: log the prepaid event
   db.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
      VALUES ($1, $2, 'confirmed', 'system', 'Razorpay — prepaid')`,
     [id, 'pending']
   ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
+
+  // Razorpay Route transfer — send (amount − commission) to the café's linked account.
+  // Fire-and-forget: a failed transfer is logged and retried by admin; it never blocks
+  // the customer-facing payment confirmation.
+  (async () => {
+    try {
+      const cafeRow = await db.query(
+        `SELECT commission_rate, razorpay_account_id, razorpay_route_enabled
+         FROM cafes WHERE id = $1`,
+        [cafeId]
+      );
+      const cafe = cafeRow.rows[0];
+      if (!cafe?.razorpay_route_enabled || !cafe?.razorpay_account_id) return; // no linked account yet
+
+      const finalAmt   = parseFloat(updatedOrder.final_amount) || 0;
+      const rate       = parseFloat(cafe.commission_rate) || 5;
+      const commission = parseFloat((finalAmt * rate / 100).toFixed(2));
+      const netPaise   = Math.round((finalAmt - commission) * 100);
+
+      if (netPaise <= 0) return;
+
+      // Transfer from this specific Razorpay payment to the café's linked account
+      const transfer = await razorpay.payments.transfer(razorpay_payment_id, {
+        transfers: [{
+          account:  cafe.razorpay_account_id,
+          amount:   netPaise,
+          currency: 'INR',
+          notes:    { order_id: id, cafe_id: cafeId, commission_rate: rate },
+        }],
+      });
+
+      const transferId = transfer?.items?.[0]?.id || null;
+      if (transferId) {
+        await db.query(
+          `UPDATE orders SET razorpay_transfer_id = $1 WHERE id = $2`,
+          [transferId, id]
+        );
+        logger.info('Razorpay transfer %s: order %s → café %s net ₹%d', transferId, id, cafeId, netPaise / 100);
+      }
+    } catch (transferErr) {
+      // Log but never surface to customer — commission collected manually by admin
+      logger.error('Razorpay transfer failed for order %s: %s', id, transferErr.message);
+    }
+  })();
 
   // Credit loyalty points (fire-and-forget)
   require('./loyaltyController').earnPoints(
@@ -1434,7 +1686,7 @@ exports.generateKot = asyncHandler(async (req, res) => {
   let readyItems;
   if (order.kitchen_mode === 'combined') {
     readyItems = await db.query(
-      `SELECT oi.id, oi.item_name, oi.quantity
+      `SELECT oi.id, oi.item_name, oi.quantity, oi.variant_name, oi.selected_modifiers
        FROM order_items oi
        WHERE oi.order_id = $1 AND oi.item_status != 'cancelled'
        ORDER BY oi.sort_order ASC, oi.id ASC`,
@@ -1442,7 +1694,7 @@ exports.generateKot = asyncHandler(async (req, res) => {
     );
   } else {
     readyItems = await db.query(
-      `SELECT oi.id, oi.item_name, oi.quantity
+      `SELECT oi.id, oi.item_name, oi.quantity, oi.variant_name, oi.selected_modifiers
        FROM order_items oi
        WHERE oi.order_id = $1
          AND oi.item_status = 'ready'

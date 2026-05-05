@@ -1,4 +1,4 @@
-import { Outlet, NavLink, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BadgeProvider, useBadges } from '../context/BadgeContext';
 import { getOutlets, switchOutlet, toggleCafeOpen } from '../services/api';
@@ -39,19 +39,6 @@ const ROLE_BADGE = {
   waiter:  { label: 'Waiter',   cls: 'bg-teal-100 text-teal-700' },
 };
 
-// Always accessible even when subscription expired (owner only)
-const ALWAYS_ALLOWED = ['/owner/billing', '/owner/profile', '/owner/tables'];
-
-function isExpired(cafe) {
-  if (!cafe?.plan_expiry_date) return false;
-  return new Date(cafe.plan_expiry_date) < new Date();
-}
-
-function daysLeft(cafe) {
-  if (!cafe?.plan_expiry_date) return null;
-  const diff = new Date(cafe.plan_expiry_date) - new Date();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-}
 
 export default function OwnerLayout() {
   return (
@@ -134,15 +121,6 @@ function OwnerLayoutInner() {
     navigate('/owner/login');
   };
 
-  const expired     = !isStaff && isExpired(cafe);
-  const remaining   = !isStaff ? daysLeft(cafe) : null;
-  const pageAllowed = !expired || ALWAYS_ALLOWED.some((p) => location.pathname.startsWith(p));
-
-  useEffect(() => {
-    const handle = () => navigate('/owner/billing');
-    window.addEventListener('subscription:expired', handle);
-    return () => window.removeEventListener('subscription:expired', handle);
-  }, [navigate]);
 
   // Filter nav by role, then apply saved order
   const baseNav = ALL_NAV.filter((item) => item.roles.includes(effectiveRole));
@@ -298,7 +276,13 @@ function OwnerLayoutInner() {
                         {cafe?.name}
                       </p>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <PlanChip cafe={cafe} remaining={remaining} expired={expired} />
+                        <button
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); navigate('/owner/billing'); }}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-700 hover:opacity-75 transition-opacity"
+                        >
+                          Billing
+                        </button>
                       </div>
                     </div>
                     <NavIcon name="profile" className="w-4 h-4 flex-shrink-0 text-gray-300 group-hover:text-brand-400" />
@@ -526,15 +510,6 @@ function OwnerLayoutInner() {
         </div>
       </aside>
 
-      {/* Expired: dim non-essential nav links (owner only) */}
-      {expired && (
-        <style>{`
-          nav a:not([href="/owner/billing"]):not([href="/owner/profile"]) {
-            opacity: 0.4;
-            pointer-events: none;
-          }
-        `}</style>
-      )}
 
       {/* Mobile overlay */}
       {mobileOpen && (
@@ -597,21 +572,6 @@ function OwnerLayoutInner() {
         {/* Spacer so content doesn't hide under the fixed mobile header (≈57px tall) */}
         <div className="md:hidden h-[57px] flex-shrink-0" />
 
-        {/* Expiry warning (owner only) */}
-        {!isStaff && !expired && remaining !== null && remaining <= 7 && (
-          <div className="bg-amber-50 border-b border-amber-200 px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap flex-shrink-0">
-            <p className="text-sm text-amber-800 font-medium">
-              ⚠️ Your {cafe?.plan_type === 'free_trial' ? 'free trial' : 'subscription'} expires in{' '}
-              <strong>{remaining} day{remaining !== 1 ? 's' : ''}</strong>. Renew to avoid interruption.
-            </p>
-            <button
-              onClick={() => navigate('/owner/billing')}
-              className="text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
-            >
-              Renew Now
-            </button>
-          </div>
-        )}
 
         {/* Notification bell — desktop, owner only */}
         {!isStaff && (
@@ -622,117 +582,10 @@ function OwnerLayoutInner() {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
-          {pageAllowed ? (
-            <Outlet />
-          ) : (
-            <Navigate to="/owner/billing" replace />
-          )}
+          <Outlet />
         </main>
       </div>
     </div>
   );
 }
 
-// ─── Plan Chip (inline in sidebar header) ─────────────────────
-function PlanChip({ cafe, remaining, expired }) {
-  const navigate = useNavigate();
-  if (!cafe) return null;
-
-  const isTrial   = cafe.plan_type === 'free_trial';
-  const isPremium = cafe.plan_tier === 'premium';
-
-  const label = isTrial ? 'Trial' : isPremium ? 'Kitchen Pro' : 'Essential';
-  const expiry = cafe.plan_expiry_date
-    ? new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-    : null;
-
-  let cls = 'bg-amber-100 text-amber-700';
-  if (isPremium && !expired) cls = 'bg-green-100 text-green-700';
-  if (expired || (remaining !== null && remaining <= 7)) cls = 'bg-red-100 text-red-600';
-
-  return (
-    <button
-      type="button"
-      onClick={(e) => { e.preventDefault(); navigate('/owner/billing'); }}
-      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold transition-opacity hover:opacity-75 ${cls}`}
-    >
-      <span>{label}</span>
-      {expiry && <span className="opacity-60">· {expiry}</span>}
-    </button>
-  );
-}
-
-// ─── Plan Badge ───────────────────────────────────────────────
-function PlanBadge({ cafe, remaining, expired }) {
-  const navigate = useNavigate();
-  if (!cafe) return null;
-
-  const isTrial   = cafe.plan_type === 'free_trial';
-  const isPremium = cafe.plan_tier === 'premium';
-
-  const label = isTrial ? 'Free Trial' : isPremium ? 'Kitchen Pro' : 'Essential';
-  const expiry = cafe.plan_expiry_date
-    ? new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
-    : null;
-
-  let cls = 'bg-amber-50 border-amber-200 text-amber-800';
-  if (isPremium && !expired) cls = 'bg-green-50 border-green-200 text-green-800';
-  if (expired || (remaining !== null && remaining <= 7)) cls = 'bg-red-50 border-red-200 text-red-700';
-
-  return (
-    <button
-      onClick={() => navigate('/owner/billing')}
-      className={`w-full flex items-center justify-between px-3 py-2 mb-1 rounded-lg border text-xs font-medium transition-colors hover:opacity-80 ${cls}`}
-    >
-      <span>{label}</span>
-      {expiry && <span className="opacity-70">↻ {expiry}</span>}
-    </button>
-  );
-}
-
-// ─── Subscription Expired Wall ────────────────────────────────
-function SubscriptionExpiredWall({ cafe, onBilling, onLogout }) {
-  const expiredOn = cafe?.plan_expiry_date
-    ? new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'long', year: 'numeric',
-      })
-    : null;
-  const isTrial = cafe?.plan_type === 'free_trial';
-
-  return (
-    <div className="flex items-center justify-center min-h-full py-16 px-4">
-      <div className="text-center max-w-md">
-        <div className="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-5">
-          <span className="text-4xl">🔒</span>
-        </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">
-          {isTrial ? 'Your Free Trial Has Ended' : 'Subscription Expired'}
-        </h2>
-        <p className="text-gray-500 text-sm mb-1">
-          {isTrial ? 'Your 30-day free trial expired' : 'Your yearly plan expired'}{' '}
-          {expiredOn && <span>on <strong>{expiredOn}</strong></span>}.
-        </p>
-        <p className="text-gray-500 text-sm mb-6">
-          Your data is safe — subscribe to pick up right where you left off.
-        </p>
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-4 mb-6 text-left space-y-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">What's paused</p>
-          {[['📋','Orders'],['🍽️','Menu'],['📈','Analytics'],['👥','Staff']].map(([icon, text]) => (
-            <div key={text} className="flex items-center gap-2 text-sm text-gray-600">
-              <span>{icon}</span><span>{text} — locked while subscription is inactive</span>
-            </div>
-          ))}
-          <div className="border-t border-gray-200 pt-2 mt-2 flex items-center gap-2 text-sm text-green-700 font-medium">
-            <span>✓</span><span>Profile & Billing — always accessible</span>
-          </div>
-        </div>
-        <button onClick={onBilling} className="w-full py-3.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white font-bold text-base transition-colors mb-3">
-          🚀 Subscribe Now — ₹2,999/year
-        </button>
-        <button onClick={onLogout} className="text-sm text-gray-400 hover:text-gray-600 transition-colors">
-          Logout
-        </button>
-      </div>
-    </div>
-  );
-}

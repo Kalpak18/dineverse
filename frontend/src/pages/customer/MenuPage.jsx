@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicSetting } from '../../services/api';
+import { getCafeBySlug, getCafeMenu, getPublicOffers, getPublicItemModifiers, getPublicSetting } from '../../services/api';
 import { useCart } from '../../context/CartContext';
 import { loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -60,6 +60,20 @@ export default function MenuPage() {
   const [foodFilter, setFoodFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState(null);
+  const [modifierDialog, setModifierDialog] = useState({
+    item: null,
+    groups: [],
+    variants: [],
+    selectedVariantId: null,
+    selectedOptions: {},
+    isOpen: false,
+    loading: false,
+    error: null,
+  });
+  // Track which item is currently fetching modifiers so we can disable its button
+  const [fetchingItemId, setFetchingItemId] = useState(null);
+  // Tick every minute so the schedule-status banner ("Closing in X min") stays accurate
+  const [scheduleTick, setScheduleTick] = useState(0);
   const contentRef = useRef(null);
 
   const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null');
@@ -131,10 +145,156 @@ export default function MenuPage() {
     return () => socket.disconnect();
   }, [slug]);
 
+  // Refresh schedule banner every 60 s so "Closing in X min" stays accurate
+  useEffect(() => {
+    const id = setInterval(() => setScheduleTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Sum quantities across all modifier combinations for the same menu_item_id
   const getItemQty = useCallback(
-    (itemId) => cartItems.find((i) => i.id === itemId)?.quantity || 0,
+    (itemId) => cartItems
+      .filter((i) => (i.menu_item_id || i.id) === itemId)
+      .reduce((sum, i) => sum + i.quantity, 0),
     [cartItems]
   );
+
+  const openModifierDialog = (item, groups, variants) => {
+    setModifierDialog({
+      item,
+      groups,
+      variants,
+      selectedVariantId: variants.length > 0 ? variants[0].id : null,
+      selectedOptions: {},
+      isOpen: true,
+      loading: false,
+      error: null,
+    });
+  };
+
+  const closeModifierDialog = () => {
+    setModifierDialog((prev) => ({ ...prev, isOpen: false, error: null }));
+  };
+
+  const toggleModifierOption = (groupId, optionId, selectionType) => {
+    setModifierDialog((prev) => {
+      const current = prev.selectedOptions[groupId] || [];
+      let next = [];
+      if (selectionType === 'single') {
+        next = [optionId];
+      } else {
+        if (current.includes(optionId)) {
+          next = current.filter((id) => id !== optionId);
+        } else {
+          next = [...current, optionId];
+        }
+      }
+      return {
+        ...prev,
+        selectedOptions: {
+          ...prev.selectedOptions,
+          [groupId]: next,
+        },
+      };
+    });
+  };
+
+  const handleAddItem = async (item) => {
+    // Prevent double-tap while fetching
+    if (fetchingItemId === item.id) return;
+    setFetchingItemId(item.id);
+    try {
+      const res = await getPublicItemModifiers(slug, item.id);
+      const groups = res.data.groups || [];
+      const variants = res.data.variants || [];
+      if (groups.length === 0 && variants.length === 0) {
+        addItem(item);
+        return;
+      }
+      openModifierDialog(item, groups, variants);
+    } catch {
+      // Show the dialog with an error message so the user can retry
+      setModifierDialog({
+        item,
+        groups: [],
+        variants: [],
+        selectedVariantId: null,
+        selectedOptions: {},
+        isOpen: true,
+        loading: false,
+        error: 'Could not load customizations. Please check your connection and try again.',
+      });
+    } finally {
+      setFetchingItemId(null);
+    }
+  };
+
+  const getModifierDialogTotal = () => {
+    if (!modifierDialog.item) return 0;
+    const selectedVariant = modifierDialog.variants.find((v) => v.id === modifierDialog.selectedVariantId);
+    const basePrice = selectedVariant ? parseFloat(selectedVariant.price || modifierDialog.item.price) : parseFloat(modifierDialog.item.price || 0);
+    const modifierTotal = modifierDialog.groups.reduce((total, group) => {
+      const selectedIds = modifierDialog.selectedOptions[group.id] || [];
+      return selectedIds.reduce((sum, optionId) => {
+        const option = group.options.find((o) => o.id === optionId);
+        return sum + parseFloat(option?.price || 0);
+      }, total);
+    }, 0);
+    return basePrice + modifierTotal;
+  };
+
+  const confirmModifierSelection = () => {
+    const item = modifierDialog.item;
+    if (!item) return;
+
+    const invalidGroup = modifierDialog.groups.find((group) => {
+      const selectedIds = modifierDialog.selectedOptions[group.id] || [];
+      if (group.is_required && selectedIds.length === 0) return true;
+      if ((group.is_required || selectedIds.length > 0) && group.min_selections && selectedIds.length < group.min_selections) return true;
+      if (group.max_selections && selectedIds.length > group.max_selections) return true;
+      return false;
+    });
+    if (invalidGroup) {
+      setModifierDialog((prev) => ({ ...prev, error: 'Please select all required options and respect variant limits.' }));
+      return;
+    }
+
+    const selectedModifiers = modifierDialog.groups.flatMap((group) => {
+      const selectedIds = modifierDialog.selectedOptions[group.id] || [];
+      return selectedIds.map((optionId) => {
+        const option = group.options.find((o) => o.id === optionId);
+        return {
+          group_id: group.id,
+          group_name: group.name,
+          option_id: option?.id,
+          option_name: option?.name,
+          price: parseFloat(option?.price || 0),
+        };
+      });
+    });
+
+    const modifierTotal = selectedModifiers.reduce((sum, mod) => sum + mod.price, 0);
+    const selectedVariant = modifierDialog.variants.find((v) => v.id === modifierDialog.selectedVariantId);
+    const basePrice = selectedVariant ? parseFloat(selectedVariant.price || item.price) : parseFloat(item.price || 0);
+    const finalPrice = parseFloat((basePrice + modifierTotal).toFixed(2));
+
+    addItem({
+      id: `${item.id}:${selectedVariant?.id || 'base'}:${selectedModifiers.map((mod) => mod.option_id).join(',')}`,
+      menu_item_id: item.id,
+      name: `${item.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}`,
+      price: finalPrice,
+      unit_price: finalPrice,
+      variant_id: selectedVariant?.id || null,
+      variant_name: selectedVariant?.name || null,
+      selected_modifiers: selectedModifiers,
+      modifier_total: modifierTotal,
+    });
+    closeModifierDialog();
+  };
+
+  const handleVariantChange = (variantId) => {
+    setModifierDialog((prev) => ({ ...prev, selectedVariantId: variantId }));
+  };
 
   // Flat item list for resolving combo item IDs → names + prices
   const allMenuItems = useMemo(() => menu.flatMap((cat) => cat.items), [menu]);
@@ -277,8 +437,9 @@ export default function MenuPage() {
         </div>
       </header>
 
-      {/* ── Schedule / Closed Banner (live) ── */}
+      {/* ── Schedule / Closed Banner (live, re-evaluated every minute via scheduleTick) ── */}
       {(() => {
+        void scheduleTick; // consumed so the IIFE re-runs when the tick fires
         const status = getScheduleStatus(cafe?.opening_hours, cafe?.timezone, cafeOpen ? true : false);
         const todayHours = getTodayHours(cafe?.opening_hours, cafe?.timezone);
         if (!status.isOpen) {
@@ -543,8 +704,18 @@ export default function MenuPage() {
                     item={item}
                     qty={getItemQty(item.id)}
                     categoryLabel={isSearching ? item._catName : null}
-                    onAdd={() => addItem(item)}
-                    onUpdateQty={(qty) => updateQty(item.id, qty)}
+                    onAdd={() => handleAddItem(item)}
+                    fetching={fetchingItemId === item.id}
+                    onUpdateQty={(qty) => {
+                      // For items with modifier combinations, decrement the last-added one
+                      const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
+                      if (combos.length > 0) {
+                        const last = combos[combos.length - 1];
+                        updateQty(last.id, last.quantity - 1);
+                      } else {
+                        updateQty(item.id, qty);
+                      }
+                    }}
                     c={c}
                   />
                 ))}
@@ -582,11 +753,149 @@ export default function MenuPage() {
           )}
         </div>
       )}
+
+      {modifierDialog.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 px-4 py-6 overflow-y-auto">
+          <div className="mx-auto max-w-2xl rounded-3xl bg-white shadow-2xl ring-1 ring-black/10">
+            <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+              <div>
+                <p className="text-sm font-bold text-gray-900">Customize {modifierDialog.item?.name}</p>
+                <p className="text-xs text-gray-500">Choose variants and add-ons before adding to cart.</p>
+              </div>
+              <button
+                onClick={closeModifierDialog}
+                className="text-gray-400 hover:text-gray-700 text-xl font-bold"
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-4 px-5 py-4">
+              {modifierDialog.variants.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Variant</div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {modifierDialog.variants.map((variant) => (
+                      <button
+                        key={variant.id}
+                        type="button"
+                        onClick={() => handleVariantChange(variant.id)}
+                        className={`rounded-2xl border p-3 text-left text-sm ${modifierDialog.selectedVariantId === variant.id ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <span className="font-semibold text-gray-900">{variant.name}</span>
+                          <span className="text-sm text-gray-500">{c(variant.price)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {modifierDialog.groups.map((group) => {
+                const selectedIds = modifierDialog.selectedOptions[group.id] || [];
+                const isMulti = group.selection_type === 'multiple';
+                return (
+                  <div key={group.id} className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-semibold uppercase tracking-wide text-gray-700">{group.name}</span>
+                        {(group.min_selections || group.max_selections) && (
+                          <span className="ml-1.5 text-[10px] text-gray-400">
+                            {group.min_selections && group.max_selections
+                              ? `${group.min_selections}–${group.max_selections}`
+                              : group.min_selections ? `min ${group.min_selections}`
+                              : `max ${group.max_selections}`}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {isMulti && <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">Multi-select</span>}
+                        {group.is_required && <span className="text-[10px] font-semibold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded-full">Required</span>}
+                      </div>
+                    </div>
+                    <div className="grid gap-2">
+                      {group.options.map((option) => {
+                        const selected = selectedIds.includes(option.id);
+                        return (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => toggleModifierOption(group.id, option.id, group.selection_type)}
+                            className={`rounded-2xl border p-3 text-left text-sm transition-colors ${
+                              selected ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              {/* Circle for single-select (radio), square for multi-select (checkbox) */}
+                              {isMulti ? (
+                                <span className={`flex-shrink-0 h-5 w-5 rounded border-2 flex items-center justify-center transition-colors ${
+                                  selected ? 'border-brand-500 bg-brand-500' : 'border-gray-300 bg-white'
+                                }`}>
+                                  {selected && (
+                                    <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={3}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className={`flex-shrink-0 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                                  selected ? 'border-brand-500' : 'border-gray-300'
+                                }`}>
+                                  {selected && <span className="w-2.5 h-2.5 rounded-full bg-brand-500" />}
+                                </span>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 text-sm">{option.name}</p>
+                              </div>
+                              {option.price > 0 && (
+                                <p className="text-xs font-semibold text-brand-600 flex-shrink-0">+{c(option.price)}</p>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {modifierDialog.error && (
+                <div className="rounded-2xl bg-red-50 border border-red-100 p-3 text-sm text-red-700">
+                  {modifierDialog.error}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-gray-200 px-5 py-4">
+              <div>
+                <p className="text-xs text-gray-400 font-medium">Total</p>
+                <p className="text-lg font-black text-gray-900">{modifierDialog.item && c(getModifierDialogTotal())}</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={closeModifierDialog}
+                  className="rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmModifierSelection}
+                  className="rounded-2xl bg-brand-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-700 active:bg-brand-800 transition-colors"
+                >
+                  Add to Cart →
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
+function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c }) {
   return (
     <div className={`bg-white rounded-2xl overflow-hidden flex flex-col shadow-sm border transition-all ${
       qty > 0 ? 'border-brand-300 shadow-brand-100' : 'border-gray-100'
@@ -655,9 +964,14 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, c }) {
             {qty === 0 ? (
               <button
                 onClick={onAdd}
-                className="text-xs font-bold px-3 py-1 rounded-lg border-2 border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 transition-colors"
+                disabled={fetching}
+                className={`text-xs font-bold px-3 py-1 rounded-lg border-2 transition-colors ${
+                  fetching
+                    ? 'border-brand-300 text-brand-300 cursor-wait'
+                    : 'border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100'
+                }`}
               >
-                ADD
+                {fetching ? '…' : 'ADD'}
               </button>
             ) : (
               <QuantityControl

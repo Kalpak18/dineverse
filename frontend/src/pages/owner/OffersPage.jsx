@@ -17,7 +17,14 @@ const EMPTY_FORM = {
 function OfferForm({ initial, onSave, onCancel, menuItems }) {
   const { cafe: _of } = useAuth();
   const sym = currencySymbol(_of?.currency);
-  const [form, setForm] = useState(initial || EMPTY_FORM);
+  const [form, setForm] = useState(initial
+    ? {
+        ...EMPTY_FORM,
+        ...initial,
+        active_days:  Array.isArray(initial.active_days)  ? initial.active_days  : [],
+        combo_items:  Array.isArray(initial.combo_items)  ? initial.combo_items  : [],
+      }
+    : EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -301,8 +308,9 @@ export default function OffersPage() {
       const [offersRes, itemsRes] = await Promise.all([getOffers(), getMenuItems()]);
       setOffers(offersRes.data.offers);
       setMenuItems(itemsRes.data.items || []);
-    } catch { toast.error('Failed to load offers'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      toast.error('Failed to load offers');
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -313,7 +321,14 @@ export default function OffersPage() {
       setOffers((prev) => [data.offer, ...prev]);
       setShowForm(false);
       toast.success('Offer created!');
-    } catch { toast.error('Failed to create offer'); }
+    } catch (err) {
+      const error = err.response?.data;
+      if (error?.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Failed to create offer');
+      }
+    }
   };
 
   const handleUpdate = async (payload) => {
@@ -322,7 +337,14 @@ export default function OffersPage() {
       setOffers((prev) => prev.map((o) => o.id === editing.id ? data.offer : o));
       setEditing(null);
       toast.success('Offer updated!');
-    } catch { toast.error('Failed to update offer'); }
+    } catch (err) {
+      const error = err.response?.data;
+      if (error?.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Failed to update offer');
+      }
+    }
   };
 
   const handleDelete = async (id) => {
@@ -331,7 +353,14 @@ export default function OffersPage() {
       await deleteOffer(id);
       setOffers((prev) => prev.filter((o) => o.id !== id));
       toast.success('Offer deleted');
-    } catch { toast.error('Failed to delete offer'); }
+    } catch (err) {
+      const error = err.response?.data;
+      if (error?.message) {
+        toast.error(error.message);
+      } else {
+        toast.error('Failed to delete offer');
+      }
+    }
   };
 
   if (loading) return <div className="card text-center py-16 text-gray-400">Loading offers...</div>;

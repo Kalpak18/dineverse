@@ -125,11 +125,32 @@ exports.updateWaitlist = asyncHandler(async (req, res) => {
 
   const entry = result.rows[0];
 
-  // Broadcast update to owner room
+  // Broadcast update to owner room so WaitlistPage reloads
   req.io.to(`cafe:${req.cafeId}`).emit('waitlist_update', { action: 'updated', entry });
 
-  // Notify the customer via socket (if they're still on the page)
-  if (sendNotify || status === 'seated') {
+  // If the customer was removed from the waiting queue, update all remaining
+  // customers' positions so their UI stays accurate.
+  if (status && status !== 'waiting') {
+    // Notify the affected customer (they're seated, cancelled, or no-showed)
+    if (status === 'seated' || sendNotify) {
+      req.io.to(`waitlist:${id}`).emit('waitlist_called', { entry, table_number: entry.table_number });
+    } else {
+      // Cancelled / no_show — tell the customer their spot is gone
+      req.io.to(`waitlist:${id}`).emit('waitlist_cancelled', { entry });
+    }
+
+    // Recalculate and push new positions to every remaining 'waiting' customer
+    const waitingRes = await db.query(
+      `SELECT id FROM waitlist
+       WHERE cafe_id = $1 AND status = 'waiting'
+       ORDER BY created_at ASC`,
+      [req.cafeId]
+    );
+    waitingRes.rows.forEach((row, idx) => {
+      req.io.to(`waitlist:${row.id}`).emit('waitlist_position_update', { position: idx + 1 });
+    });
+  } else if (sendNotify) {
+    // "Notify" action without changing status — still alert the customer
     req.io.to(`waitlist:${id}`).emit('waitlist_called', { entry, table_number: entry.table_number });
   }
 
@@ -138,6 +159,25 @@ exports.updateWaitlist = asyncHandler(async (req, res) => {
 
 // Owner: delete entry
 exports.deleteWaitlist = asyncHandler(async (req, res) => {
-  await db.query('DELETE FROM waitlist WHERE id = $1 AND cafe_id = $2', [req.params.id, req.cafeId]);
+  const { id } = req.params;
+  const del = await db.query(
+    'DELETE FROM waitlist WHERE id = $1 AND cafe_id = $2 RETURNING status',
+    [id, req.cafeId]
+  );
+  if (!del.rows.length) return fail(res, 'Entry not found', 404);
+
+  req.io.to(`cafe:${req.cafeId}`).emit('waitlist_update', { action: 'deleted', id });
+
+  // If a 'waiting' entry was hard-deleted, shift all remaining positions down
+  if (del.rows[0].status === 'waiting') {
+    const waitingRes = await db.query(
+      `SELECT id FROM waitlist WHERE cafe_id = $1 AND status = 'waiting' ORDER BY created_at ASC`,
+      [req.cafeId]
+    );
+    waitingRes.rows.forEach((row, idx) => {
+      req.io.to(`waitlist:${row.id}`).emit('waitlist_position_update', { position: idx + 1 });
+    });
+  }
+
   ok(res, {});
 });

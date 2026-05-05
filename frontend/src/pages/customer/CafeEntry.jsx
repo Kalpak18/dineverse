@@ -283,24 +283,35 @@ export default function CafeEntry() {
     });
 
     socket.on('waitlist_update', (data) => {
-      const { action, entry } = data;
-      if (action === 'updated' && entry) {
+      const { action, entry, id: deletedId } = data;
+      if (action === 'deleted' && deletedId) {
+        removeWaitlist(slug, deletedId);
+      } else if (action === 'updated' && entry) {
         upsertWaitlist(slug, entry);
-        if (entry.status === 'cancelled') {
-          toast.error('Your waitlist entry has been cancelled.', { duration: 6000 });
-          pushNotification(slug, {
-            title: 'Waitlist Cancelled',
-            body: 'Your waitlist entry was cancelled. Please try again later.',
-            type: 'waitlist'
-          });
-        } else if (entry.status === 'no_show') {
-          toast.warning('You were marked as no-show.', { duration: 6000 });
-          pushNotification(slug, {
-            title: 'No-Show Recorded',
-            body: 'Your waitlist entry was marked as no-show.',
-            type: 'waitlist'
-          });
-        }
+      }
+    });
+
+    // Server broadcasts each remaining customer's new position after a queue change
+    socket.on('waitlist_position_update', ({ position }) => {
+      // Update all locally-tracked waitlist entries' position (position is per-entry, server sends it to each room)
+      const stored = loadWaitlist(slug);
+      if (stored.length > 0) {
+        // Update the position field of the relevant entry(ies)
+        const updated = stored.map((w) => w.status === 'waiting' ? { ...w, position } : w);
+        updated.forEach((w) => upsertWaitlist(slug, w));
+      }
+    });
+
+    // Server signals this customer's entry was cancelled without seating
+    socket.on('waitlist_cancelled', ({ entry }) => {
+      if (entry?.id) {
+        upsertWaitlist(slug, { ...entry, status: 'cancelled' });
+        toast.error('Your waitlist spot was cancelled by the café.', { duration: 6000 });
+        pushNotification(slug, {
+          title: 'Waitlist Cancelled',
+          body: 'Your entry was removed from the waitlist.',
+          type: 'waitlist',
+        });
       }
     });
 
@@ -901,18 +912,16 @@ function WaitlistModal({ slug, cafeName, onClose }) {
     const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
 
-    const onConnect = () => socket.emit('track_waitlist', joined.id);
-    socket.on('connect', onConnect);
-    // If already connected by the time this fires (rare but possible), emit immediately
-    if (socket.connected) socket.emit('track_waitlist', joined.id);
+    const trackSelf = () => socket.emit('track_waitlist', joined.id);
+    socket.on('connect', trackSelf);
+    if (socket.connected) trackSelf();
 
     socket.on('waitlist_called', ({ entry, table_number } = {}) => {
       const tbl = table_number || entry?.table_number || null;
       setCalled(true);
       setAssignedTable(tbl);
-      const msg = tbl
-        ? `Your table is ready! Please go to ${tbl}.`
-        : 'Your table is ready! Please proceed to the counter.';
+      upsertWaitlist(slug, { ...entry, status: 'seated' });
+      const msg = tbl ? `Your table is ready! Please go to ${tbl}.` : 'Your table is ready! Please proceed to the counter.';
       toast.success(msg, { duration: 10000, icon: '🪑' });
       pushNotification(slug, {
         title: tbl ? `Table ${tbl} is ready! 🪑` : 'Your table is ready! 🪑',
@@ -921,8 +930,34 @@ function WaitlistModal({ slug, cafeName, onClose }) {
       });
     });
 
+    // Queue moved up — update position display in real time
+    socket.on('waitlist_position_update', ({ position }) => {
+      setJoined((prev) => prev ? { ...prev, position } : prev);
+      if (position === 1) {
+        toast('You\'re next! 🎉 Get ready.', { icon: '⏰', duration: 5000 });
+        pushNotification(slug, {
+          title: "You're next on the waitlist! ⏰",
+          body: `You are now #1 in line at ${cafeName}.`,
+          type: 'waitlist',
+        });
+      }
+    });
+
+    // Cancelled by café without seating
+    socket.on('waitlist_cancelled', ({ entry } = {}) => {
+      setCalled(false);
+      setAssignedTable(null);
+      if (entry?.id) upsertWaitlist(slug, { ...entry, status: 'cancelled' });
+      toast.error('Your waitlist spot was cancelled by the café.', { duration: 6000 });
+      pushNotification(slug, {
+        title: 'Waitlist Cancelled',
+        body: 'Your entry was removed from the waitlist.',
+        type: 'waitlist',
+      });
+    });
+
     return () => socket.disconnect();
-  }, [joined?.id]);
+  }, [joined?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll position every 60s while waiting
   useEffect(() => {

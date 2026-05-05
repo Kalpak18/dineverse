@@ -189,13 +189,9 @@ export default function DashboardPage() {
             <h1 className="text-xl font-bold text-gray-900 truncate">{cafe?.name}</h1>
             <p className="text-xs text-gray-400 mt-0.5">/{cafe?.slug}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {(() => {
-                const isTrial   = cafe?.plan_type === 'free_trial';
-                const isPremium = cafe?.plan_tier === 'premium';
-                const label = isTrial ? '🧪 Free Trial' : isPremium ? '✅ Kitchen Pro' : '✅ Essential';
-                const cls   = isTrial ? 'bg-blue-100 text-blue-700' : isPremium ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700';
-                return <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
-              })()}
+              <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                ✅ All Features Included
+              </span>
               {cafe?.city && (
                 <span className="text-xs text-gray-500">📍 {cafe.city}{cafe.state ? `, ${cafe.state}` : ''}</span>
               )}

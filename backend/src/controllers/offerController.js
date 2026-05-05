@@ -22,12 +22,28 @@ exports.createOffer = asyncHandler(async (req, res) => {
   if (!name?.trim()) return fail(res, 'Offer name is required');
   if (!['percentage', 'fixed', 'combo'].includes(offer_type))
     return fail(res, 'offer_type must be percentage, fixed, or combo');
-  if (offer_type === 'percentage' && (discount_value < 1 || discount_value > 100))
-    return fail(res, 'Percentage discount must be between 1 and 100');
-  if (offer_type === 'combo' && !combo_price)
-    return fail(res, 'combo_price is required for combo offers');
 
   const normalizedCoupon = coupon_code?.trim().toUpperCase() || null;
+  const parsedDiscount = parseFloat(discount_value);
+  const parsedComboPrice = parseFloat(combo_price);
+  const parsedMinOrderAmount = parseFloat(min_order_amount) || 0;
+
+  if (offer_type === 'percentage') {
+    if (Number.isNaN(parsedDiscount) || parsedDiscount < 1 || parsedDiscount > 100) {
+      return fail(res, 'Percentage discount must be a number between 1 and 100');
+    }
+  } else if (offer_type === 'fixed') {
+    if (Number.isNaN(parsedDiscount) || parsedDiscount <= 0) {
+      return fail(res, 'Fixed discount must be a positive number');
+    }
+  } else if (offer_type === 'combo') {
+    if (!Array.isArray(combo_items) || combo_items.length < 2) {
+      return fail(res, 'Select at least 2 items for a combo offer');
+    }
+    if (Number.isNaN(parsedComboPrice) || parsedComboPrice <= 0) {
+      return fail(res, 'Combo price is required for combo offers');
+    }
+  }
 
   const result = await db.query(
     `INSERT INTO offers
@@ -38,10 +54,10 @@ exports.createOffer = asyncHandler(async (req, res) => {
      RETURNING *`,
     [
       req.cafeId, name.trim(), description || null, offer_type,
-      parseFloat(discount_value) || 0,
-      combo_items ? JSON.stringify(combo_items) : null,
-      combo_price ? parseFloat(combo_price) : null,
-      parseFloat(min_order_amount) || 0,
+      offer_type === 'combo' ? 0 : parsedDiscount,
+      offer_type === 'combo' ? JSON.stringify(combo_items) : null,
+      offer_type === 'combo' ? parsedComboPrice : null,
+      parsedMinOrderAmount,
       active_from || null, active_until || null,
       active_days || null, normalizedCoupon,
     ]

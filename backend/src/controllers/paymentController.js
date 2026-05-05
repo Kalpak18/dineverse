@@ -463,3 +463,122 @@ exports.enableRoute = asyncHandler(async (req, res) => {
 
   ok(res, { route_enabled: true }, 'Payout routing activated!');
 });
+
+// ─── GET /api/payments/commission ─────────────────────────────
+// Returns the owner's net revenue view — GMV minus commission — broken down
+// by payment method so the owner clearly sees what they actually receive.
+//
+// Online orders  → commission auto-deducted via Razorpay transfer at payment time.
+//                  Owner's net was already deposited to their bank account.
+// Cash/UPI/Card  → owner collected the full amount; commission is "cash_due"
+//                  and must be remitted to DineVerse.
+exports.getCommissionSummary = asyncHandler(async (req, res) => {
+  const cafeId = req.rootCafeId || req.cafeId;
+
+  const [cafeRes, summaryRes, monthlyRes, recentRes] = await Promise.all([
+    // Café commission rate
+    db.query('SELECT commission_rate FROM cafes WHERE id = $1', [cafeId]),
+
+    // All-time + this-month totals split by online vs cash
+    db.query(
+      `SELECT
+        -- Totals (all time)
+        COALESCE(SUM(final_amount), 0)                                              AS total_gmv,
+        COALESCE(SUM(commission_amount), 0)                                         AS total_commission,
+        COALESCE(SUM(final_amount - commission_amount), 0)                          AS total_net_revenue,
+        COUNT(*)                                                                    AS total_paid_orders,
+
+        -- This month
+        COALESCE(SUM(final_amount)       FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_gmv,
+        COALESCE(SUM(commission_amount)  FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_commission,
+        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_net_revenue,
+        COUNT(*)               FILTER (WHERE created_at >= DATE_TRUNC('month', NOW()))               AS month_paid_orders,
+
+        -- Online (auto-deducted) — money already in café's bank account
+        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_net_received,
+        COALESCE(SUM(commission_amount)                FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_commission_auto,
+
+        -- Cash/UPI/Card — café holds full amount, commission is owed to DineVerse
+        COALESCE(SUM(final_amount)       FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_gmv_held,
+        COALESCE(SUM(commission_amount)  FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_commission_owed,
+        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_net_yours
+
+       FROM orders
+       WHERE cafe_id = $1 AND status = 'paid'`,
+      [cafeId]
+    ),
+
+    // Monthly breakdown
+    db.query(
+      `SELECT DATE_TRUNC('month', created_at)                                  AS month,
+              COUNT(*)                                                           AS paid_orders,
+              COALESCE(SUM(final_amount), 0)                                    AS gmv,
+              COALESCE(SUM(commission_amount), 0)                               AS commission,
+              COALESCE(SUM(final_amount - commission_amount), 0)                AS net_revenue,
+              COALESCE(SUM(commission_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_commission_owed,
+              COALESCE(SUM(commission_amount) FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_commission_deducted
+       FROM orders
+       WHERE cafe_id = $1 AND status = 'paid'
+       GROUP BY DATE_TRUNC('month', created_at)
+       ORDER BY month DESC LIMIT 12`,
+      [cafeId]
+    ),
+
+    // Recent 20 paid orders
+    db.query(
+      `SELECT id, daily_order_number, order_type, payment_mode,
+              final_amount, commission_amount,
+              (final_amount - commission_amount) AS net_amount,
+              commission_status, created_at
+       FROM orders
+       WHERE cafe_id = $1 AND status = 'paid'
+       ORDER BY created_at DESC LIMIT 20`,
+      [cafeId]
+    ),
+  ]);
+
+  const rate = parseFloat(cafeRes.rows[0]?.commission_rate ?? 5);
+  const s    = summaryRes.rows[0];
+
+  ok(res, {
+    commission_rate: rate,
+
+    // ── All-time ──
+    total_gmv:          parseFloat(s.total_gmv),
+    total_commission:   parseFloat(s.total_commission),
+    total_net_revenue:  parseFloat(s.total_net_revenue),
+    total_paid_orders:  parseInt(s.total_paid_orders),
+
+    // ── This month ──
+    month_gmv:          parseFloat(s.month_gmv),
+    month_commission:   parseFloat(s.month_commission),
+    month_net_revenue:  parseFloat(s.month_net_revenue),
+    month_paid_orders:  parseInt(s.month_paid_orders),
+
+    // ── Online (already in your bank) ──
+    online_net_received:      parseFloat(s.online_net_received),
+    online_commission_auto:   parseFloat(s.online_commission_auto),
+
+    // ── Cash/UPI/Card (you hold full amount, commission owed to DineVerse) ──
+    cash_gmv_held:         parseFloat(s.cash_gmv_held),
+    cash_commission_owed:  parseFloat(s.cash_commission_owed),
+    cash_net_yours:        parseFloat(s.cash_net_yours),
+
+    // ── Monthly + recent ──
+    monthly_breakdown: monthlyRes.rows.map((r) => ({
+      month:                        r.month,
+      paid_orders:                  parseInt(r.paid_orders),
+      gmv:                          parseFloat(r.gmv),
+      commission:                   parseFloat(r.commission),
+      net_revenue:                  parseFloat(r.net_revenue),
+      cash_commission_owed:         parseFloat(r.cash_commission_owed),
+      online_commission_deducted:   parseFloat(r.online_commission_deducted),
+    })),
+    recent_orders: recentRes.rows.map((o) => ({
+      ...o,
+      final_amount:      parseFloat(o.final_amount),
+      commission_amount: parseFloat(o.commission_amount),
+      net_amount:        parseFloat(o.net_amount),
+    })),
+  });
+});

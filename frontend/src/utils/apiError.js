@@ -7,5 +7,5 @@ export function getApiError(err) {
   const d = err.response.data;
   if (!d) return 'Server error — please try again';
   if (Array.isArray(d.errors) && d.errors.length > 0) return d.errors[0].msg;
-  return d.error || d.message || `Error ${err.response.status}`;
+  return d.message || d.error || `Error ${err.response.status}`;
 }

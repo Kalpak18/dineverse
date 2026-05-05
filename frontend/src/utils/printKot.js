@@ -18,6 +18,7 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
     ? '🥡 TAKEAWAY'
     : `TABLE: ${escHtml(String(tableNumber || ''))}`;
 
+  const details = itemDetails(item);
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -64,6 +65,7 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
       margin: 6px 0;
     }
     .item-name { font-size: 16px; font-weight: 900; word-break: break-word; }
+    .item-details { font-size: 11px; font-weight: bold; margin-top: 3px; line-height: 1.4; }
     .item-qty { font-size: 13px; font-weight: bold; margin-top: 4px; }
     .sep { border: none; border-top: 1px dashed #555; margin: 4px 0; }
     .footer { text-align: center; font-size: 10px; color: #444; line-height: 1.7; margin-top: 6px; }
@@ -92,6 +94,7 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
 
   <div class="item-box">
     <div class="item-name">${escHtml(item.item_name)}</div>
+    ${details ? `<div class="item-details">${escHtml(details)}</div>` : ''}
     <div class="item-qty">Qty: ${item.quantity}</div>
   </div>
 
@@ -135,9 +138,10 @@ export function printFullKot(kot, cafeName) {
   const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
 
-  const itemRows = items.map((i) =>
-    `<tr><td class="qty">${i.quantity}</td><td class="name">${escHtml(i.item_name)}</td></tr>`
-  ).join('');
+  const itemRows = items.map((i) => {
+    const details = itemDetails(i);
+    return `<tr><td class="qty">${i.quantity}</td><td class="name">${escHtml(i.item_name)}${details ? `<div class="mods">${escHtml(details)}</div>` : ''}</td></tr>`;
+  }).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -158,6 +162,7 @@ export function printFullKot(kot, cafeName) {
     table { width:100%; border-collapse:collapse; margin:4px 0; }
     .qty { width:28px; font-size:18px; font-weight:900; vertical-align:middle; padding:2px 4px 2px 0; }
     .name { font-size:14px; font-weight:bold; vertical-align:middle; padding:2px 0; }
+    .mods { font-size:10px; font-weight:bold; color:#333; line-height:1.35; margin-top:1px; }
     @media print { @page { size:80mm auto; margin:0; } body { padding:3mm 3mm 10mm; } }
   </style>
 </head>
@@ -192,4 +197,14 @@ function escHtml(str) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function itemDetails(item) {
+  const parts = [];
+  if (item?.variant_name) parts.push(`Variant: ${item.variant_name}`);
+  const mods = Array.isArray(item?.selected_modifiers)
+    ? item.selected_modifiers.map((m) => m.option_name).filter(Boolean)
+    : [];
+  if (mods.length) parts.push(`Add-ons: ${mods.join(', ')}`);
+  return parts.join(' | ');
 }

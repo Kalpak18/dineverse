@@ -20,6 +20,8 @@ router.delete('/groups/:groupId/options/:optionId',  ...auth, ctrl.deleteOption)
 // ─── Link groups to items ─────────────────────────────────────
 router.get('/items/:itemId/groups',    ...auth, ctrl.getItemGroups);
 router.put('/items/:itemId/groups',    ...auth, ctrl.setItemGroups);
+router.get('/categories/:categoryId/groups', ...auth, ctrl.getCategoryGroups);
+router.put('/categories/:categoryId/groups', ...auth, ctrl.setCategoryGroups);
 
 // ─── Variants for an item ─────────────────────────────────────
 router.get('/items/:itemId/variants',  ...auth, ctrl.getVariants);

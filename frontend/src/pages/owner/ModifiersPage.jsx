@@ -6,7 +6,7 @@ import {
   createModifierOption, updateModifierOption, deleteModifierOption,
 } from '../../services/api';
 
-const BLANK_GROUP = { name: '', selection_type: 'single', is_required: false, min_selections: 1, max_selections: 1 };
+const BLANK_GROUP = { name: '', selection_type: 'single', is_required: false, min_selections: 0, max_selections: 1 };
 const BLANK_OPT   = { name: '', price: '0', is_available: true };
 
 export default function ModifiersPage() {
@@ -63,7 +63,7 @@ export default function ModifiersPage() {
         name: groupForm.name.trim(),
         selection_type: groupForm.selection_type,
         is_required: groupForm.is_required,
-        min_selections: parseInt(groupForm.min_selections) || 1,
+        min_selections: Math.max(0, parseInt(groupForm.min_selections, 10) || 0),
         max_selections: parseInt(groupForm.max_selections) || 1,
       };
       if (groupModal === 'new') {

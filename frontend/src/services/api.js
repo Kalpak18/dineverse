@@ -16,7 +16,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401 → clear token and logout. On subscription_expired → redirect to billing.
+// On 401 → clear token and logout.
 // On network error (no response) → retry GET requests once (safe, idempotent).
 api.interceptors.response.use(
   (res) => res,
@@ -24,9 +24,6 @@ api.interceptors.response.use(
     if (err.response?.status === 401) {
       localStorage.removeItem('dineverse_token');
       window.dispatchEvent(new Event('auth:logout'));
-    }
-    if (err.response?.data?.error === 'subscription_expired') {
-      window.dispatchEvent(new Event('subscription:expired'));
     }
     // Single retry for GET requests on network failure (no response received)
     if (!err.response && err.config && !err.config._retry && err.config.method === 'get') {
@@ -62,6 +59,7 @@ export const getPlans = () => api.get('/payments/plans');
 export const createPaymentOrder = (plan_key) => api.post('/payments/create-order', { plan_key });
 export const verifyPayment = (data) => api.post('/payments/verify', data);
 export const getPaymentHistory = () => api.get('/payments/history');
+export const getCommissionSummary = () => api.get('/payments/commission');
 
 // ─── Razorpay Route (Owner payout account) ────────────────────
 export const getRouteStatus  = () => api.get('/payments/route/status');
@@ -113,9 +111,12 @@ export const adminGetAnalytics    = () => adminApi.get('/admin/analytics');
 export const adminGetCafeStats    = (id) => adminApi.get(`/admin/cafes/${id}/stats`);
 export const adminGetSettings     = () => adminApi.get('/admin/settings');
 export const adminUpdateSetting   = (key, value) => adminApi.put(`/admin/settings/${key}`, { value });
-export const adminBroadcast       = (data) => adminApi.post('/admin/broadcast', data);
-export const adminNotifyCafe      = (id, data) => adminApi.post(`/admin/cafes/${id}/notify`, data);
-export const getPublicSetting     = (key) => api.get(`/admin/public-settings/${key}`);
+export const adminBroadcast           = (data) => adminApi.post('/admin/broadcast', data);
+export const adminNotifyCafe          = (id, data) => adminApi.post(`/admin/cafes/${id}/notify`, data);
+export const getPublicSetting         = (key) => api.get(`/admin/public-settings/${key}`);
+export const adminGetCommissionReport = (params) => adminApi.get('/admin/commission', { params });
+export const adminGetSettlements      = (params) => adminApi.get('/admin/commission/settlements', { params });
+export const adminCollectCommission   = (data)   => adminApi.post('/admin/commission/collect', data);
 
 // ─── Cafe open/close toggle (owner) ──────────────────────────
 export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');
@@ -178,11 +179,12 @@ export const getPresignedUrl = (contentType, size, uploadType) =>
 // ─── Orders (Owner) ───────────────────────────────────────────
 export const getOrders = (params) => api.get('/orders', { params });
 export const getOrderById = (id) => api.get(`/orders/${id}`);
-export const updateOrderStatus = (id, status, cash_received = null, cancellation_reason = null) =>
+export const updateOrderStatus = (id, status, cash_received = null, cancellation_reason = null, payment_mode = null) =>
   api.patch(`/orders/${id}/status`, {
     status,
     ...(cash_received != null && { cash_received }),
     ...(cancellation_reason && { cancellation_reason }),
+    ...(payment_mode && { payment_mode }),
   });
 export const setKitchenMode   = (id, mode)             => api.patch(`/orders/${id}/kitchen-mode`, { mode });
 export const updateItemStatus = (id, itemId, status)   => api.patch(`/orders/${id}/items/${itemId}/status`, { status });
@@ -285,6 +287,8 @@ export const updateModifierOption = (groupId, optId, data) => api.patch(`/modifi
 export const deleteModifierOption = (groupId, optId) => api.delete(`/modifiers/groups/${groupId}/options/${optId}`);
 export const getItemModifierGroups = (itemId)   => api.get(`/modifiers/items/${itemId}/groups`);
 export const setItemModifierGroups = (itemId, groupIds) => api.put(`/modifiers/items/${itemId}/groups`, { group_ids: groupIds });
+export const getCategoryModifierGroups = (categoryId) => api.get(`/modifiers/categories/${categoryId}/groups`);
+export const setCategoryModifierGroups = (categoryId, groupIds) => api.put(`/modifiers/categories/${categoryId}/groups`, { group_ids: groupIds });
 export const getItemVariants     = (itemId)     => api.get(`/modifiers/items/${itemId}/variants`);
 export const saveItemVariants    = (itemId, variants) => api.put(`/modifiers/items/${itemId}/variants`, { variants });
 // Public: customer ordering

@@ -75,7 +75,7 @@ exports.getMe = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/dashboard ────────────────────────────────
 exports.getDashboard = asyncHandler(async (req, res) => {
-  const [cafeStats, revenueStats, ticketStats, recentPayments, recentSignups] = await Promise.all([
+  const [cafeStats, revenueStats, ticketStats, recentPayments, recentSignups, commissionStats] = await Promise.all([
     // Cafe counts
     db.query(`
       SELECT
@@ -117,15 +117,29 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       SELECT id, name, email, plan_type, plan_expiry_date, created_at
       FROM cafes ORDER BY created_at DESC LIMIT 5
     `),
+    // Commission totals
+    db.query(`
+      SELECT
+        COALESCE(SUM(commission_amount), 0)                                                    AS total_commission,
+        COALESCE(SUM(commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS this_month_commission,
+        COUNT(*) FILTER (WHERE status = 'paid')                                                AS paid_orders
+      FROM orders
+    `),
   ]);
 
   const rev = revenueStats.rows[0];
+  const com = commissionStats.rows[0];
   ok(res, {
     cafes: cafeStats.rows[0],
     revenue: {
       total_rupees: parseInt(rev.total_paise) / 100,
       this_month_rupees: parseInt(rev.this_month_paise) / 100,
       total_payments: parseInt(rev.total_payments),
+    },
+    commission: {
+      total: parseFloat(com.total_commission),
+      this_month: parseFloat(com.this_month_commission),
+      paid_orders: parseInt(com.paid_orders),
     },
     tickets: ticketStats.rows[0],
     recent_payments: recentPayments.rows.map((p) => ({
@@ -160,8 +174,10 @@ exports.getCafes = asyncHandler(async (req, res) => {
     db.query(
       `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active,
               c.plan_type, c.plan_start_date, c.plan_expiry_date, c.created_at,
-              (SELECT COUNT(*) FROM orders o WHERE o.cafe_id = c.id)   AS total_orders,
-              (SELECT COUNT(*) FROM menu_items m WHERE m.cafe_id = c.id) AS menu_items
+              c.commission_rate,
+              (SELECT COUNT(*) FROM orders o WHERE o.cafe_id = c.id)                                AS total_orders,
+              (SELECT COUNT(*) FROM menu_items m WHERE m.cafe_id = c.id)                            AS menu_items,
+              COALESCE((SELECT SUM(o.commission_amount) FROM orders o WHERE o.cafe_id = c.id AND o.status = 'paid'), 0) AS commission_earned
        FROM cafes c ${where}
        ORDER BY c.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -180,10 +196,9 @@ exports.getCafes = asyncHandler(async (req, res) => {
 // ─── PATCH /api/admin/cafes/:id ───────────────────────────────
 exports.updateCafe = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { is_active, extend_months } = req.body;
+  const { is_active, extend_months, commission_rate } = req.body;
 
   if (extend_months) {
-    // Extend plan from today or current expiry (whichever is later)
     await db.query(
       `UPDATE cafes
        SET plan_type         = 'yearly',
@@ -197,8 +212,16 @@ exports.updateCafe = asyncHandler(async (req, res) => {
     await db.query('UPDATE cafes SET is_active = $1 WHERE id = $2', [is_active, id]);
   }
 
+  if (commission_rate !== undefined) {
+    const rate = parseFloat(commission_rate);
+    if (isNaN(rate) || rate < 0 || rate > 100) return fail(res, 'commission_rate must be 0–100', 400);
+    await db.query('UPDATE cafes SET commission_rate = $1 WHERE id = $2', [rate, id]);
+  }
+
   const result = await db.query(
-    'SELECT id, name, email, is_active, plan_type, plan_expiry_date FROM cafes WHERE id = $1',
+    `SELECT id, name, email, is_active, plan_type, plan_expiry_date, commission_rate,
+            COALESCE((SELECT SUM(o.commission_amount) FROM orders o WHERE o.cafe_id = cafes.id AND o.status = 'paid'), 0) AS commission_earned
+     FROM cafes WHERE id = $1`,
     [id]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
@@ -638,4 +661,167 @@ exports.notifyCafe = asyncHandler(async (req, res) => {
   });
 
   ok(res, {}, `Notification sent to café`);
+});
+
+// ─── GET /api/admin/commission ────────────────────────────────
+// Per-café commission report: auto-collected (online) + outstanding (cash).
+// Admin uses this to know which cafés owe money and how much.
+exports.getCommissionReport = asyncHandler(async (req, res) => {
+  const { from, to, status } = req.query; // status: 'cash_due' | 'auto_deducted' | 'all'
+
+  const rows = await db.query(
+    `SELECT
+       c.id, c.name, c.email, c.slug, c.commission_rate,
+
+       -- Online: commission auto-deducted via Razorpay transfer
+       COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'auto_deducted'), 0) AS online_commission_collected,
+       COALESCE(COUNT(*)                FILTER (WHERE o.commission_status = 'auto_deducted'), 0) AS online_orders,
+
+       -- Cash: commission owed by café to DineVerse
+       COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'cash_due'), 0) AS cash_commission_owed,
+       COALESCE(COUNT(*)                FILTER (WHERE o.commission_status = 'cash_due'), 0) AS cash_orders_pending,
+
+       -- Previously collected cash commissions
+       COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'collected'), 0) AS cash_commission_collected,
+
+       -- Grand totals
+       COALESCE(SUM(o.final_amount),      0) AS total_gmv,
+       COALESCE(SUM(o.commission_amount), 0) AS total_commission,
+       COALESCE(COUNT(*),                 0) AS total_paid_orders
+
+     FROM cafes c
+     LEFT JOIN orders o ON o.cafe_id = c.id
+       AND o.status = 'paid'
+       AND ($1::date IS NULL OR o.created_at >= $1)
+       AND ($2::date IS NULL OR o.created_at <= $2 + INTERVAL '1 day')
+     WHERE c.is_active = true
+     GROUP BY c.id, c.name, c.email, c.slug, c.commission_rate
+     HAVING ($3::text IS NULL OR $3 = 'all'
+             OR ($3 = 'cash_due' AND COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'cash_due'), 0) > 0)
+             OR ($3 = 'auto_deducted' AND COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'auto_deducted'), 0) > 0))
+     ORDER BY cash_commission_owed DESC, c.name`,
+    [from || null, to || null, status || null]
+  );
+
+  const totals = rows.rows.reduce((acc, r) => ({
+    online_commission_collected: acc.online_commission_collected + parseFloat(r.online_commission_collected),
+    cash_commission_owed:        acc.cash_commission_owed        + parseFloat(r.cash_commission_owed),
+    cash_commission_collected:   acc.cash_commission_collected   + parseFloat(r.cash_commission_collected),
+    total_gmv:                   acc.total_gmv                   + parseFloat(r.total_gmv),
+    total_commission:            acc.total_commission            + parseFloat(r.total_commission),
+  }), { online_commission_collected: 0, cash_commission_owed: 0, cash_commission_collected: 0, total_gmv: 0, total_commission: 0 });
+
+  ok(res, {
+    cafes:  rows.rows.map((r) => ({
+      ...r,
+      commission_rate:              parseFloat(r.commission_rate),
+      online_commission_collected:  parseFloat(r.online_commission_collected),
+      cash_commission_owed:         parseFloat(r.cash_commission_owed),
+      cash_commission_collected:    parseFloat(r.cash_commission_collected),
+      cash_orders_pending:          parseInt(r.cash_orders_pending),
+      online_orders:                parseInt(r.online_orders),
+      total_gmv:                    parseFloat(r.total_gmv),
+      total_commission:             parseFloat(r.total_commission),
+      total_paid_orders:            parseInt(r.total_paid_orders),
+    })),
+    totals,
+  });
+});
+
+// ─── POST /api/admin/commission/collect ───────────────────────
+// Mark a café's outstanding cash commissions as collected.
+// Admin calls this after receiving payment from the café (bank transfer / UPI).
+// Creates a settlement record and updates all matching orders' commission_status.
+exports.collectCashCommission = asyncHandler(async (req, res) => {
+  const { cafe_id, from, to, payment_reference, notes } = req.body;
+  if (!cafe_id) return fail(res, 'cafe_id is required');
+
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Lock and fetch all cash_due orders for this café in the period
+    const ordersRes = await client.query(
+      `SELECT id, final_amount, commission_amount, created_at
+       FROM orders
+       WHERE cafe_id = $1
+         AND status = 'paid'
+         AND commission_status = 'cash_due'
+         AND ($2::date IS NULL OR created_at >= $2)
+         AND ($3::date IS NULL OR created_at <= $3 + INTERVAL '1 day')
+       FOR UPDATE`,
+      [cafe_id, from || null, to || null]
+    );
+
+    if (ordersRes.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return fail(res, 'No outstanding cash commissions found for this café in the given period', 404);
+    }
+
+    const orderIds     = ordersRes.rows.map((r) => r.id);
+    const totalGmv     = ordersRes.rows.reduce((s, r) => s + parseFloat(r.final_amount), 0);
+    const totalComm    = ordersRes.rows.reduce((s, r) => s + parseFloat(r.commission_amount), 0);
+    const now          = new Date();
+
+    // Mark orders as collected
+    await client.query(
+      `UPDATE orders
+       SET commission_status = 'collected', commission_collected_at = NOW()
+       WHERE id = ANY($1)`,
+      [orderIds]
+    );
+
+    // Create settlement record
+    const settlementRes = await client.query(
+      `INSERT INTO commission_settlements
+         (cafe_id, period_from, period_to, orders_count, total_gmv,
+          cash_commission, online_commission, total_commission,
+          status, settled_at, payment_reference, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, 0, $6, 'settled', NOW(), $7, $8)
+       RETURNING *`,
+      [
+        cafe_id,
+        from || ordersRes.rows.reduce((min, r) => r.created_at < min ? r.created_at : min, ordersRes.rows[0].created_at),
+        to   || now,
+        orderIds.length,
+        totalGmv.toFixed(2),
+        totalComm.toFixed(2),
+        payment_reference || null,
+        notes || null,
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    logger.info(
+      'Admin collected cash commission: café=%s orders=%d total=₹%s ref=%s',
+      cafe_id, orderIds.length, totalComm.toFixed(2), payment_reference || 'none'
+    );
+
+    ok(res, {
+      settlement:      settlementRes.rows[0],
+      orders_settled:  orderIds.length,
+      amount_collected: parseFloat(totalComm.toFixed(2)),
+    }, `₹${totalComm.toFixed(2)} commission collected from ${orderIds.length} orders`);
+
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+});
+
+// ─── GET /api/admin/commission/settlements ────────────────────
+exports.getSettlements = asyncHandler(async (req, res) => {
+  const { cafe_id } = req.query;
+  const result = await db.query(
+    `SELECT cs.*, c.name AS cafe_name, c.email AS cafe_email
+     FROM commission_settlements cs
+     JOIN cafes c ON c.id = cs.cafe_id
+     WHERE ($1::uuid IS NULL OR cs.cafe_id = $1)
+     ORDER BY cs.created_at DESC LIMIT 100`,
+    [cafe_id || null]
+  );
+  ok(res, { settlements: result.rows });
 });

@@ -8,6 +8,7 @@ const {
   forgotPassword, validateResetPassword, resetPassword,
   getSettings, updateSetting, getPublicSetting,
   broadcastEmail,
+  getCommissionReport, collectCashCommission, getSettlements,
 } = require('../controllers/adminController');
 
 // Public (one-time setup + login + password reset)
@@ -33,5 +34,10 @@ router.get('/analytics',       requireAdmin, getAnalytics);
 router.get('/settings',        requireAdmin, getSettings);
 router.put('/settings/:key',   requireAdmin, updateSetting);
 router.post('/broadcast',      requireAdmin, broadcastEmail);
+
+// Commission management
+router.get ('/commission',              requireAdmin, getCommissionReport);
+router.get ('/commission/settlements',  requireAdmin, getSettlements);
+router.post('/commission/collect',      requireAdmin, collectCashCommission);
 
 module.exports = router;

@@ -3,6 +3,9 @@ import {
   getCategories, createCategory, updateCategory, deleteCategory,
   getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability,
   updateStock,
+  getModifierGroups, getItemModifierGroups, setItemModifierGroups,
+  getCategoryModifierGroups, setCategoryModifierGroups,
+  getItemVariants, saveItemVariants,
 } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -461,6 +464,51 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
   const [showNewCat, setShowNewCat] = useState(false);
   const [creatingCat, setCreatingCat] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [configLoading, setConfigLoading] = useState(Boolean(item));
+  const [allModifierGroups, setAllModifierGroups] = useState([]);
+  const [attachedGroupIds, setAttachedGroupIds] = useState([]);
+  const [variantRows, setVariantRows] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadModifierConfig = async () => {
+      setConfigLoading(Boolean(item));
+      try {
+        const requests = [getModifierGroups()];
+        if (item?.id) {
+          requests.push(getItemModifierGroups(item.id), getItemVariants(item.id));
+        }
+        const [groupsRes, itemGroupsRes, variantsRes] = await Promise.all(requests);
+        if (cancelled) return;
+        setAllModifierGroups(groupsRes.data.groups || []);
+        setAttachedGroupIds((itemGroupsRes?.data?.groups || []).map((g) => g.id));
+        setVariantRows((variantsRes?.data?.variants || []).map((v) => ({
+          name: v.name || '',
+          price: String(v.price ?? ''),
+        })));
+      } catch {
+        if (!cancelled) toast.error('Failed to load add-on settings');
+      } finally {
+        if (!cancelled) setConfigLoading(false);
+      }
+    };
+    loadModifierConfig();
+    return () => { cancelled = true; };
+  }, [item?.id]);
+
+  const toggleAttachedGroup = (groupId) => {
+    setAttachedGroupIds((prev) =>
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+    );
+  };
+
+  const addVariantRow = () => setVariantRows((prev) => [...prev, { name: '', price: '' }]);
+  const updateVariantRow = (index, patch) => {
+    setVariantRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+  const removeVariantRow = (index) => {
+    setVariantRows((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleCreateCategory = async () => {
     if (!newCatName.trim()) return;
@@ -484,6 +532,14 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name || !form.price) { toast.error('Name and price are required'); return; }
+    const incompleteVariant = variantRows.some((row) =>
+      (row.name.trim() || String(row.price).trim()) &&
+      (!row.name.trim() || row.price === '' || Number.isNaN(parseFloat(row.price)) || parseFloat(row.price) < 0)
+    );
+    if (incompleteVariant) {
+      toast.error('Each variant needs a name and valid price');
+      return;
+    }
     setSaving(true);
     try {
       const payload = {
@@ -497,10 +553,18 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
       const { data } = item
         ? await updateMenuItem(item.id, payload)
         : await createMenuItem(payload);
+      const savedItem = data.item;
+      const cleanVariants = variantRows
+        .map((row) => ({ name: row.name.trim(), price: parseFloat(row.price) }))
+        .filter((row) => row.name && !Number.isNaN(row.price) && row.price >= 0);
+      await Promise.all([
+        saveItemVariants(savedItem.id, cleanVariants),
+        setItemModifierGroups(savedItem.id, attachedGroupIds),
+      ]);
       toast.success(item ? 'Item updated' : 'Item added');
-      onSaved(data.item);
+      onSaved(savedItem);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Failed to save item');
+      toast.error(getApiError(err));
     } finally {
       setSaving(false);
     }
@@ -622,6 +686,82 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
           )}
         </div>
 
+        {/* Variants and add-on groups */}
+        <div className="border border-gray-200 rounded-xl p-3 space-y-3">
+          <div>
+            <p className="text-sm font-semibold text-gray-800">Variants</p>
+            <p className="text-xs text-gray-400 mt-0.5">Use for required choices like Half / Full or Small / Large. If variants exist, customers must pick one.</p>
+          </div>
+          <div className="space-y-2">
+            {variantRows.map((row, index) => (
+              <div key={index} className="grid grid-cols-[1fr_110px_auto] gap-2">
+                <input
+                  type="text"
+                  className="input text-sm"
+                  placeholder="Variant name"
+                  value={row.name}
+                  onChange={(e) => updateVariantRow(index, { name: e.target.value })}
+                />
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="input text-sm"
+                  placeholder="Price"
+                  value={row.price}
+                  onChange={(e) => updateVariantRow(index, { price: e.target.value })}
+                />
+                <button
+                  type="button"
+                  onClick={() => removeVariantRow(index)}
+                  className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:bg-red-50"
+                  aria-label="Remove variant"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addVariantRow}
+              className="text-xs font-semibold text-brand-600 hover:text-brand-700"
+            >
+              + Add variant
+            </button>
+          </div>
+
+          <div className="border-t border-gray-100 pt-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Add-on groups</p>
+                <p className="text-xs text-gray-400 mt-0.5">Attach item-specific groups. Category groups are included automatically and duplicates are merged.</p>
+              </div>
+              {configLoading && <span className="text-xs text-gray-400">Loading...</span>}
+            </div>
+            {allModifierGroups.length === 0 ? (
+              <p className="text-xs text-gray-400 mt-2">No add-on groups yet. Create them from the Add-ons page, then attach them here.</p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {allModifierGroups.map((group) => (
+                  <button
+                    key={group.id}
+                    type="button"
+                    onClick={() => toggleAttachedGroup(group.id)}
+                    className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                      attachedGroupIds.includes(group.id)
+                        ? 'bg-brand-500 text-white border-brand-500'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {group.name}
+                    {group.is_required ? ' · Required' : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Dietary / allergen tags */}
         <div>
           <label className="label">Dietary & Allergen Tags</label>
@@ -664,6 +804,36 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
 function CategoryModal({ category, onClose, onSaved }) {
   const [name, setName] = useState(category?.name || '');
   const [saving, setSaving] = useState(false);
+  const [configLoading, setConfigLoading] = useState(Boolean(category));
+  const [allModifierGroups, setAllModifierGroups] = useState([]);
+  const [attachedGroupIds, setAttachedGroupIds] = useState([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadModifierConfig = async () => {
+      setConfigLoading(Boolean(category));
+      try {
+        const requests = [getModifierGroups()];
+        if (category?.id) requests.push(getCategoryModifierGroups(category.id));
+        const [groupsRes, categoryGroupsRes] = await Promise.all(requests);
+        if (cancelled) return;
+        setAllModifierGroups(groupsRes.data.groups || []);
+        setAttachedGroupIds((categoryGroupsRes?.data?.groups || []).map((g) => g.id));
+      } catch {
+        if (!cancelled) toast.error('Failed to load category add-ons');
+      } finally {
+        if (!cancelled) setConfigLoading(false);
+      }
+    };
+    loadModifierConfig();
+    return () => { cancelled = true; };
+  }, [category?.id]);
+
+  const toggleAttachedGroup = (groupId) => {
+    setAttachedGroupIds((prev) =>
+      prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
+    );
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -673,10 +843,11 @@ function CategoryModal({ category, onClose, onSaved }) {
       const { data } = category
         ? await updateCategory(category.id, { name })
         : await createCategory({ name });
+      await setCategoryModifierGroups(data.category.id, attachedGroupIds);
       toast.success(category ? 'Category updated' : 'Category added');
       onSaved(data.category);
-    } catch {
-      toast.error('Failed to save category');
+    } catch (err) {
+      toast.error(getApiError(err));
     } finally {
       setSaving(false);
     }
@@ -689,6 +860,36 @@ function CategoryModal({ category, onClose, onSaved }) {
           <label className="label">Category Name *</label>
           <p className="text-xs text-gray-400 mb-2">e.g. Momos, Pizza, Burgers — shared across Veg & Non-Veg</p>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
+        </div>
+        <div className="border border-gray-200 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-800">Category add-ons</p>
+              <p className="text-xs text-gray-400 mt-0.5">These groups appear on every item in this category.</p>
+            </div>
+            {configLoading && <span className="text-xs text-gray-400">Loading...</span>}
+          </div>
+          {allModifierGroups.length === 0 ? (
+            <p className="text-xs text-gray-400">No add-on groups yet. Create them from the Add-ons page first.</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {allModifierGroups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => toggleAttachedGroup(group.id)}
+                  className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    attachedGroupIds.includes(group.id)
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                  }`}
+                >
+                  {group.name}
+                  {group.is_required ? ' · Required' : ''}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex gap-3">
           <button type="submit" disabled={saving} className="btn-primary flex-1">{saving ? 'Saving...' : 'Save'}</button>

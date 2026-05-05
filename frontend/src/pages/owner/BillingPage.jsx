@@ -1,533 +1,313 @@
 import { useState, useEffect } from 'react';
-import { getPlans, createPaymentOrder, verifyPayment, getPaymentHistory } from '../../services/api';
+import { getCommissionSummary } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
-import { getApiError } from '../../utils/apiError';
-import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
-// ─── Pricing config ───────────────────────────────────────────
-// perMonth / totals / regulars / savings / savingsPct / planKeys
-// index 0=1mo, 1=3mo, 2=6mo, 3=1yr, 4=2yr, 5=3yr
-const TIERS = {
-  basic: {
-    name: 'Essential',
-    badge: '🔥 Most Popular',
-    badgeCls: 'bg-brand-500 text-white',
-    tagline: 'Run your entire café from one screen',
-    color: 'brand',
-    perMonth:   [699, 599, 549, 499, 449, 444],
-    totals:     [699, 1797, 3294, 5988, 10788, 15999],
-    regulars:   [699, 2097, 4194, 8388, 16776, 25164],
-    savings:    [0, 300, 900, 2400, 5988, 9165],
-    savingsPct: [0, 14, 21, 29, 36, 37],
-    planKeys:   ['basic_1month', 'basic_3month', 'basic_6month', 'basic_1year', 'basic_2year', 'basic_3year'],
-    outcomes: [
-      { icon: '📋', text: 'Accept unlimited orders — no caps, ever' },
-      { icon: '🔔', text: 'Never miss an order with instant real-time alerts' },
-      { icon: '🖥️', text: 'Kitchen display keeps your team in sync' },
-      { icon: '🧾', text: 'Print KOTs & legal GST invoices in one click' },
-      { icon: '📊', text: 'Track daily revenue & spot your bestsellers' },
-      { icon: '👥', text: 'Separate logins for cashier, kitchen & manager' },
-      { icon: '🏪', text: 'Manage multiple branches from one account' },
-      { icon: '⭐', text: 'Collect customer ratings to improve & grow' },
-    ],
-  },
-  premium: {
-    name: 'Kitchen Pro',
-    badge: '👨‍🍳 For Restaurant Teams',
-    badgeCls: 'bg-purple-600 text-white',
-    tagline: 'Full kitchen management for serious restaurants',
-    color: 'purple',
-    perMonth:   [1299, 1199, 1099, 999, 899, 888],
-    totals:     [1299, 3597, 6594, 11988, 21576, 31968],
-    regulars:   [1299, 3897, 7794, 15588, 31176, 46764],
-    savings:    [0, 300, 1200, 3600, 9600, 14796],
-    savingsPct: [0, 8, 15, 23, 31, 32],
-    planKeys:   ['premium_1month', 'premium_3month', 'premium_6month', 'premium_1year', 'premium_2year', 'premium_3year'],
-    outcomes: [
-      { icon: '✅', text: 'Everything in Essential, plus:' },
-      { icon: '🔄', text: 'Live per-item progress: Preparing → Ready → Served' },
-      { icon: '🍽️', text: 'Course sequencing — starters fire before mains' },
-      { icon: '❌', text: 'Cancel individual items & notify the customer' },
-      { icon: '🖨️', text: 'KOT auto-prints the moment items are ready' },
-      { icon: '📱', text: 'Customer sees exact item status on their phone' },
-      { icon: '📜', text: 'Full KOT reprint history for every order' },
-    ],
-  },
+function fmt(n) {
+  return Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtInt(n) {
+  return Number(n || 0).toLocaleString('en-IN');
+}
+function monthLabel(isoDate) {
+  return new Date(isoDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+}
+
+const MODE_LABEL = { cash: 'Cash', upi: 'UPI', card: 'Card', online: 'Online (Razorpay)' };
+const STATUS_BADGE = {
+  auto_deducted: { text: 'Transferred', cls: 'bg-green-100 text-green-700' },
+  cash_due:      { text: 'Owed to DineVerse', cls: 'bg-orange-100 text-orange-700' },
+  collected:     { text: 'Settled', cls: 'bg-gray-100 text-gray-500' },
+  pending:       { text: 'Pending', cls: 'bg-yellow-100 text-yellow-700' },
 };
 
-// Feature comparison rows for the table
-const COMPARE_ROWS = [
-  { label: 'Orders & menu items',         basic: 'Unlimited',    premium: 'Unlimited' },
-  { label: 'Real-time order alerts',      basic: true,           premium: true },
-  { label: 'GST invoices & KOT printing', basic: true,           premium: true },
-  { label: 'Analytics & revenue reports', basic: true,           premium: true },
-  { label: 'Staff accounts & roles',      basic: true,           premium: true },
-  { label: 'Multi-branch management',     basic: true,           premium: true },
-  { label: 'Customer ratings',            basic: true,           premium: true },
-  { label: 'Per-item kitchen status',     basic: false,          premium: true },
-  { label: 'Course sequencing',           basic: false,          premium: true },
-  { label: 'Item-level cancellation',     basic: false,          premium: true },
-  { label: 'KOT auto-print on ready',     basic: false,          premium: true },
-  { label: 'Customer live item tracking', basic: false,          premium: true },
-];
-
-const DURATIONS = [
-  { idx: 0, label: '1 Month',  note: 'No commitment', badge: null },
-  { idx: 1, label: '3 Months', note: null, badge: 'Save 14%' },
-  { idx: 2, label: '6 Months', note: null, badge: 'Save 21%' },
-  { idx: 3, label: '1 Year',   note: null, badge: 'Save 29%' },
-  { idx: 4, label: '2 Years',  note: null, badge: 'Save 36%' },
-  { idx: 5, label: '3 Years',  note: null, badge: 'Best Value' },
-];
-
-function fmt(n) {
-  return Number(n).toLocaleString('en-IN');
-}
-
-function planLabel(plan_type) {
-  const map = {
-    free_trial:       'Free Trial',
-    yearly:           'Essential · 1 Year',
-    two_year:         'Essential · 2 Years',
-    three_year:       'Essential · 3 Years',
-    '1year':          'Essential · 1 Year',
-    '2year':          'Essential · 2 Years',
-    '3year':          'Essential · 3 Years',
-    basic_1month:     'Essential · 1 Month',
-    basic_3month:     'Essential · 3 Months',
-    basic_6month:     'Essential · 6 Months',
-    basic_1year:      'Essential · 1 Year',
-    basic_2year:      'Essential · 2 Years',
-    basic_3year:      'Essential · 3 Years',
-    premium_1month:   'Kitchen Pro · 1 Month',
-    premium_3month:   'Kitchen Pro · 3 Months',
-    premium_6month:   'Kitchen Pro · 6 Months',
-    premium_1year:    'Kitchen Pro · 1 Year',
-    premium_2year:    'Kitchen Pro · 2 Years',
-    premium_3year:    'Kitchen Pro · 3 Years',
+function StatCard({ label, value, sub, accent, note }) {
+  const colors = {
+    green:  'bg-green-50 border-green-200 text-green-800',
+    blue:   'bg-blue-50 border-blue-200 text-blue-800',
+    orange: 'bg-orange-50 border-orange-200 text-orange-800',
+    red:    'bg-red-50 border-red-200 text-red-800',
+    gray:   'bg-gray-50 border-gray-100 text-gray-700',
   };
-  return map[plan_type] || plan_type;
-}
-
-function PlanBadge({ plan_type, plan_tier, expiry }) {
-  const expired = expiry && new Date(expiry) < new Date();
-  const isTrial = plan_type === 'free_trial';
-  const isPremium = plan_tier === 'premium';
-  const color = expired
-    ? 'bg-red-100 text-red-700 border-red-200'
-    : isTrial
-      ? 'bg-amber-100 text-amber-700 border-amber-200'
-      : isPremium
-        ? 'bg-purple-100 text-purple-700 border-purple-200'
-        : 'bg-green-100 text-green-700 border-green-200';
   return (
-    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${color}`}>
-      {expired ? 'Expired' : planLabel(plan_type)}
-    </span>
+    <div className={`rounded-2xl border p-4 ${colors[accent] || colors.gray}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide opacity-60 mb-1">{label}</p>
+      <p className="text-2xl font-black">{value}</p>
+      {sub && <p className="text-xs mt-0.5 opacity-70">{sub}</p>}
+      {note && <p className="text-xs mt-1.5 opacity-60 italic">{note}</p>}
+    </div>
   );
 }
 
 export default function BillingPage() {
-  const { cafe, updateCafe } = useAuth();
-  const [data, setData]           = useState(null);
-  const [history, setHistory]     = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [paying, setPaying]       = useState(false);
-  const [selectedTier, setTier]   = useState('basic');
-  const [selectedDur, setDur]     = useState(3); // default: 1 Year
-  const [activated, setActivated] = useState(null);
+  const { cafe } = useAuth();
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab]         = useState('overview'); // 'overview' | 'breakdown' | 'orders'
 
   useEffect(() => {
-    Promise.all([getPlans(), getPaymentHistory()])
-      .then(([plansRes, histRes]) => {
-        setData(plansRes.data);
-        setHistory(histRes.data.payments);
-      })
-      .catch(() => toast.error('Failed to load billing info'))
+    getCommissionSummary()
+      .then((res) => setData(res.data))
+      .catch(() => toast.error('Failed to load revenue data'))
       .finally(() => setLoading(false));
   }, []);
 
-  const tier = TIERS[selectedTier];
-  const dur  = DURATIONS[selectedDur];
-
-  const handleUpgrade = async () => {
-    if (paying) return;
-    setPaying(true);
-    try {
-      const planKey = tier.planKeys[selectedDur];
-      const { data: order } = await createPaymentOrder(planKey);
-
-      const options = {
-        key: data.razorpay_key_id,
-        amount: order.amount,
-        currency: order.currency,
-        name: 'DineVerse',
-        description: `${tier.name} · ${dur.label}`,
-        order_id: order.order_id,
-        prefill: {
-          name:    order.cafe_name,
-          email:   order.cafe_email,
-          contact: cafe?.phone || '',
-        },
-        theme: { color: selectedTier === 'premium' ? '#7c3aed' : '#f97316' },
-        handler: async (response) => {
-          try {
-            const { data: verified } = await verifyPayment({
-              razorpay_order_id:   response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature:  response.razorpay_signature,
-            });
-            updateCafe({
-              plan_type:        verified.plan_type,
-              plan_tier:        verified.plan_tier,
-              plan_expiry_date: verified.plan_expiry_date,
-            });
-            setActivated(verified);
-            const [plansRes, histRes] = await Promise.all([getPlans(), getPaymentHistory()]);
-            setData(plansRes.data);
-            setHistory(histRes.data.payments);
-          } catch {
-            toast('Payment received! Your subscription is being activated — it should reflect within a minute. If it doesn\'t, contact support.', {
-              duration: 10000,
-              icon: '⏳',
-            });
-          } finally {
-            setPaying(false);
-          }
-        },
-        modal: { ondismiss: () => setPaying(false) },
-      };
-
-      if (!window.Razorpay) {
-        const loaded = await loadRazorpayScript();
-        if (!loaded) {
-          toast.error('Payment gateway not loaded. Please refresh and try again.');
-          setPaying(false);
-          return;
-        }
-      }
-      const rzp = new window.Razorpay(options);
-      rzp.on('payment.failed', (response) => {
-        toast.error(`Payment failed: ${response.error.description}`);
-        setPaying(false);
-      });
-      rzp.open();
-    } catch (err) {
-      toast.error(getApiError(err));
-      setPaying(false);
-    }
-  };
-
   if (loading) return <LoadingSpinner />;
+  if (!data) return (
+    <div className="card text-center py-16 text-gray-400">Could not load billing data. Please refresh.</div>
+  );
 
-  const current    = data?.current;
-  const expiryDate = current?.plan_expiry_date
-    ? new Date(current.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
-    : null;
-  const isExpired  = current?.plan_expiry_date && new Date(current.plan_expiry_date) < new Date();
-  const isPaid     = current?.plan_type && current.plan_type !== 'free_trial';
-
-  const total     = tier.totals[selectedDur];
-  const perMonth  = tier.perMonth[selectedDur];
-  const savings   = tier.savings[selectedDur];
-  const regular   = tier.regulars[selectedDur];
-  const savingPct = tier.savingsPct[selectedDur];
-
-  const btnLabel = paying
-    ? 'Opening payment...'
-    : isExpired
-      ? `Renew — ₹${fmt(total)}`
-      : isPaid
-        ? `Upgrade / Extend — ₹${fmt(total)}`
-        : `Activate — ₹${fmt(total)}`;
-
-  const accentBase = selectedTier === 'premium'
-    ? { ring: 'border-purple-500 bg-white shadow-md', badge: 'bg-purple-500', btn: 'bg-purple-600 hover:bg-purple-700 text-white', card: 'border-purple-200 bg-gradient-to-br from-purple-50 to-violet-50' }
-    : { ring: 'border-brand-500 bg-white shadow-md', badge: 'bg-brand-500', btn: 'btn-primary', card: 'border-brand-200 bg-gradient-to-br from-brand-50 to-orange-50' };
+  const rate             = data.commission_rate ?? 5;
+  const cashOwed         = Number(data.cash_commission_owed || 0);
+  const onlineReceived   = Number(data.online_net_received || 0);
+  const cashNetYours     = Number(data.cash_net_yours || 0);
+  const monthNet         = Number(data.month_net_revenue || 0);
+  const totalNet         = Number(data.total_net_revenue || 0);
 
   return (
     <div className="space-y-6 max-w-3xl">
 
-      {/* ── Header ── */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Plans & Pricing</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          {!isPaid
-            ? 'Your 30-day free trial is active. Subscribe before it expires to keep your café running.'
-            : 'Manage your subscription below.'}
-        </p>
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Revenue</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Your earnings after DineVerse's <strong>{rate}% commission</strong>. All features included — no subscription.
+          </p>
+        </div>
+        <div className="flex-shrink-0 bg-brand-50 border border-brand-200 rounded-2xl px-4 py-2 text-center">
+          <p className="text-xs text-brand-600 font-semibold uppercase tracking-wide">Commission</p>
+          <p className="text-3xl font-black text-brand-600">{rate}%</p>
+        </div>
       </div>
 
-      {/* Payment success banner */}
-      {activated && (
-        <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-start gap-4">
-          <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center flex-shrink-0 text-white text-xl">✓</div>
-          <div className="flex-1">
-            <p className="font-bold text-green-800 text-base">You're all set!</p>
-            <p className="text-sm text-green-700 mt-0.5">
-              {planLabel(activated.plan_type)} is now active.
-              {activated.plan_expiry_date && (
-                <> Valid until <strong>{new Date(activated.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</strong>.</>
-              )}
+      {/* Cash commission alert */}
+      {cashOwed > 0 && (
+        <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-4 flex gap-3">
+          <span className="text-2xl flex-shrink-0">⚠️</span>
+          <div>
+            <p className="font-bold text-orange-800">₹{fmt(cashOwed)} cash commission outstanding</p>
+            <p className="text-sm text-orange-700 mt-0.5">
+              This is DineVerse's share from your cash/UPI/card orders. DineVerse will collect this monthly.
+              Contact <a href="mailto:support@dine-verse.com" className="underline font-medium">support@dine-verse.com</a> for questions.
             </p>
           </div>
-          <button onClick={() => setActivated(null)} className="text-green-500 hover:text-green-700 font-bold text-lg leading-none flex-shrink-0">×</button>
         </div>
       )}
 
-      {/* Current Plan Status */}
-      <div className={`card border-2 ${isExpired ? 'border-red-200 bg-red-50/30' : current?.days_left > 0 && current.days_left <= 14 ? 'border-amber-200 bg-amber-50/30' : 'border-gray-100'}`}>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Current Plan</p>
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-lg font-bold text-gray-900">{planLabel(current?.plan_type)}</h2>
-              <PlanBadge plan_type={current?.plan_type} plan_tier={current?.plan_tier} expiry={current?.plan_expiry_date} />
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl w-fit">
+        {[['overview','Overview'],['breakdown','Monthly'],['orders','Recent Orders']].map(([v, l]) => (
+          <button
+            key={v}
+            onClick={() => setTab(v)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${tab === v ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── OVERVIEW TAB ── */}
+      {tab === 'overview' && (
+        <div className="space-y-5">
+
+          {/* This month */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">This Month</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <StatCard
+                accent="green"
+                label="Net revenue"
+                value={`₹${fmt(monthNet)}`}
+                sub="what you keep this month"
+              />
+              <StatCard
+                accent="gray"
+                label="Gross GMV"
+                value={`₹${fmt(data.month_gmv)}`}
+                sub="total order value"
+              />
+              <StatCard
+                accent="orange"
+                label="Commission"
+                value={`₹${fmt(data.month_commission)}`}
+                sub={`${rate}% of GMV`}
+              />
             </div>
-            {expiryDate && (
-              <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold ${
-                isExpired
-                  ? 'bg-red-100 text-red-700'
-                  : current?.days_left > 0 && current.days_left <= 14
-                    ? 'bg-amber-100 text-amber-700'
-                    : 'bg-gray-100 text-gray-700'
-              }`}>
-                <span>{isExpired ? '🔴' : current?.days_left <= 14 ? '⚠️' : '🟢'}</span>
-                <span>{isExpired ? 'Expired on ' : 'Active until '}<strong>{expiryDate}</strong></span>
+          </div>
+
+          {/* Payment stream split */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+            {/* Online stream */}
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🏦</span>
+                <h3 className="font-bold text-green-800">Online Payments (Razorpay)</h3>
               </div>
-            )}
-            {!isExpired && current?.days_left > 0 && (
-              <p className={`text-xs font-medium ${current.days_left <= 7 ? 'text-red-600' : current.days_left <= 30 ? 'text-amber-600' : 'text-gray-400'}`}>
-                {current.days_left} day{current.days_left !== 1 ? 's' : ''} remaining
-                {current.days_left <= 14 && ' — renew now to avoid interruption'}
+              <p className="text-xs text-green-700">
+                Commission auto-deducted at payment time. Your net is transferred directly to your linked bank account.
               </p>
-            )}
-          </div>
-          {isExpired && (
-            <span className="text-sm font-semibold text-red-600 bg-red-100 border border-red-200 px-3 py-1.5 rounded-lg self-start">
-              Service paused — renew below
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── Plan cards (side-by-side) ── */}
-      <div>
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Choose your plan</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {Object.entries(TIERS).map(([key, t]) => {
-            const isPrem = key === 'premium';
-            const isSelected = selectedTier === key;
-            const basePerMonth = t.perMonth[0];
-            return (
-              <button
-                key={key}
-                onClick={() => setTier(key)}
-                className={`relative rounded-2xl border-2 p-5 text-left transition-all ${
-                  isSelected
-                    ? isPrem
-                      ? 'border-purple-500 bg-white shadow-lg'
-                      : 'border-brand-500 bg-white shadow-lg'
-                    : 'border-gray-200 bg-gray-50 hover:bg-white hover:border-gray-300 hover:shadow-sm'
-                }`}
-              >
-                {/* Badge */}
-                <span className={`inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-full mb-3 ${t.badgeCls}`}>
-                  {t.badge}
-                </span>
-
-                <p className="text-lg font-bold text-gray-900">{t.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5 mb-3 leading-snug">{t.tagline}</p>
-
-                <div className="flex items-baseline gap-1 mb-1">
-                  <span className="text-2xl font-black text-gray-900">₹{fmt(basePerMonth)}</span>
-                  <span className="text-sm text-gray-400">/mo</span>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-green-700">Already in your bank</span>
+                  <span className="font-bold text-green-800">₹{fmt(onlineReceived)}</span>
                 </div>
-                <p className="text-xs text-gray-400">from ₹{fmt(basePerMonth)}/mo · more options below</p>
-
-                {/* Selected indicator */}
-                <div className={`absolute top-4 right-4 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                  isSelected
-                    ? isPrem ? 'border-purple-500 bg-purple-500' : 'border-brand-500 bg-brand-500'
-                    : 'border-gray-300'
-                }`}>
-                  {isSelected && <span className="text-white text-[10px] font-bold">✓</span>}
+                <div className="flex justify-between text-xs text-green-600 opacity-75">
+                  <span>Commission auto-deducted</span>
+                  <span>−₹{fmt(data.online_commission_auto)}</span>
                 </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── What you get with selected plan ── */}
-      <div className={`rounded-2xl border-2 p-5 space-y-4 ${accentBase.card}`}>
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-gray-900">{tier.name}</span>
-          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${tier.badgeCls}`}>{tier.badge}</span>
-        </div>
-        <ul className="space-y-2">
-          {tier.outcomes.map((o) => (
-            <li key={o.text} className="flex items-start gap-3 text-sm text-gray-700">
-              <span className="flex-shrink-0 text-base">{o.icon}</span>
-              <span>{o.text}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* ── Feature comparison table ── */}
-      <details className="group">
-        <summary className="cursor-pointer text-sm font-semibold text-brand-600 hover:text-brand-700 list-none flex items-center gap-1.5 select-none">
-          <span className="group-open:hidden">▶</span>
-          <span className="hidden group-open:inline">▼</span>
-          Compare all features
-        </summary>
-        <div className="mt-3 rounded-2xl border border-gray-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Feature</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-brand-600 uppercase tracking-wide text-center">Essential</th>
-                <th className="px-4 py-2.5 text-xs font-semibold text-purple-600 uppercase tracking-wide text-center">Kitchen Pro</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {COMPARE_ROWS.map((row) => (
-                <tr key={row.label} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-2.5 text-gray-700">{row.label}</td>
-                  <td className="px-4 py-2.5 text-center">
-                    {row.basic === true
-                      ? <span className="text-green-500 font-bold">✓</span>
-                      : row.basic === false
-                        ? <span className="text-gray-300 font-bold">—</span>
-                        : <span className="text-xs font-semibold text-brand-600">{row.basic}</span>}
-                  </td>
-                  <td className="px-4 py-2.5 text-center">
-                    {row.premium === true
-                      ? <span className="text-purple-500 font-bold">✓</span>
-                      : row.premium === false
-                        ? <span className="text-gray-300 font-bold">—</span>
-                        : <span className="text-xs font-semibold text-purple-600">{row.premium}</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
-
-      {/* ── Duration selector + pricing ── */}
-      <div className={`card border-2 space-y-4 ${accentBase.card}`}>
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Billing period</p>
-        <div className="grid grid-cols-3 gap-2">
-          {DURATIONS.map((d) => (
-            <button
-              key={d.idx}
-              onClick={() => setDur(d.idx)}
-              className={`relative rounded-xl border-2 py-3 px-2 text-center transition-all ${
-                selectedDur === d.idx ? accentBase.ring : 'border-gray-200 bg-white/70 hover:border-gray-300'
-              }`}
-            >
-              {d.badge && (
-                <span className={`absolute -top-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  d.idx === 5 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
-                }`}>
-                  {d.badge}
-                </span>
+              </div>
+              {onlineReceived === 0 && (
+                <p className="text-xs text-green-600 italic">No online payments yet or Razorpay Route not enabled.</p>
               )}
-              <p className="font-bold text-gray-900 text-sm mt-1">{d.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">₹{fmt(tier.perMonth[d.idx])}/mo</p>
-              {d.note && <p className="text-[10px] text-gray-400 mt-0.5">{d.note}</p>}
-            </button>
-          ))}
-        </div>
+            </div>
 
-        {/* Price summary */}
-        <div className="bg-white rounded-xl p-4 border border-gray-100 space-y-1.5">
-          <div className="flex items-baseline gap-2">
-            <span className="text-4xl font-black text-gray-900">₹{fmt(perMonth)}</span>
-            <span className="text-base text-gray-500">/month</span>
-            {savingPct > 0 && (
-              <span className="text-xs font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded-full">{savingPct}% off</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-sm flex-wrap">
-            <span className="text-gray-700 font-semibold">₹{fmt(total)} billed for {dur.label.toLowerCase()}</span>
-            {savings > 0 && (
-              <>
-                <span className="text-gray-400 line-through text-xs">₹{fmt(regular)}</span>
-                <span className="text-green-600 font-semibold text-xs">You save ₹{fmt(savings)}</span>
-              </>
-            )}
-          </div>
-          {selectedDur === 0 && (
-            <p className="text-xs text-gray-400">Choose 3+ months to save — same features, lower per-month cost</p>
-          )}
-        </div>
-
-        {/* CTA */}
-        <button
-          onClick={handleUpgrade}
-          disabled={paying}
-          className={`w-full py-4 text-base font-bold rounded-xl disabled:opacity-60 transition-colors ${accentBase.btn}`}
-        >
-          {paying ? 'Opening payment…' : isExpired
-            ? `Renew ${tier.name} — ₹${fmt(total)}`
-            : isPaid
-              ? `Upgrade to ${tier.name} — ₹${fmt(total)}`
-              : `Get ${tier.name} — ₹${fmt(total)}`}
-        </button>
-        <p className="text-center text-xs text-gray-400">
-          🔒 Secure payment via Razorpay &nbsp;·&nbsp; Instant activation &nbsp;·&nbsp; No hidden fees
-        </p>
-      </div>
-
-      {/* Payment History */}
-      {history.length > 0 && (
-        <div className="card">
-          <h2 className="font-semibold text-gray-900 mb-4">Payment History</h2>
-          <div className="divide-y divide-gray-50">
-            {history.map((p) => {
-              const isCancelled = p.status === 'cancelled';
-              const isPending   = p.status === 'pending';
-              const isDone      = p.status === 'completed';
-              return (
-                <div
-                  key={p.id}
-                  className={`flex items-center justify-between text-sm py-3 ${isCancelled ? 'opacity-40' : ''}`}
-                >
-                  <div>
-                    <p className={`font-medium ${isCancelled ? 'text-gray-500 line-through' : 'text-gray-800'}`}>
-                      {planLabel(p.plan_type)}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      {isDone && p.razorpay_payment_id && (
-                        <span className="ml-2 font-mono text-gray-300">#{p.razorpay_payment_id.slice(-8)}</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`font-semibold ${isCancelled ? 'text-gray-400 line-through' : 'text-gray-800'}`}>
-                      ₹{fmt(p.amount_paise / 100)}
-                    </span>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                      isDone      ? 'bg-green-100 text-green-700' :
-                      isPending   ? 'bg-amber-100 text-amber-700' :
-                      isCancelled ? 'bg-gray-100 text-gray-400'   :
-                                    'bg-gray-100 text-gray-500'
-                    }`}>
-                      {isDone ? 'Paid' : isPending ? 'Not completed' : isCancelled ? 'Cancelled' : p.status}
-                    </span>
-                  </div>
+            {/* Cash/UPI/Card stream */}
+            <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">💵</span>
+                <h3 className="font-bold text-blue-800">Cash / UPI / Card</h3>
+              </div>
+              <p className="text-xs text-blue-700">
+                You collect the full amount. Commission is owed to DineVerse and collected monthly.
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-blue-700">Total collected</span>
+                  <span className="font-bold text-blue-800">₹{fmt(data.cash_gmv_held)}</span>
                 </div>
-              );
-            })}
+                <div className="flex justify-between text-xs text-orange-600 font-semibold">
+                  <span>Commission owed to DineVerse</span>
+                  <span>−₹{fmt(data.cash_commission_owed)}</span>
+                </div>
+                <div className="flex justify-between text-sm border-t border-blue-200 pt-1.5 mt-1.5">
+                  <span className="text-blue-700 font-medium">Your net</span>
+                  <span className="font-bold text-blue-800">₹{fmt(cashNetYours)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* All-time totals */}
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-3">All Time</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <StatCard accent="green"  label="Total net revenue" value={`₹${fmt(totalNet)}`}               sub="your earnings"         />
+              <StatCard accent="gray"   label="Total GMV"         value={`₹${fmtInt(data.total_gmv)}`}      sub="gross order value"     />
+              <StatCard accent="orange" label="Total commission"  value={`₹${fmt(data.total_commission)}`}  sub="paid to DineVerse"     />
+              <StatCard accent="blue"   label="Paid orders"       value={fmtInt(data.total_paid_orders)}    sub="all time"              />
+            </div>
+          </div>
+
+          {/* How it works */}
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-xs text-gray-500 space-y-2">
+            <p className="font-semibold text-gray-600 text-sm mb-1">How commission works</p>
+            <div className="flex gap-2">
+              <span>🟢</span>
+              <p><strong>Razorpay (online):</strong> Commission ({rate}%) is auto-deducted via Razorpay Route when the customer pays online. Your net amount arrives in your bank instantly — no manual settlement needed.</p>
+            </div>
+            <div className="flex gap-2">
+              <span>🟡</span>
+              <p><strong>Cash / UPI / Card:</strong> You collect the full amount at your counter. DineVerse invoices you for the {rate}% commission monthly and collects via bank transfer or deduction from future payouts.</p>
+            </div>
+            <div className="flex gap-2">
+              <span>📧</span>
+              <p>Questions? Email <a href="mailto:support@dine-verse.com" className="text-brand-500 hover:underline">support@dine-verse.com</a></p>
+            </div>
           </div>
         </div>
       )}
+
+      {/* ── MONTHLY BREAKDOWN TAB ── */}
+      {tab === 'breakdown' && (
+        <div className="card">
+          {data.monthly_breakdown?.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left py-2 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Month</th>
+                    <th className="text-right py-2 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Orders</th>
+                    <th className="text-right py-2 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">GMV</th>
+                    <th className="text-right py-2 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Commission</th>
+                    <th className="text-right py-2 pr-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">Cash Owed</th>
+                    <th className="text-right py-2 text-xs font-semibold text-green-600 uppercase tracking-wide">Your Net</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {data.monthly_breakdown.map((row) => (
+                    <tr key={row.month} className="hover:bg-gray-50">
+                      <td className="py-2.5 pr-3 font-medium text-gray-800">{monthLabel(row.month)}</td>
+                      <td className="py-2.5 pr-3 text-right text-gray-500">{fmtInt(row.paid_orders)}</td>
+                      <td className="py-2.5 pr-3 text-right text-gray-600">₹{fmtInt(row.gmv)}</td>
+                      <td className="py-2.5 pr-3 text-right text-orange-600 font-medium">−₹{fmt(row.commission)}</td>
+                      <td className="py-2.5 pr-3 text-right">
+                        {Number(row.cash_commission_owed) > 0
+                          ? <span className="text-orange-500 font-semibold">₹{fmt(row.cash_commission_owed)}</span>
+                          : <span className="text-gray-300">—</span>
+                        }
+                      </td>
+                      <td className="py-2.5 text-right font-bold text-green-700">₹{fmt(row.net_revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200">
+                    <td className="py-2.5 pr-3 font-bold text-gray-800">Total</td>
+                    <td className="py-2.5 pr-3 text-right font-semibold text-gray-700">{fmtInt(data.total_paid_orders)}</td>
+                    <td className="py-2.5 pr-3 text-right font-semibold text-gray-700">₹{fmtInt(data.total_gmv)}</td>
+                    <td className="py-2.5 pr-3 text-right font-semibold text-orange-600">−₹{fmt(data.total_commission)}</td>
+                    <td className="py-2.5 pr-3 text-right font-semibold text-orange-500">₹{fmt(cashOwed)}</td>
+                    <td className="py-2.5 text-right font-bold text-green-700">₹{fmt(totalNet)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <p className="text-center py-12 text-gray-400">No paid orders yet.</p>
+          )}
+        </div>
+      )}
+
+      {/* ── RECENT ORDERS TAB ── */}
+      {tab === 'orders' && (
+        <div className="card divide-y divide-gray-50">
+          {data.recent_orders?.length > 0 ? data.recent_orders.map((o) => {
+            const badge = STATUS_BADGE[o.commission_status] || STATUS_BADGE.pending;
+            return (
+              <div key={o.id} className="flex items-center justify-between py-3 gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-medium text-gray-800 text-sm">Order #{o.daily_order_number}</p>
+                    <span className="text-xs text-gray-400 capitalize">{o.order_type?.replace('-', ' ')}</span>
+                    {o.payment_mode && (
+                      <span className="text-xs text-gray-400">{MODE_LABEL[o.payment_mode] || o.payment_mode}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {new Date(o.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+                <div className="text-right flex-shrink-0 space-y-1">
+                  <div className="flex items-center justify-end gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>{badge.text}</span>
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    ₹{fmt(o.final_amount)} &minus; ₹{fmt(o.commission_amount)} commission
+                  </p>
+                  <p className="font-bold text-green-700 text-sm">= ₹{fmt(o.net_amount)} yours</p>
+                </div>
+              </div>
+            );
+          }) : (
+            <p className="text-center py-12 text-gray-400">No paid orders yet.</p>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }

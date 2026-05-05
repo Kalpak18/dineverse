@@ -5,9 +5,17 @@ import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import toast from 'react-hot-toast';
-import { premiumToast, isPremiumError } from '../../utils/premiumToast';
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function itemDetails(item) {
+  const parts = [];
+  if (item?.variant_name) parts.push(`Variant: ${item.variant_name}`);
+  const mods = Array.isArray(item?.selected_modifiers)
+    ? item.selected_modifiers.map((m) => m.option_name).filter(Boolean)
+    : [];
+  if (mods.length) parts.push(`Add-ons: ${mods.join(', ')}`);
+  return parts.join(' | ');
+}
 
 function printKitchenToken(order, cafeName, servedItems = null) {
   const num = String(order.daily_order_number).padStart(2, '0');
@@ -22,7 +30,10 @@ function printKitchenToken(order, cafeName, servedItems = null) {
     itemsToPrint = itemsToPrint.filter(item => servedItems.includes(item.id));
   }
 
-  const itemRows = itemsToPrint.map((i) => `<tr><td class="qty">${i.quantity}</td><td class="item">${i.item_name}</td></tr>`).join('');
+  const itemRows = itemsToPrint.map((i) => {
+    const details = itemDetails(i);
+    return `<tr><td class="qty">${i.quantity}</td><td class="item">${esc(i.item_name)}${details ? `<div class="mods">${esc(details)}</div>` : ''}</td></tr>`;
+  }).join('');
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -41,6 +52,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   table { width:100%; border-collapse:collapse; margin:4px 0; }
   .qty { width:28px; font-size:16px; font-weight:900; vertical-align:middle; padding:3px 4px 3px 0; }
   .item { font-size:14px; font-weight:bold; vertical-align:middle; padding:3px 0; }
+  .mods { font-size:10px; font-weight:bold; color:#333; line-height:1.35; margin-top:1px; }
   .notes { font-size:11px; color:#c00; font-weight:bold; margin-top:4px; padding:3px 5px; border:1px dashed #c00; border-radius:4px; }
   @media print { @page { size:80mm auto; margin:0; } body { padding:4mm 3mm 10mm; } }
 </style>
@@ -225,7 +237,8 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onItem
                     {item.quantity}
                   </span>
                   <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
-                    {item.item_name}
+                    <span className="block">{item.item_name}</span>
+                    {itemDetails(item) && <span className="block text-[11px] font-medium text-gray-400">{itemDetails(item)}</span>}
                   </span>
                   <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
                     {ITEM_STATUS_LABEL[ist] || ist}
@@ -334,6 +347,36 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
 
       {order.kitchen_mode === 'individual' ? (
         <div className="space-y-1.5 mb-3">
+          {/* Bulk action row */}
+          {(() => {
+            const active = sortedItems.filter((i) => i.item_status !== 'cancelled');
+            const hasPending   = active.some((i) => i.item_status === 'pending');
+            const hasPreparing = active.some((i) => i.item_status === 'preparing');
+            const hasReady     = active.some((i) => i.item_status === 'ready');
+            if (!hasPending && !hasPreparing && !hasReady) return null;
+            return (
+              <div className="flex gap-1.5 mb-1">
+                {hasPending && (
+                  <button
+                    onClick={() => active.filter((i) => i.item_status === 'pending').forEach((i) => onItemUpdate(order.id, i.id, 'preparing'))}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-orange-700 hover:bg-orange-600 text-white transition-colors"
+                  >🍳 All Preparing</button>
+                )}
+                {hasPreparing && (
+                  <button
+                    onClick={() => active.filter((i) => i.item_status === 'preparing').forEach((i) => onItemUpdate(order.id, i.id, 'ready'))}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-teal-700 hover:bg-teal-600 text-white transition-colors"
+                  >✓ All Ready</button>
+                )}
+                {hasReady && (
+                  <button
+                    onClick={() => active.filter((i) => i.item_status === 'ready').forEach((i) => onItemUpdate(order.id, i.id, 'served'))}
+                    className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-emerald-700 hover:bg-emerald-600 text-white transition-colors"
+                  >🍽️ Serve All</button>
+                )}
+              </div>
+            );
+          })()}
           {sortedItems.map((item, idx) => {
             const isCancelled = item.item_status === 'cancelled';
             const isSelected = (selectedItems[order.id] || new Set()).has(item.id);
@@ -346,7 +389,10 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
                         <input type="checkbox" checked={isSelected} onChange={() => onToggleItem(order.id, item.id)} className="w-3.5 h-3.5 text-emerald-600 bg-gray-800 border-gray-600 rounded" />
                       )}
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded bg-gray-800 text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                      <span className={`text-xs font-semibold truncate ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>{item.item_name}</span>
+                      <span className={`min-w-0 text-xs font-semibold ${isCancelled ? 'line-through text-gray-500' : 'text-white'}`}>
+                        <span className="block truncate">{item.item_name}</span>
+                        {itemDetails(item) && <span className="block truncate text-[10px] font-medium text-gray-400">{itemDetails(item)}</span>}
+                      </span>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className={`inline-flex text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${ITEM_STATUS_STYLE[item.item_status] || 'bg-gray-700 text-gray-400'}`}>
@@ -406,7 +452,10 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
                   ${ITEM_ROW_STYLE[ist]}`}
               >
                 <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">{item.quantity}</span>
-                <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>{item.item_name}</span>
+                <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                  <span className="block">{item.item_name}</span>
+                  {itemDetails(item) && <span className="block text-[11px] font-medium text-gray-400">{itemDetails(item)}</span>}
+                </span>
                 <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>{ITEM_STATUS_LABEL[ist] || ist}</span>
                 {!isCancelled && nextIst && <span className="text-gray-600 text-xs flex-shrink-0">›</span>}
               </div>
@@ -444,8 +493,6 @@ export default function KitchenPage() {
   const [cancelling, setCancelling] = useState(false);
   const [mobileTab, setMobileTab] = useState('pending');
   const now = useTimer();
-
-  const isPremium = cafe?.plan_tier === 'premium';
 
   const playChime = useCallback(() => {
     if (!soundEnabled) return;
@@ -531,7 +578,6 @@ export default function KitchenPage() {
         printKitchenToken(data.order, cafe?.name, [itemId]);
       }
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
       toast.error('Failed to update item status');
     }
   };
@@ -549,7 +595,6 @@ export default function KitchenPage() {
       setCancelModal(null);
       setCancelReason('');
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Item cancellation');
       toast.error('Failed to cancel item');
     } finally {
       setCancelling(false);
@@ -575,7 +620,6 @@ export default function KitchenPage() {
       const { data } = await reorderOrderItems(orderId, reordered);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Item reordering');
       toast.error('Failed to reorder items');
     }
   };
@@ -619,7 +663,6 @@ export default function KitchenPage() {
       const { data } = await acceptItem(orderId, itemId);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Per-item accept/reject');
       toast.error('Failed to accept item');
     }
   };
@@ -648,7 +691,6 @@ export default function KitchenPage() {
       setSelectedItems((prev) => ({ ...prev, [orderId]: new Set() }));
       toast.success(`${selected.size} item${selected.size > 1 ? 's' : ''} served`);
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
       toast.error('Failed to serve selected items');
     }
   };
@@ -717,7 +759,6 @@ export default function KitchenPage() {
           <span className="text-lg md:text-xl">🍳</span>
           <h1 className="font-bold text-sm md:text-lg truncate">Kitchen</h1>
           <span className="hidden md:inline text-xs text-gray-500">{cafe?.name}</span>
-          {isPremium && <span className="text-[10px] font-bold bg-purple-800 text-purple-300 px-2 py-0.5 rounded-full">PRO</span>}
           <span className="text-xs text-gray-500 ml-1">{orders.length} active</span>
         </div>
         <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">

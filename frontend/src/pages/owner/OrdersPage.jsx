@@ -11,7 +11,6 @@ import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
-import { premiumToast, isPremiumError } from '../../utils/premiumToast';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
@@ -27,6 +26,21 @@ const QUICK_REASONS = [
 ];
 
 const TABS = { ORDERS: 'orders', BILLS: 'bills', TABLES: 'tables', HISTORY: 'history' };
+
+function itemDetails(item) {
+  const parts = [];
+  if (item?.variant_name) parts.push(`Variant: ${item.variant_name}`);
+  const mods = Array.isArray(item?.selected_modifiers)
+    ? item.selected_modifiers.map((m) => m.option_name).filter(Boolean)
+    : [];
+  if (mods.length) parts.push(`Add-ons: ${mods.join(', ')}`);
+  return parts.join(' | ');
+}
+
+function itemDisplayName(item) {
+  const details = itemDetails(item);
+  return details ? `${item.item_name} (${details})` : item.item_name;
+}
 
 function SearchInput({ value, onChange, placeholder }) {
   return (
@@ -114,7 +128,7 @@ export default function OrdersPage() {
   const openOrderBilling = useCallback((order) => {
     setBillingModal({
       orderId: order.id,
-      onConfirm: (cashReceived) => handleStatusUpdate(order.id, 'paid', cashReceived),
+      onConfirm: (cashReceived, paymentMode) => handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,16 +150,16 @@ export default function OrdersPage() {
           deliveryFee:    parseFloat(o.delivery_fee)    || 0,
           total:          parseFloat(o.final_amount || o.total_amount) || 0,
           aggregatedItems: (o.items || []).map((i) => ({
-            name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+            name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
           })),
           orders: [o],
         };
       })()
     : billingModal?.bill || null;
 
-  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null) => {
+  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null) => {
     try {
-      await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason);
+      await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode);
       setOrders((prev) =>
         prev.map((o) => o.id === orderId
           ? { ...o, status: newStatus, cancellation_reason: cancellationReason || o.cancellation_reason }
@@ -172,7 +186,6 @@ export default function OrdersPage() {
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
-      if (isPremiumError(err)) return premiumToast('Per-item status tracking');
       toast.error(getApiError(err));
     }
   };
@@ -265,11 +278,12 @@ export default function OrdersPage() {
       bill.deliveryFee    += parseFloat(o.delivery_fee)    || 0;
       bill.total          += parseFloat(o.final_amount || o.total_amount) || 0;
       o.items?.forEach((item) => {
-        if (!bill.itemMap[item.item_name]) {
-          bill.itemMap[item.item_name] = { name: item.item_name, qty: 0, total: 0 };
+        const displayName = itemDisplayName(item);
+        if (!bill.itemMap[displayName]) {
+          bill.itemMap[displayName] = { name: displayName, qty: 0, total: 0 };
         }
-        bill.itemMap[item.item_name].qty += item.quantity;
-        bill.itemMap[item.item_name].total += parseFloat(item.subtotal);
+        bill.itemMap[displayName].qty += item.quantity;
+        bill.itemMap[displayName].total += parseFloat(item.subtotal);
       });
     });
 
@@ -745,7 +759,6 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
 function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, onOpenDetail, chatOpen, chatUnread, chatMessages, chatMessagesLoading, onOrderUpdated }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
-  const isPremium = cafe?.plan_tier === 'premium';
   const [advancing, setAdvancing] = useState(false);
   const [kotPrinting, setKotPrinting] = useState(false);
   const statusCfg = STATUS_CONFIG[order.status] || {};
@@ -814,7 +827,7 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         <div className="mt-2 space-y-0.5">
           {(order.items || []).slice(0, 3).map((item) => (
             <div key={item.id} className="flex justify-between text-xs text-gray-500">
-              <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
+              <span className="truncate mr-2">{item.item_name}{itemDetails(item) ? ` (${itemDetails(item)})` : ''} × {item.quantity}</span>
               <span className="flex-shrink-0">{c(item.subtotal)}</span>
             </div>
           ))}
@@ -824,8 +837,8 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </div>
       </div>
 
-      {/* Per-item status rows — individual mode, premium plan only */}
-      {isIndividual && isPremium && (
+      {/* Per-item status rows — individual mode */}
+      {isIndividual && (
         <div className="px-4 pb-2">
           <div className="space-y-1">
             {(order.items || []).map((item) => (
@@ -843,8 +856,8 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </div>
       )}
 
-      {/* Kitchen mode toggle (premium only) */}
-      {isPremium && !['paid', 'cancelled', 'served'].includes(order.status) && (
+      {/* Kitchen mode toggle */}
+      {!['paid', 'cancelled', 'served'].includes(order.status) && (
         <div className="px-4 pb-2 flex items-center justify-between gap-2">
           <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide shrink-0">Kitchen</span>
           <div className="flex rounded-lg border border-gray-200 overflow-hidden text-[10px] font-medium">
@@ -937,6 +950,7 @@ function ItemKotRow({ item, cafe, orderToken, tableNumber, orderType, onStatusUp
       </span>
       <span className={`flex-1 text-xs min-w-0 truncate ${isServed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'}`}>
         {item.item_name} × {item.quantity}
+        {itemDetails(item) && <span className="block text-[11px] font-normal text-gray-400">{itemDetails(item)}</span>}
       </span>
       {item.item_status === 'pending' && (
         <button
@@ -991,7 +1005,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
   const [collecting, setCollecting] = useState(null); // orderId or tableNumber being paid
   const [reminding, setReminding] = useState(null);
 
-  const handleCollect = async (bill, cashReceived) => {
+  const handleCollect = async (bill, cashReceived, paymentMode = null) => {
     const key = bill.isTakeaway ? bill.orders[0].id : bill.table_number;
     setCollecting(key);
     try {
@@ -999,7 +1013,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
         bill.isTakeaway ? o.status === 'ready' : o.status === 'served'
       );
       const results = await Promise.allSettled(
-        toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null))
+        toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null, null, paymentMode))
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed === 0) {
@@ -1032,11 +1046,11 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
       deliveryFee:    parseFloat(order.delivery_fee)    || 0,
       total:          parseFloat(order.final_amount || order.total_amount) || 0,
       aggregatedItems: (order.items || []).map((i) => ({
-        name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+        name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
       orders: [order],
     };
-    onOpenBilling(bill, (cashReceived) => handleCollect(bill, cashReceived));
+    onOpenBilling(bill, (cashReceived, paymentMode) => handleCollect(bill, cashReceived, paymentMode));
   };
 
   const q = search.trim().toLowerCase();
@@ -1120,7 +1134,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
                       <div className="mt-2 space-y-0.5">
                         {order.items?.map((item) => (
                           <div key={item.id} className="flex justify-between text-xs text-gray-600">
-                            <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
+                            <span className="truncate mr-2">{item.item_name}{itemDetails(item) ? ` (${itemDetails(item)})` : ''} × {item.quantity}</span>
                             <span className="flex-shrink-0">{c(item.subtotal)}</span>
                           </div>
                         ))}
@@ -1223,7 +1237,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
                         )}
                         {allServed && (
                           <button
-                            onClick={() => onOpenBilling(bill, (cashReceived) => handleCollect(bill, cashReceived))}
+                            onClick={() => onOpenBilling(bill, (cashReceived, paymentMode) => handleCollect(bill, cashReceived, paymentMode))}
                             disabled={collecting === bill.table_number}
                             className="py-1.5 px-4 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white font-bold text-xs transition-colors"
                           >
@@ -1276,7 +1290,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
                                     <div className="mt-1.5 pl-1 space-y-0.5">
                                       {order.items.map((item) => (
                                         <p key={item.id} className="text-xs text-gray-400">
-                                          {item.item_name} × {item.quantity}
+                                          {item.item_name}{itemDetails(item) ? ` (${itemDetails(item)})` : ''} × {item.quantity}
                                         </p>
                                       ))}
                                     </div>
@@ -1332,7 +1346,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
     const cashVal = isCash && cashInput ? parseFloat(cashInput) : null;
     setConfirming(true);
     try {
-      await onConfirm(cashVal);
+      await onConfirm(cashVal, paymentMode);
       setPaidMode(paymentMode);
       setPaidCash(cashVal);
       setStep('receipt');
@@ -1734,21 +1748,19 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
   const [search, setSearch] = useState('');
   const setDateRange = onDateRangeChange;
 
-  const todayStart   = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const yesterdayStart = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-1); return d; }, []);
-  const yesterdayEnd   = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-
   const dateFiltered = useMemo(() => {
     if (dateRange === 'all') return orders;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const yStart = new Date(); yStart.setHours(0, 0, 0, 0); yStart.setDate(yStart.getDate() - 1);
     return orders.filter((o) => {
       const t = new Date(o.created_at).getTime();
       if (dateRange === 'today')     return t >= todayStart.getTime();
-      if (dateRange === 'yesterday') return t >= yesterdayStart.getTime() && t < yesterdayEnd.getTime();
+      if (dateRange === 'yesterday') return t >= yStart.getTime() && t < todayStart.getTime();
       if (dateRange === '7d')        return t >= Date.now() - 7  * 86400000;
       if (dateRange === '30d')       return t >= Date.now() - 30 * 86400000;
       return true;
     });
-  }, [orders, dateRange, todayStart, yesterdayStart, yesterdayEnd]);
+  }, [orders, dateRange]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1846,7 +1858,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                 <div className="mt-2 space-y-0.5">
                   {(order.items || []).slice(0, 3).map((item) => (
                     <div key={item.id} className="flex justify-between text-xs text-gray-500">
-                      <span className="truncate mr-2">{item.item_name} × {item.quantity}</span>
+                      <span className="truncate mr-2">{item.item_name}{itemDetails(item) ? ` (${itemDetails(item)})` : ''} × {item.quantity}</span>
                       <span className="flex-shrink-0">{c(item.subtotal)}</span>
                     </div>
                   ))}
@@ -1868,7 +1880,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                       table_number: order.table_number,
                       total: parseFloat(order.final_amount || order.total_amount),
                       aggregatedItems: (order.items || []).map((i) => ({
-                        name: i.item_name, qty: i.quantity, total: parseFloat(i.subtotal),
+                        name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
                       })),
                       orders: [order],
                     },
@@ -1958,7 +1970,10 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
               {(order.items || []).map((item) => (
                 <div key={item.id} className="flex items-center gap-2 py-1.5 border-b border-gray-50 last:border-0">
                   <span className="w-6 h-6 rounded bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-700 flex-shrink-0">{item.quantity}</span>
-                  <span className={`flex-1 text-sm font-medium ${item.item_status === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-800'}`}>{item.item_name}</span>
+                  <span className={`flex-1 text-sm font-medium ${item.item_status === 'cancelled' ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                    <span className="block">{item.item_name}</span>
+                    {itemDetails(item) && <span className="block text-[11px] font-normal text-gray-400">{itemDetails(item)}</span>}
+                  </span>
                   {isIndividual && item.item_status && (
                     <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${ITEM_STATUS_BADGE[item.item_status] || 'bg-gray-100 text-gray-500'}`}>
                       {item.item_status}
