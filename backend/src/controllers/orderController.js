@@ -726,15 +726,17 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   // On first paid transition: record commission amount, payment_mode, and commission_status
   if (status === 'paid' && fromStatus !== 'paid') {
     db.query(
-      `SELECT customer_phone, final_amount, razorpay_transfer_id, payment_mode
+      `SELECT customer_phone, final_amount, platform_fee, razorpay_transfer_id, payment_mode
        FROM orders WHERE id = $1`, [id]
     ).then(async (fullOrder) => {
       if (!fullOrder.rows.length) return;
-      const { customer_phone, final_amount, razorpay_transfer_id: transferId,
+      const { customer_phone, final_amount, platform_fee,
+              razorpay_transfer_id: transferId,
               payment_mode: dbPaymentMode } = fullOrder.rows[0];
 
-      const commissionRate   = req.commissionRate ?? 5;
-      const commissionAmount = parseFloat(((parseFloat(final_amount) || 0) * commissionRate / 100).toFixed(2));
+      // Use the platform_fee calculated at order-creation time — already includes
+      // the correct per-café rate and is what the customer was shown on their bill.
+      const commissionAmount = parseFloat(platform_fee || 0);
 
       // Determine how this commission will be collected:
       //   auto_deducted → Razorpay transfer already sent to café (online prepaid order)
@@ -769,7 +771,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     db.query(
       `SELECT
          COUNT(*) FILTER (WHERE status != 'cancelled') AS total_orders,
-         COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue
+         COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) = CURRENT_DATE`,
       [req.cafeId]

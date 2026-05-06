@@ -41,11 +41,11 @@ exports.closeShift = asyncHandler(async (req, res) => {
   const totals = await db.query(
     `SELECT
        COUNT(*) FILTER (WHERE status = 'paid')                                      AS total_orders,
-       COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0)                AS total_revenue,
-       COALESCE(SUM(final_amount) FILTER (WHERE status='paid' AND payment_mode='cash'), 0)  AS cash_sales,
-       COALESCE(SUM(final_amount) FILTER (WHERE status='paid' AND payment_mode='card'), 0)  AS card_sales,
-       COALESCE(SUM(final_amount) FILTER (WHERE status='paid' AND payment_mode='upi'), 0)   AS upi_sales,
-       COALESCE(SUM(final_amount) FILTER (WHERE status='paid' AND payment_mode NOT IN ('cash','card','upi') AND payment_mode IS NOT NULL), 0) AS other_sales,
+       COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue,
+       COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status='paid' AND payment_mode='cash'), 0) AS cash_sales,
+       COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status='paid' AND payment_mode='card'), 0) AS card_sales,
+       COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status='paid' AND payment_mode='upi'), 0)  AS upi_sales,
+       COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status='paid' AND payment_mode NOT IN ('cash','card','upi') AND payment_mode IS NOT NULL), 0) AS other_sales,
        COALESCE(SUM(discount_amount) FILTER (WHERE status = 'paid'), 0)             AS total_discounts
      FROM orders
      WHERE cafe_id = $1 AND created_at >= $2`,
@@ -89,8 +89,8 @@ exports.getCurrentShift = asyncHandler(async (req, res) => {
     `SELECT s.*,
             -- Live order counts since this shift opened
             COUNT(o.id) FILTER (WHERE o.status = 'paid')                         AS live_orders,
-            COALESCE(SUM(o.final_amount) FILTER (WHERE o.status = 'paid'), 0)    AS live_revenue,
-            COALESCE(SUM(o.final_amount) FILTER (WHERE o.status='paid' AND o.payment_mode='cash'), 0) AS live_cash
+            COALESCE(SUM(o.final_amount - COALESCE(o.platform_fee,0)) FILTER (WHERE o.status = 'paid'), 0)    AS live_revenue,
+            COALESCE(SUM(o.final_amount - COALESCE(o.platform_fee,0)) FILTER (WHERE o.status='paid' AND o.payment_mode='cash'), 0) AS live_cash
      FROM shifts s
      LEFT JOIN orders o ON o.cafe_id = s.cafe_id AND o.created_at >= s.opened_at
      WHERE s.cafe_id = $1 AND s.status = 'open'

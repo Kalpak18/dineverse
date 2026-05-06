@@ -28,9 +28,7 @@ export default function ShiftPage() {
       ]);
       setShift(cur.data.shift || null);
       setHistory(hist.data.shifts || []);
-    } catch (e) {
-      const status = e?.response?.status;
-      if (status !== 404) toast.error('Could not reach the server — check your connection.');
+    } catch {
       setShift(null);
       setHistory([]);
     }

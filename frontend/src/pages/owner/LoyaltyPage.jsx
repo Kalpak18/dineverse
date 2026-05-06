@@ -185,7 +185,7 @@ function CustomersTab({ c }) {
     setLoading(true);
     try {
       const { data } = await getLoyaltyCustomers({ search: q, limit: 50 });
-      setCustomers(data.data.customers);
+      setCustomers(data.customers ?? []);
     } catch { toast.error('Could not load loyalty members — check your connection and try again.'); }
     finally { setLoading(false); }
   };
