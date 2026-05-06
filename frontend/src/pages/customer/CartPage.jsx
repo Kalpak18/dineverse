@@ -25,9 +25,17 @@ export default function CartPage() {
   const c = (n) => fmtCurrency(n, cafeCurrency);
   const [sessionTick, setSessionTick] = useState(0); // incremented to re-read localStorage without full reload
   const [loading, setLoading] = useState(false);
+  const [slowNetwork, setSlowNetwork] = useState(false); // shows "Still connecting..." after 5s
+  const slowNetworkTimer = useRef(null);
   const submittingRef = useRef(false);
-  // Stable per-attempt idempotency key — reset only after successful order so retries reuse the same UUID
-  const orderIdRef = useRef(crypto.randomUUID());
+  // Persisted idempotency key — survives page remounts/refreshes so retries dedup on server.
+  // Reset only after a confirmed successful order placement.
+  const orderIdRef = useRef(null);
+  if (!orderIdRef.current) {
+    const stored = sessionStorage.getItem(`dv_order_id_${slug}`);
+    orderIdRef.current = stored ?? crypto.randomUUID();
+    if (!stored) sessionStorage.setItem(`dv_order_id_${slug}`, orderIdRef.current);
+  }
   const [notes, setNotes] = useState('');
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
@@ -278,7 +286,10 @@ export default function CartPage() {
     }
     submittingRef.current = true;
     setLoading(true);
+    setSlowNetwork(false);
     setShowConfirm(false);
+    // Show "Still connecting…" hint after 5 s so users don't rage-refresh
+    slowNetworkTimer.current = setTimeout(() => setSlowNetwork(true), 5000);
     try {
       const orderPayload = {
         customer_name:  session.customer_name,
@@ -314,14 +325,22 @@ export default function CartPage() {
         // Save to device so order persists on refresh (session kept for future orders)
         upsertOrder(slug, data.order);
         clearCart(); // only clear after server confirms the order
-        orderIdRef.current = crypto.randomUUID(); // rotate key for next order
+        // Rotate UUID for next order and persist so future mounts get a fresh key
+        const nextId = crypto.randomUUID();
+        sessionStorage.setItem(`dv_order_id_${slug}`, nextId);
+        orderIdRef.current = nextId;
         navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
       }
     } catch (err) {
-      const msg = getApiError(err);
-      toast.error(msg);
+      const isNetworkErr = !err.response; // no response = network/timeout failure
+      const msg = isNetworkErr
+        ? 'Connection lost. Your order may have already been placed — check "My Orders" before trying again.'
+        : getApiError(err);
+      toast.error(msg, { duration: isNetworkErr ? 6000 : 4000 });
       setOrderError(msg);
     } finally {
+      clearTimeout(slowNetworkTimer.current);
+      setSlowNetwork(false);
       setLoading(false);
       submittingRef.current = false;
     }
@@ -707,15 +726,23 @@ export default function CartPage() {
             </div>
           )}
           {orderError && (
-            <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700">
-              <span>⚠️ {orderError}</span>
-              <button
-                onClick={handlePlaceOrder}
-                disabled={loading}
-                className="shrink-0 font-semibold text-red-700 underline disabled:opacity-50"
-              >
-                Try again
-              </button>
+            <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 text-xs text-red-700 space-y-2">
+              <p>⚠️ {orderError}</p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePlaceOrder}
+                  disabled={loading}
+                  className="font-semibold underline disabled:opacity-50"
+                >
+                  Try again
+                </button>
+                <button
+                  onClick={() => navigate(`/cafe/${slug}/my-orders`)}
+                  className="font-semibold underline text-teal-700"
+                >
+                  Check My Orders →
+                </button>
+              </div>
             </div>
           )}
           <button
@@ -723,7 +750,7 @@ export default function CartPage() {
             disabled={loading || !cafeOpen || (isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder)}
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <span>{loading ? 'Placing order...' : 'Place Order'}</span>
+            <span>{slowNetwork ? 'Still connecting…' : loading ? 'Placing order...' : 'Place Order'}</span>
             <span>{c(grandTotal)}</span>
           </button>
         </div>
@@ -946,7 +973,7 @@ export default function CartPage() {
                   disabled={loading}
                   className="btn-primary w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Placing...' : 'Yes, Place Order'}
+                  {slowNetwork ? 'Still connecting…' : loading ? 'Placing...' : 'Yes, Place Order'}
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}
