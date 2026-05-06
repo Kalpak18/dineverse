@@ -482,26 +482,31 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
     // All-time + this-month totals split by online vs cash
     db.query(
       `SELECT
-        -- Totals (all time)
+        -- Totals (all time) — net_revenue adds platform_discount_amount back since DineVerse covers it
         COALESCE(SUM(final_amount), 0)                                              AS total_gmv,
         COALESCE(SUM(commission_amount), 0)                                         AS total_commission,
-        COALESCE(SUM(final_amount - commission_amount), 0)                          AS total_net_revenue,
+        COALESCE(SUM(final_amount - commission_amount + COALESCE(platform_discount_amount,0)), 0) AS total_net_revenue,
         COUNT(*)                                                                    AS total_paid_orders,
 
         -- This month
         COALESCE(SUM(final_amount)       FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_gmv,
         COALESCE(SUM(commission_amount)  FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_commission,
-        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_net_revenue,
+        COALESCE(SUM(final_amount - commission_amount + COALESCE(platform_discount_amount,0)) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS month_net_revenue,
         COUNT(*)               FILTER (WHERE created_at >= DATE_TRUNC('month', NOW()))               AS month_paid_orders,
 
         -- Online (auto-deducted) — money already in café's bank account
         COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_net_received,
         COALESCE(SUM(commission_amount)                FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_commission_auto,
+        -- Platform credit on online orders — DineVerse owes owner this amount on top of the Razorpay-split amount
+        COALESCE(SUM(platform_discount_amount)         FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_platform_credit,
 
         -- Cash/UPI/Card — café holds full amount, commission is owed to DineVerse
         COALESCE(SUM(final_amount)       FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_gmv_held,
         COALESCE(SUM(commission_amount)  FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_commission_owed,
-        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_net_yours
+        COALESCE(SUM(final_amount - commission_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_net_yours,
+
+        -- Platform-funded discount credits (DineVerse absorbed these costs — net against cash owed)
+        COALESCE(SUM(platform_discount_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS platform_discount_credit
 
        FROM orders
        WHERE cafe_id = $1 AND status = 'paid'`,
@@ -514,8 +519,9 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
               COUNT(*)                                                           AS paid_orders,
               COALESCE(SUM(final_amount), 0)                                    AS gmv,
               COALESCE(SUM(commission_amount), 0)                               AS commission,
-              COALESCE(SUM(final_amount - commission_amount), 0)                AS net_revenue,
+              COALESCE(SUM(final_amount - commission_amount + COALESCE(platform_discount_amount,0)), 0) AS net_revenue,
               COALESCE(SUM(commission_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS cash_commission_owed,
+              COALESCE(SUM(platform_discount_amount) FILTER (WHERE commission_status = 'cash_due'), 0) AS platform_discount_credit,
               COALESCE(SUM(commission_amount) FILTER (WHERE commission_status = 'auto_deducted'), 0) AS online_commission_deducted
        FROM orders
        WHERE cafe_id = $1 AND status = 'paid'
@@ -537,8 +543,19 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  const rate = parseFloat(cafeRes.rows[0]?.commission_rate ?? 5);
-  const s    = summaryRes.rows[0];
+  const rate           = parseFloat(cafeRes.rows[0]?.commission_rate ?? 5);
+  const s              = summaryRes.rows[0];
+  const cashGross      = parseFloat(s.cash_commission_owed);
+  const cashCredit     = parseFloat(s.platform_discount_credit);
+  const onlineCredit   = parseFloat(s.online_platform_credit);
+  const totalCredit    = cashCredit + onlineCredit;
+  // Net flow:
+  //   cashGross - cashCredit   > 0 → owner remits this to DineVerse
+  //   cashGross - cashCredit   < 0 → DineVerse owes owner the difference (covered by platform-funded discounts)
+  //   plus any onlineCredit (DineVerse always owes for online platform offers, since Razorpay already split)
+  const netSettlement      = cashGross - cashCredit - onlineCredit;
+  const owedToDineverse    = Math.max(0, netSettlement);
+  const dineVerseOwesOwner = Math.max(0, -netSettlement);
 
   ok(res, {
     commission_rate: rate,
@@ -558,11 +575,16 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
     // ── Online (already in your bank) ──
     online_net_received:      parseFloat(s.online_net_received),
     online_commission_auto:   parseFloat(s.online_commission_auto),
+    online_platform_credit:   onlineCredit,         // DineVerse owes owner this for online platform-funded orders
 
     // ── Cash/UPI/Card (you hold full amount, commission owed to DineVerse) ──
-    cash_gmv_held:         parseFloat(s.cash_gmv_held),
-    cash_commission_owed:  parseFloat(s.cash_commission_owed),
-    cash_net_yours:        parseFloat(s.cash_net_yours),
+    cash_gmv_held:             parseFloat(s.cash_gmv_held),
+    cash_commission_owed:      owedToDineverse,        // net amount owner must remit (clamped at 0)
+    cash_commission_gross:     cashGross,              // raw commission before any credit
+    platform_discount_credit:  cashCredit,             // cash-stream platform-funded discount credit
+    total_platform_credit:     totalCredit,            // cash + online combined
+    dineverse_owes_owner:      dineVerseOwesOwner,     // > 0 when credit exceeds cash commission owed
+    cash_net_yours:            parseFloat(s.cash_net_yours),
 
     // ── Monthly + recent ──
     monthly_breakdown: monthlyRes.rows.map((r) => ({
@@ -572,6 +594,7 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
       commission:                   parseFloat(r.commission),
       net_revenue:                  parseFloat(r.net_revenue),
       cash_commission_owed:         parseFloat(r.cash_commission_owed),
+      platform_discount_credit:     parseFloat(r.platform_discount_credit || 0),
       online_commission_deducted:   parseFloat(r.online_commission_deducted),
     })),
     recent_orders: recentRes.rows.map((o) => ({
@@ -581,4 +604,134 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
       net_amount:        parseFloat(o.net_amount),
     })),
   });
+});
+
+// ─── POST /api/payments/commission/pay ────────────────────────
+// Creates a Razorpay order for the café owner to pay their outstanding
+// cash commission to DineVerse.
+exports.createCommissionPayment = asyncHandler(async (req, res) => {
+  const cafeId = req.rootCafeId || req.cafeId;
+
+  const result = await db.query(
+    `SELECT
+       COALESCE(SUM(commission_amount), 0)        AS gross_owed,
+       COALESCE(SUM(platform_discount_amount), 0) AS discount_credit
+     FROM orders
+     WHERE cafe_id = $1 AND commission_status = 'cash_due' AND status = 'paid'`,
+    [cafeId]
+  );
+
+  const grossOwed      = parseFloat(result.rows[0].gross_owed || 0);
+  const discountCredit = parseFloat(result.rows[0].discount_credit || 0);
+  const amountOwed     = Math.max(0, grossOwed - discountCredit);
+
+  if (discountCredit >= grossOwed && grossOwed > 0) {
+    // DineVerse has fully covered (and possibly exceeded) what owner owes
+    return fail(
+      res,
+      `Your DineVerse offer credit (₹${discountCredit.toFixed(2)}) covers your commission. Nothing to remit.`,
+      400
+    );
+  }
+  if (amountOwed < 1) {
+    return fail(res, 'No commission balance due — you\'re all caught up!', 400);
+  }
+
+  const amountPaise = Math.round(amountOwed * 100);
+
+  const cafeRes = await db.query('SELECT name FROM cafes WHERE id = $1', [cafeId]);
+  const cafeName = cafeRes.rows[0]?.name || 'Unknown Café';
+
+  const order = await razorpay.orders.create({
+    amount:   amountPaise,
+    currency: 'INR',
+    receipt:  `comm_${cafeId.slice(0, 8)}_${Date.now()}`,
+    notes: {
+      type:       'commission_payment',
+      cafe_id:    cafeId,
+      cafe_name:  cafeName,
+      amount_inr: amountOwed.toFixed(2),
+    },
+  });
+
+  ok(res, {
+    orderId:     order.id,
+    amount:      amountOwed,
+    amountPaise,
+    currency:    'INR',
+    cafeName,
+    keyId: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID,
+  });
+});
+
+// ─── POST /api/payments/commission/verify ─────────────────────
+// Verifies the HMAC signature from Razorpay and marks all pending
+// cash_due orders for this café as collected.
+exports.verifyCommissionPayment = asyncHandler(async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+  if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+    return fail(res, 'Missing payment fields', 400);
+  }
+
+  const secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET;
+  const body   = `${razorpay_order_id}|${razorpay_payment_id}`;
+  const expectedSig = crypto.createHmac('sha256', secret).update(body).digest('hex');
+
+  const sigBuf = Buffer.from(razorpay_signature, 'hex');
+  const expBuf = Buffer.from(expectedSig, 'hex');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    return fail(res, 'Invalid payment signature', 400);
+  }
+
+  const cafeId = req.rootCafeId || req.cafeId;
+
+  // Verify the actual Razorpay payment amount matches what's owed.
+  // Without this, a forged client could pay a token amount with a valid signature
+  // and have all orders marked settled.
+  let rzpPayment;
+  try {
+    rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+  } catch (err) {
+    logger.error('Razorpay payments.fetch failed in verifyCommissionPayment', err);
+    return fail(res, 'Could not verify payment with Razorpay. Please contact support.', 503);
+  }
+  if (rzpPayment.status !== 'captured' && rzpPayment.status !== 'authorized') {
+    return fail(res, `Payment not captured (status: ${rzpPayment.status})`, 400);
+  }
+  // Re-compute owed amount and confirm the payment covers it (in paise)
+  const owedRes = await db.query(
+    `SELECT
+       COALESCE(SUM(commission_amount), 0)        AS gross_owed,
+       COALESCE(SUM(platform_discount_amount), 0) AS discount_credit
+     FROM orders
+     WHERE cafe_id = $1 AND commission_status = 'cash_due' AND status = 'paid'`,
+    [cafeId]
+  );
+  const owedPaise = Math.round(
+    Math.max(0, parseFloat(owedRes.rows[0].gross_owed) - parseFloat(owedRes.rows[0].discount_credit)) * 100
+  );
+  if (parseInt(rzpPayment.amount, 10) < owedPaise) {
+    return fail(res, 'Payment amount does not cover the commission balance', 400);
+  }
+
+  const updated = await db.query(
+    `UPDATE orders
+     SET commission_status        = 'collected',
+         commission_collected_at  = NOW()
+     WHERE cafe_id = $1
+       AND commission_status = 'cash_due'
+       AND status = 'paid'
+     RETURNING id`,
+    [cafeId]
+  );
+
+  logger.info(
+    'Commission payment verified for café %s: payment %s, %d orders settled',
+    cafeId, razorpay_payment_id, updated.rows.length
+  );
+
+  ok(res, {
+    settled_orders: updated.rows.length,
+    payment_id:     razorpay_payment_id,
+  }, 'Commission payment recorded — thank you!');
 });

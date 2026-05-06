@@ -59,7 +59,9 @@ export const getPlans = () => api.get('/payments/plans');
 export const createPaymentOrder = (plan_key) => api.post('/payments/create-order', { plan_key });
 export const verifyPayment = (data) => api.post('/payments/verify', data);
 export const getPaymentHistory = () => api.get('/payments/history');
-export const getCommissionSummary = () => api.get('/payments/commission');
+export const getCommissionSummary         = ()     => api.get('/payments/commission');
+export const createCommissionPaymentOrder = ()     => api.post('/payments/commission/pay');
+export const verifyCommissionPaymentResult= (data) => api.post('/payments/commission/verify', data);
 
 // ─── Razorpay Route (Owner payout account) ────────────────────
 export const getRouteStatus  = () => api.get('/payments/route/status');
@@ -117,6 +119,14 @@ export const getPublicSetting         = (key) => api.get(`/admin/public-settings
 export const adminGetCommissionReport = (params) => adminApi.get('/admin/commission', { params });
 export const adminGetSettlements      = (params) => adminApi.get('/admin/commission/settlements', { params });
 export const adminCollectCommission   = (data)   => adminApi.post('/admin/commission/collect', data);
+
+// Platform offers (admin)
+export const adminGetPlatformOffers      = (params) => adminApi.get('/admin/offers', { params });
+export const adminGetPlatformOffer       = (id)     => adminApi.get(`/admin/offers/${id}`);
+export const adminCreatePlatformOffer    = (data)   => adminApi.post('/admin/offers', data);
+export const adminUpdatePlatformOffer    = (id, data) => adminApi.patch(`/admin/offers/${id}`, data);
+export const adminDeletePlatformOffer    = (id)     => adminApi.delete(`/admin/offers/${id}`);
+export const adminGetPlatformOfferStats  = (id)     => adminApi.get(`/admin/offers/${id}/stats`);
 
 // ─── Cafe open/close toggle (owner) ──────────────────────────
 export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');

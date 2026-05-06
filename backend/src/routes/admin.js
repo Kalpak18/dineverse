@@ -10,6 +10,10 @@ const {
   broadcastEmail,
   getCommissionReport, collectCashCommission, getSettlements,
 } = require('../controllers/adminController');
+const {
+  getPlatformOffers, getPlatformOffer, createPlatformOffer,
+  updatePlatformOffer, deletePlatformOffer, getPlatformOfferStats,
+} = require('../controllers/platformOfferController');
 
 // Public (one-time setup + login + password reset)
 router.post('/setup',           authLimiter, setup);
@@ -39,5 +43,13 @@ router.post('/broadcast',      requireAdmin, broadcastEmail);
 router.get ('/commission',              requireAdmin, getCommissionReport);
 router.get ('/commission/settlements',  requireAdmin, getSettlements);
 router.post('/commission/collect',      requireAdmin, collectCashCommission);
+
+// Platform offers management
+router.get ('/offers',            requireAdmin, getPlatformOffers);
+router.get ('/offers/:id',        requireAdmin, getPlatformOffer);
+router.post('/offers',            requireAdmin, createPlatformOffer);
+router.patch('/offers/:id',       requireAdmin, updatePlatformOffer);
+router.delete('/offers/:id',      requireAdmin, deletePlatformOffer);
+router.get ('/offers/:id/stats',  requireAdmin, getPlatformOfferStats);
 
 module.exports = router;

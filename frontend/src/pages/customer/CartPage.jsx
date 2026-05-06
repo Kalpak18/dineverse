@@ -197,7 +197,9 @@ export default function CartPage() {
     setSessionTick((t) => t + 1); // re-read session without destroying cart state
   };
 
-  // Debounced offer preview: refetch when cart total changes (only if no coupon is manually applied)
+  // Debounced offer preview: refetch when cart total OR customer phone changes
+  // (phone matters for first_order eligibility — repeat customers don't qualify)
+  const previewPhone = (deliveryForm?.delivery_phone || session?.customer_phone || '').trim();
   useEffect(() => {
     if (couponApplied) return; // don't auto-override a manually entered coupon
     if (!items.length) { setOfferPreview(null); return; }
@@ -213,6 +215,7 @@ export default function CartPage() {
             modifier_total: i.modifier_total || 0,
           })),
           total,
+          customer_phone: previewPhone || undefined,
         };
         const { data } = await previewOffer(slug, payload);
         setOfferPreview(data);
@@ -221,7 +224,7 @@ export default function CartPage() {
       }
     }, 500);
     return () => clearTimeout(offerDebounce.current);
-  }, [slug, total, items, couponApplied]);
+  }, [slug, total, items, couponApplied, previewPhone]);
 
   const handleApplyCoupon = async () => {
     if (!couponInput.trim()) return;
@@ -540,11 +543,16 @@ export default function CartPage() {
       {/* Coupon code input */}
       <div className="mx-4 mt-4">
         {couponApplied ? (
-          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
-            <span className="text-green-500 text-lg">🎉</span>
+          <div className={`flex items-center gap-2 rounded-xl px-4 py-2.5 border ${
+            offerPreview?.funded_by === 'platform' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'
+          }`}>
+            <span className="text-lg">{offerPreview?.funded_by === 'platform' ? '⚡' : '🎉'}</span>
             <div className="flex-1">
-              <p className="text-xs font-semibold text-green-800">{offerPreview?.offer_name || couponInput} applied!</p>
-              <p className="text-xs text-green-600">You save {c(discountAmt)} on this order</p>
+              <p className={`text-xs font-semibold ${offerPreview?.funded_by === 'platform' ? 'text-purple-800' : 'text-green-800'}`}>
+                {offerPreview?.offer_name || couponInput} applied!
+                {offerPreview?.funded_by === 'platform' && <span className="ml-1.5 font-normal text-purple-500">DineVerse Offer</span>}
+              </p>
+              <p className={`text-xs ${offerPreview?.funded_by === 'platform' ? 'text-purple-600' : 'text-green-600'}`}>You save {c(discountAmt)} on this order</p>
             </div>
             <button onClick={handleRemoveCoupon} className="text-xs text-gray-400 hover:text-red-500 font-medium px-1">Remove</button>
           </div>
@@ -569,13 +577,18 @@ export default function CartPage() {
         )}
       </div>
 
-      {/* Auto-detected offer banner (shown only when no coupon is manually applied) */}
+      {/* Auto-detected offer banner */}
       {!couponApplied && offerPreview?.applied && (
-        <div className="mx-4 mt-3 flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5">
-          <span className="text-green-500 text-lg">🎉</span>
+        <div className={`mx-4 mt-3 flex items-center gap-2 rounded-xl px-4 py-2.5 border ${
+          offerPreview.funded_by === 'platform' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'
+        }`}>
+          <span className="text-lg">{offerPreview.funded_by === 'platform' ? '⚡' : '🎉'}</span>
           <div>
-            <p className="text-xs font-semibold text-green-800">{offerPreview.offer_name} automatically applied!</p>
-            <p className="text-xs text-green-600">You save {c(discountAmt)} on this order</p>
+            <p className={`text-xs font-semibold ${offerPreview.funded_by === 'platform' ? 'text-purple-800' : 'text-green-800'}`}>
+              {offerPreview.offer_name} automatically applied!
+              {offerPreview.funded_by === 'platform' && <span className="ml-1.5 font-normal text-purple-500">DineVerse Offer</span>}
+            </p>
+            <p className={`text-xs ${offerPreview.funded_by === 'platform' ? 'text-purple-600' : 'text-green-600'}`}>You save {c(discountAmt)} on this order</p>
           </div>
         </div>
       )}

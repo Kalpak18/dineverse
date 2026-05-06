@@ -300,7 +300,12 @@ export default function MenuPage() {
   const allMenuItems = useMemo(() => menu.flatMap((cat) => cat.items), [menu]);
 
   const comboOffers   = useMemo(() => offers.filter((o) => o.offer_type === 'combo'), [offers]);
-  const bannerOffers  = useMemo(() => offers.filter((o) => o.offer_type !== 'combo'), [offers]);
+  const bannerOffers  = useMemo(() => {
+    // Platform offers first (purple ⚡), then owner offers (orange 🏷️)
+    const platform = offers.filter((o) => o.funded_by === 'platform' && o.offer_type !== 'combo');
+    const owner    = offers.filter((o) => o.funded_by !== 'platform' && o.offer_type !== 'combo');
+    return [...platform, ...owner];
+  }, [offers]);
 
   // Only non-empty categories (skip categories with zero available items)
   const categories = useMemo(() =>
@@ -467,20 +472,29 @@ export default function MenuPage() {
         return null;
       })()}
 
-      {/* ── Offers Banner (% and fixed only — combos are in sidebar) ── */}
+      {/* ── Offers Banner ── */}
       {bannerOffers.length > 0 && (
         <div className="flex-shrink-0 bg-orange-50 border-b border-orange-100 px-3 py-2 overflow-x-auto">
           <div className="flex gap-2 w-max">
             {bannerOffers.map((o) => {
-              const label = o.offer_type === 'percentage'
+              const isPlatform = o.funded_by === 'platform';
+              const label = o.offer_type === 'percentage' || o.offer_type === 'first_order'
                 ? `${o.discount_value}% OFF`
-                : `${c(o.discount_value)} OFF`;
+                : o.offer_type === 'bogo'
+                  ? 'Buy 2 Get 1 Free'
+                  : `${c(o.discount_value)} OFF`;
               return (
-                <div key={o.id} className="flex items-center gap-1.5 bg-white border border-orange-200 rounded-full px-3 py-1 shadow-sm whitespace-nowrap">
-                  <span className="text-xs">🏷️</span>
-                  <span className="text-xs font-bold text-orange-700">{label}</span>
-                  {o.min_order_amount > 0 && <span className="text-xs text-gray-500">on orders {c(o.min_order_amount)}+</span>}
-                  {o.description && <span className="text-xs text-gray-500">· {o.description}</span>}
+                <div key={o.id} className={`flex items-center gap-1.5 rounded-full px-3 py-1 shadow-sm whitespace-nowrap border ${
+                  isPlatform
+                    ? 'bg-purple-50 border-purple-200'
+                    : 'bg-white border-orange-200'
+                }`}>
+                  <span className="text-xs">{isPlatform ? '⚡' : '🏷️'}</span>
+                  <span className={`text-xs font-bold ${isPlatform ? 'text-purple-700' : 'text-orange-700'}`}>{label}</span>
+                  {isPlatform && <span className="text-xs font-semibold text-purple-500">DineVerse</span>}
+                  {o.offer_type === 'first_order' && <span className="text-xs text-gray-500">First order</span>}
+                  {o.min_order_amount > 0 && <span className="text-xs text-gray-500">on {c(o.min_order_amount)}+</span>}
+                  {o.coupon_code && <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${isPlatform ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'}`}>{o.coupon_code}</span>}
                 </div>
               );
             })}

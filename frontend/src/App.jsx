@@ -71,6 +71,7 @@ const AdminRevenuePage        = lazy(() => import('./pages/admin/AdminRevenuePag
 const AdminTicketsPage        = lazy(() => import('./pages/admin/AdminTicketsPage'));
 const AdminAnalyticsPage      = lazy(() => import('./pages/admin/AdminAnalyticsPage'));
 const AdminSettingsPage       = lazy(() => import('./pages/admin/AdminSettingsPage'));
+const AdminOffersPage         = lazy(() => import('./pages/admin/AdminOffersPage'));
 
 // ─── Role config ──────────────────────────────────────────────────────────────
 const STAFF_DEFAULT = {
@@ -236,6 +237,7 @@ export default function App() {
             <Route path="revenue"   element={<AdminRevenuePage />} />
             <Route path="tickets"   element={<AdminTicketsPage />} />
             <Route path="analytics" element={<AdminAnalyticsPage />} />
+            <Route path="offers"    element={<AdminOffersPage />} />
             <Route path="settings"  element={<AdminSettingsPage />} />
           </Route>
 

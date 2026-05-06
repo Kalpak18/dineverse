@@ -359,20 +359,26 @@ exports.createOrder = asyncHandler(async (req, res) => {
     }
 
     // Apply best active offer or coupon code
-    let offerId = null;
-    let discountAmount = 0;
-    let finalAmount = total;
+    let offerId         = null;
+    let platformOfferId = null;
+    let offerFundedBy   = null;
+    let discountAmount  = 0;
+    let finalAmount     = total;
 
     if (req.body.coupon_code) {
-      const result = await applyCoupon(cafeId, req.body.coupon_code, items, total);
-      offerId = result.offerId;
-      discountAmount = result.discountAmount;
-      finalAmount = result.finalAmount;
+      const result = await applyCoupon(cafeId, req.body.coupon_code, items, total, customer_phone || null);
+      offerId         = result.offerId;
+      platformOfferId = result.platformOfferId;
+      offerFundedBy   = result.fundedBy;
+      discountAmount  = result.discountAmount;
+      finalAmount     = result.finalAmount;
     } else {
-      const result = await applyBestOffer(cafeId, items, total);
-      offerId = result.offerId;
-      discountAmount = result.discountAmount;
-      finalAmount = result.finalAmount;
+      const result = await applyBestOffer(cafeId, items, total, customer_phone || null);
+      offerId         = result.offerId;
+      platformOfferId = result.platformOfferId;
+      offerFundedBy   = result.fundedBy;
+      discountAmount  = result.discountAmount;
+      finalAmount     = result.finalAmount;
     }
 
     if (offerId && typeof offerId === 'string' && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(offerId)) {
@@ -421,22 +427,27 @@ exports.createOrder = asyncHandler(async (req, res) => {
            (cafe_id, customer_name, customer_phone, table_number, order_type,
             total_amount, discount_amount, tip_amount, final_amount,
             tax_amount, tax_rate,
-            offer_id, notes, client_order_id,
+            offer_id, platform_offer_id, platform_discount_amount,
+            notes, client_order_id,
             delivery_address, delivery_address2, delivery_city, delivery_zipcode,
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
             delivery_fee, delivery_status, reservation_id,
             platform_fee, platform_fee_rate)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
                    delivery_address, delivery_phone, delivery_fee, delivery_status,
-                   reservation_id, platform_fee, platform_fee_rate`,
+                   reservation_id, platform_fee, platform_fee_rate,
+                   platform_offer_id, platform_discount_amount`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
          trueTotal, discountAmount, tip, trueFinal,
          taxAmount, rate,
-         offerId || null, notes || null, client_order_id || null,
+         offerId || null,
+         platformOfferId || null,
+         offerFundedBy === 'platform' ? discountAmount : 0,
+         notes || null, client_order_id || null,
          order_type === 'delivery' ? (delivery_address || null) : null,
          order_type === 'delivery' ? (delivery_address2 || null) : null,
          order_type === 'delivery' ? (delivery_city || null) : null,
@@ -524,6 +535,48 @@ exports.createOrder = asyncHandler(async (req, res) => {
          WHERE id = $2 AND cafe_id = $3 AND status IN ('pending', 'confirmed')`,
         [order.id, parseInt(reservation_id), cafeId]
       );
+    }
+
+    // Atomic uses_count increment with cap enforcement (still inside transaction).
+    // The conditional UPDATE only succeeds if uses_count < max_uses (or max_uses is NULL).
+    // If it fails, the offer is over its cap — strip the discount from this order
+    // rather than blocking the order outright. Customer keeps their order, no over-redemption.
+    if (offerId) {
+      const upd = await client.query(
+        `UPDATE offers SET uses_count = uses_count + 1
+         WHERE id = $1 AND (max_uses IS NULL OR uses_count < max_uses)
+         RETURNING id`,
+        [offerId]
+      );
+      if (upd.rows.length === 0) {
+        // Cap reached between preview and commit — revert the discount on this order
+        await client.query(
+          `UPDATE orders SET offer_id = NULL, discount_amount = 0,
+                             final_amount = final_amount + $1
+           WHERE id = $2`,
+          [discountAmount, order.id]
+        );
+        offerId = null;
+        discountAmount = 0;
+      }
+    } else if (platformOfferId) {
+      const upd = await client.query(
+        `UPDATE platform_offers SET uses_count = uses_count + 1
+         WHERE id = $1 AND (max_uses IS NULL OR uses_count < max_uses)
+         RETURNING id`,
+        [platformOfferId]
+      );
+      if (upd.rows.length === 0) {
+        await client.query(
+          `UPDATE orders SET platform_offer_id = NULL, platform_discount_amount = 0,
+                             discount_amount = 0,
+                             final_amount = final_amount + $1
+           WHERE id = $2`,
+          [discountAmount, order.id]
+        );
+        platformOfferId = null;
+        discountAmount  = 0;
+      }
     }
 
     await client.query('COMMIT');
@@ -771,7 +824,7 @@ exports.getDashboardStats = asyncHandler(async (req, res) => {
     db.query(
       `SELECT
          COUNT(*) FILTER (WHERE status != 'cancelled') AS total_orders,
-         COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue
+         COALESCE(SUM(final_amount - COALESCE(platform_fee,0) + COALESCE(platform_discount_amount,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) = CURRENT_DATE`,
       [req.cafeId]

@@ -37,8 +37,9 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
          COUNT(*)                                          AS total_orders,
          COUNT(*) FILTER (WHERE status = 'cancelled')     AS cancelled_orders,
          COUNT(*) FILTER (WHERE status = 'paid')          AS paid_orders,
-         COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue,
+         COALESCE(SUM(final_amount - COALESCE(platform_fee,0) + COALESCE(platform_discount_amount,0)) FILTER (WHERE status = 'paid'), 0) AS total_revenue,
          COALESCE(SUM(COALESCE(platform_fee,0))           FILTER (WHERE status = 'paid'), 0) AS total_platform_fees,
+         COALESCE(SUM(COALESCE(platform_discount_amount,0)) FILTER (WHERE status = 'paid'), 0) AS total_platform_credits,
          COALESCE(SUM(tip_amount)                         FILTER (WHERE status = 'paid'), 0) AS total_tips,
          COALESCE(SUM(delivery_fee)                       FILTER (WHERE status = 'paid'), 0) AS total_delivery_fees
        FROM orders
@@ -78,7 +79,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     db.query(
       `SELECT DATE(created_at) AS date,
               COUNT(*) FILTER (WHERE status != 'cancelled') AS orders,
-              COALESCE(SUM(final_amount - COALESCE(platform_fee,0)) FILTER (WHERE status = 'paid'), 0) AS revenue
+              COALESCE(SUM(final_amount - COALESCE(platform_fee,0) + COALESCE(platform_discount_amount,0)) FILTER (WHERE status = 'paid'), 0) AS revenue
        FROM orders
        WHERE cafe_id = $1 AND DATE(created_at) BETWEEN $2 AND $3
        GROUP BY DATE(created_at)
@@ -188,12 +189,13 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  const totalRevenue      = parseFloat(summaryRes.rows[0].total_revenue);      // owner's net (excludes platform_fee)
-  const totalPlatformFees = parseFloat(summaryRes.rows[0].total_platform_fees); // DineVerse share
-  const totalTips         = parseFloat(summaryRes.rows[0].total_tips);
-  const totalDelivery     = parseFloat(summaryRes.rows[0].total_delivery_fees);
-  const totalExpenses     = parseFloat(expensesRes.rows[0].total_expenses);
-  const foodRevenue       = parseFloat((totalRevenue - totalTips - totalDelivery).toFixed(2));
+  const totalRevenue        = parseFloat(summaryRes.rows[0].total_revenue);      // owner's true net (incl. platform-funded credit)
+  const totalPlatformFees   = parseFloat(summaryRes.rows[0].total_platform_fees); // DineVerse commission
+  const totalPlatformCredit = parseFloat(summaryRes.rows[0].total_platform_credits || 0); // DineVerse-funded discounts
+  const totalTips           = parseFloat(summaryRes.rows[0].total_tips);
+  const totalDelivery       = parseFloat(summaryRes.rows[0].total_delivery_fees);
+  const totalExpenses       = parseFloat(expensesRes.rows[0].total_expenses);
+  const foodRevenue         = parseFloat((totalRevenue - totalTips - totalDelivery).toFixed(2));
 
   ok(res, {
     period,
@@ -208,6 +210,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       total_tips:           totalTips,
       total_delivery_fees:  totalDelivery,
       total_platform_fees:  totalPlatformFees,  // DineVerse commission (informational)
+      total_platform_credits: totalPlatformCredit, // DineVerse-funded offer discounts (informational)
       total_expenses:       totalExpenses,
       profit:               parseFloat((totalRevenue - totalExpenses).toFixed(2)),
     },

@@ -10,7 +10,8 @@ const EMPTY_FORM = {
   name: '', description: '', offer_type: 'percentage', discount_value: '',
   min_order_amount: '', active_from: '', active_until: '',
   active_days: [], combo_price: '', coupon_code: '',
-  combo_items: [],
+  combo_items: [], bogo_item_id: '',
+  start_date: '', end_date: '', max_uses: '', max_discount_amount: '',
   is_active: true,
 };
 
@@ -56,20 +57,26 @@ function OfferForm({ initial, onSave, onCancel, menuItems }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.name.trim()) return toast.error('Offer name is required');
-    if (form.offer_type !== 'combo' && !form.discount_value) return toast.error('Discount value is required');
+    if (!['combo','bogo'].includes(form.offer_type) && !form.discount_value) return toast.error('Discount value is required');
     if (form.offer_type === 'combo' && !form.combo_price) return toast.error('Combo price is required');
     if (form.offer_type === 'combo' && form.combo_items.length < 2) return toast.error('Select at least 2 items for a combo');
+    if (form.offer_type === 'bogo' && !form.bogo_item_id) return toast.error('Select a BOGO item');
     setSaving(true);
     try {
       const payload = {
         ...form,
-        discount_value:   parseFloat(form.discount_value) || 0,
-        min_order_amount: parseFloat(form.min_order_amount) || 0,
-        combo_price:      form.combo_price ? parseFloat(form.combo_price) : null,
-        combo_items:      form.offer_type === 'combo' ? form.combo_items.map(({ menu_item_id, quantity }) => ({ menu_item_id, quantity })) : null,
-        active_from:      form.active_from || null,
-        active_until:     form.active_until || null,
-        active_days:      form.active_days.length ? form.active_days : null,
+        discount_value:      parseFloat(form.discount_value) || 0,
+        min_order_amount:    parseFloat(form.min_order_amount) || 0,
+        max_discount_amount: form.max_discount_amount ? parseFloat(form.max_discount_amount) : null,
+        max_uses:            form.max_uses ? parseInt(form.max_uses) : null,
+        combo_price:         form.combo_price ? parseFloat(form.combo_price) : null,
+        combo_items:         form.offer_type === 'combo' ? form.combo_items.map(({ menu_item_id, quantity }) => ({ menu_item_id, quantity })) : null,
+        bogo_item_id:        form.offer_type === 'bogo' ? form.bogo_item_id : null,
+        active_from:         form.active_from || null,
+        active_until:        form.active_until || null,
+        active_days:         form.active_days.length ? form.active_days : null,
+        start_date:          form.start_date || null,
+        end_date:            form.end_date || null,
       };
       await onSave(payload);
     } finally {
@@ -92,32 +99,78 @@ function OfferForm({ initial, onSave, onCancel, menuItems }) {
             <option value="percentage">% Percentage Discount</option>
             <option value="fixed">{sym} Fixed Amount Off</option>
             <option value="combo">Combo Deal</option>
+            <option value="bogo">BOGO (Buy 2 Get 1 Free)</option>
+            <option value="first_order">First Order Discount</option>
           </select>
         </div>
       </div>
 
       <div className="grid sm:grid-cols-2 gap-4">
-        {form.offer_type !== 'combo' ? (
-          <div>
-            <label className="label">
-              {form.offer_type === 'percentage' ? 'Discount %' : `Discount Amount (${sym})`} *
-            </label>
-            <input className="input" type="number" min="1" max={form.offer_type === 'percentage' ? 100 : undefined}
-              placeholder={form.offer_type === 'percentage' ? 'e.g. 20' : 'e.g. 50'}
-              value={form.discount_value} onChange={set('discount_value')} />
-          </div>
-        ) : (
+        {form.offer_type === 'combo' ? (
           <div>
             <label className="label">Combo Price ({sym}) *</label>
             <input className="input" type="number" min="1" placeholder="e.g. 250"
               value={form.combo_price} onChange={set('combo_price')} />
             <p className="text-xs text-gray-400 mt-1">Total price for the whole combo bundle</p>
           </div>
+        ) : form.offer_type === 'bogo' ? (
+          <div>
+            <label className="label">BOGO Item *</label>
+            <select className="input" value={form.bogo_item_id}
+              onChange={(e) => setForm((f) => ({ ...f, bogo_item_id: e.target.value }))}>
+              <option value="">— Select item —</option>
+              {menuItems.map((i) => (
+                <option key={i.id} value={i.id}>{i.name} ({sym}{parseFloat(i.price).toFixed(2)})</option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Buy 2 of this item → 1 is free</p>
+          </div>
+        ) : (
+          <div>
+            <label className="label">
+              {form.offer_type === 'first_order' ? 'First-Order Discount (%)' : form.offer_type === 'percentage' ? 'Discount %' : `Discount Amount (${sym})`} *
+            </label>
+            <input className="input" type="number" min="1" max={form.offer_type === 'percentage' || form.offer_type === 'first_order' ? 100 : undefined}
+              placeholder={form.offer_type === 'fixed' ? 'e.g. 50' : 'e.g. 20'}
+              value={form.discount_value} onChange={set('discount_value')} />
+            {form.offer_type === 'first_order' && (
+              <p className="text-xs text-gray-400 mt-1">Only applies to customers with no previous orders at your café.</p>
+            )}
+          </div>
         )}
         <div>
           <label className="label">Min. Order Amount ({sym})</label>
           <input className="input" type="number" min="0" placeholder="0 = no minimum"
             value={form.min_order_amount} onChange={set('min_order_amount')} />
+        </div>
+      </div>
+
+      {/* Max discount cap + redemption limit */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        {form.offer_type !== 'combo' && form.offer_type !== 'bogo' && (
+          <div>
+            <label className="label">Max Discount Cap ({sym})</label>
+            <input className="input" type="number" min="1" placeholder="e.g. 200 (optional)"
+              value={form.max_discount_amount} onChange={set('max_discount_amount')} />
+            <p className="text-xs text-gray-400 mt-1">E.g. 20% off but max ₹200 savings.</p>
+          </div>
+        )}
+        <div>
+          <label className="label">Max Total Uses</label>
+          <input className="input" type="number" min="1" placeholder="Unlimited if blank"
+            value={form.max_uses} onChange={set('max_uses')} />
+        </div>
+      </div>
+
+      {/* Date range */}
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Valid From (date)</label>
+          <input className="input" type="date" value={form.start_date} onChange={set('start_date')} />
+        </div>
+        <div>
+          <label className="label">Valid Until (date)</label>
+          <input className="input" type="date" value={form.end_date} onChange={set('end_date')} />
         </div>
       </div>
 
@@ -239,7 +292,11 @@ function OfferBadge({ offer }) {
     ? `${offer.discount_value}% OFF`
     : offer.offer_type === 'fixed'
       ? `${sym}${offer.discount_value} OFF`
-      : `Combo ${sym}${offer.combo_price}`;
+      : offer.offer_type === 'bogo'
+        ? 'Buy 2 Get 1 Free'
+        : offer.offer_type === 'first_order'
+          ? `${offer.discount_value}% First Order`
+          : `Combo ${sym}${offer.combo_price}`;
 
   const timeLabel = offer.active_from && offer.active_until
     ? ` · ${offer.active_from.slice(0,5)}–${offer.active_until.slice(0,5)}`
@@ -253,7 +310,7 @@ function OfferBadge({ offer }) {
     <div className={`card p-4 flex items-start justify-between gap-4 ${!offer.is_active ? 'opacity-50' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-xl flex-shrink-0">
-          {offer.offer_type === 'percentage' ? '🏷️' : offer.offer_type === 'fixed' ? '💰' : '🎁'}
+          {offer.offer_type === 'percentage' ? '🏷️' : offer.offer_type === 'fixed' ? '💰' : offer.offer_type === 'bogo' ? '🎯' : offer.offer_type === 'first_order' ? '🌟' : '🎁'}
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap">
