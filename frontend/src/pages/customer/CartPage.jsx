@@ -130,6 +130,14 @@ export default function CartPage() {
     totalTax   = 0;
     grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
   }
+
+  // Platform charge — transparent DineVerse service fee added on top
+  const platformFeeRate = parseFloat(session?.platform_fee_rate ?? 0);
+  const platformFee = platformFeeRate > 0
+    ? parseFloat((grandTotal * platformFeeRate / 100).toFixed(2))
+    : 0;
+  grandTotal = parseFloat((grandTotal + platformFee).toFixed(2));
+
   const allOrders    = loadOrders(slug);
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
   const availableTables = tableAreas
@@ -680,6 +688,16 @@ export default function CartPage() {
             <div className="flex justify-between text-gray-600">
               <span>🛵 Delivery fee</span>
               <span>{deliveryFeeBase > 0 ? c(deliveryFeeBase) : 'Free'}</span>
+            </div>
+          )}
+
+          {platformFee > 0 && (
+            <div className="flex justify-between text-gray-500">
+              <span className="flex items-center gap-1">
+                Platform charge ({platformFeeRate}%)
+                <span className="text-[10px] bg-gray-100 text-gray-400 rounded px-1">DineVerse</span>
+              </span>
+              <span>{c(platformFee)}</span>
             </div>
           )}
 

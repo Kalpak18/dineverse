@@ -119,7 +119,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
               COALESCE(delivery_fee_base, 0)      AS delivery_fee_base,
               COALESCE(delivery_fee_per_km, 0)    AS delivery_fee_per_km,
               COALESCE(delivery_min_order, 0)     AS delivery_min_order,
-              COALESCE(delivery_est_mins, 30)     AS delivery_est_mins
+              COALESCE(delivery_est_mins, 30)     AS delivery_est_mins,
+              COALESCE(commission_rate, 2)        AS commission_rate
        FROM cafes WHERE slug = $1 AND is_active = true AND setup_completed = true`,
       [slug]
     );
@@ -405,6 +406,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
       trueFinal = finalAmount + tip + deliveryFee;
     }
 
+    // Platform fee — transparent charge shown on customer bill
+    const commissionRate = parseFloat(cafe.commission_rate ?? 2);
+    const platformFee = commissionRate > 0
+      ? parseFloat((trueFinal * commissionRate / 100).toFixed(2))
+      : 0;
+    trueFinal = parseFloat((trueFinal + platformFee).toFixed(2));
+
     // Insert order
     let orderResult;
     try {
@@ -416,14 +424,15 @@ exports.createOrder = asyncHandler(async (req, res) => {
             offer_id, notes, client_order_id,
             delivery_address, delivery_address2, delivery_city, delivery_zipcode,
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
-            delivery_fee, delivery_status, reservation_id)
+            delivery_fee, delivery_status, reservation_id,
+            platform_fee, platform_fee_rate)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
                    delivery_address, delivery_phone, delivery_fee, delivery_status,
-                   reservation_id`,
+                   reservation_id, platform_fee, platform_fee_rate`,
         [cafeId, customer_name, customer_phone || null, tableNum, order_type,
          trueTotal, discountAmount, tip, trueFinal,
          taxAmount, rate,
@@ -438,7 +447,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
          order_type === 'delivery' ? (delivery_instructions || null) : null,
          deliveryFee || 0,
          order_type === 'delivery' ? 'pending' : null,
-         reservation_id ? parseInt(reservation_id) : null]
+         reservation_id ? parseInt(reservation_id) : null,
+         platformFee, commissionRate]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
@@ -1035,6 +1045,7 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.order_type, o.status,
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
+              o.platform_fee, o.platform_fee_rate,
               o.payment_verified, o.cancellation_reason,
               o.notes, o.created_at, o.updated_at,
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,

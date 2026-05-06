@@ -374,6 +374,7 @@ export default function CafeEntry() {
       delivery_min_order: cafe?.delivery_min_order,
       delivery_est_mins:  cafe?.delivery_est_mins,
       delivery_radius_km: cafe?.delivery_radius_km,
+      platform_fee_rate:  parseFloat(cafe?.commission_rate ?? 2),
     };
     localStorage.setItem(`session_${slug}`, JSON.stringify(session));
     navigate(`/cafe/${slug}/menu`);

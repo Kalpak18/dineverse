@@ -148,6 +148,8 @@ export default function OrdersPage() {
           discountAmount: parseFloat(o.discount_amount) || 0,
           tipAmount:      parseFloat(o.tip_amount)      || 0,
           deliveryFee:    parseFloat(o.delivery_fee)    || 0,
+          platformFee:    parseFloat(o.platform_fee)    || 0,
+          platformFeeRate: parseFloat(o.platform_fee_rate) || 0,
           total:          parseFloat(o.final_amount || o.total_amount) || 0,
           aggregatedItems: (o.items || []).map((i) => ({
             name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
@@ -265,6 +267,7 @@ export default function OrdersPage() {
           customer_name: o.customer_name,
           orders: [],
           total: 0, subtotal: 0, taxAmount: 0, discountAmount: 0, tipAmount: 0, deliveryFee: 0,
+          platformFee: 0, platformFeeRate: parseFloat(o.platform_fee_rate) || 0,
           taxRate: parseFloat(o.tax_rate) || 0,
           itemMap: {},
         };
@@ -276,6 +279,7 @@ export default function OrdersPage() {
       bill.discountAmount += parseFloat(o.discount_amount) || 0;
       bill.tipAmount      += parseFloat(o.tip_amount)      || 0;
       bill.deliveryFee    += parseFloat(o.delivery_fee)    || 0;
+      bill.platformFee    += parseFloat(o.platform_fee)    || 0;
       bill.total          += parseFloat(o.final_amount || o.total_amount) || 0;
       o.items?.forEach((item) => {
         const displayName = itemDisplayName(item);
@@ -1384,7 +1388,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
     const modeLabel = PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
     const gstRate = parseInt(cafe?.gst_rate ?? 5);
     const hasGst = !!(cafe?.gst_number) && gstRate > 0 && bill.taxAmount > 0;
-    const hasBreakdownReceipt = hasGst || bill.discountAmount > 0 || bill.tipAmount > 0 || bill.deliveryFee > 0;
+    const hasBreakdownReceipt = hasGst || bill.discountAmount > 0 || bill.tipAmount > 0 || bill.deliveryFee > 0 || bill.platformFee > 0;
     return overlay(
       <div className="p-5 space-y-4">
         <div className="text-center py-2">
@@ -1428,6 +1432,11 @@ function BillingModal({ bill, onConfirm, onClose }) {
               <span>🛵 Delivery fee</span><span>{c(bill.deliveryFee)}</span>
             </div>
           )}
+          {bill.platformFee > 0 && (
+            <div className="flex justify-between text-gray-500 text-xs">
+              <span>Platform charge ({bill.platformFeeRate}%)</span><span>{c(bill.platformFee)}</span>
+            </div>
+          )}
           <div className={`flex justify-between font-bold text-gray-900 ${hasBreakdownReceipt ? 'pt-1.5 border-t border-gray-200' : ''}`}>
             <span>Total Paid</span><span>{c(bill.total)}</span>
           </div>
@@ -1449,7 +1458,7 @@ function BillingModal({ bill, onConfirm, onClose }) {
   }
 
   // ── Step 1: Collect ───────────────────────────────────────────
-  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || (bill.deliveryFee > 0);
+  const hasBreakdown = (bill.taxAmount > 0) || (bill.discountAmount > 0) || (bill.tipAmount > 0) || (bill.deliveryFee > 0) || (bill.platformFee > 0);
 
   return overlay(
     <div className="p-5 space-y-4">
@@ -1500,6 +1509,12 @@ function BillingModal({ bill, onConfirm, onClose }) {
                 <div className="flex justify-between text-gray-500 text-xs">
                   <span>🛵 Delivery fee</span>
                   <span>{c(bill.deliveryFee)}</span>
+                </div>
+              )}
+              {bill.platformFee > 0 && (
+                <div className="flex justify-between text-gray-500 text-xs">
+                  <span>Platform charge ({bill.platformFeeRate}%)</span>
+                  <span>{c(bill.platformFee)}</span>
                 </div>
               )}
             </div>
@@ -1932,6 +1947,8 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
   const discountAmount = parseFloat(order.discount_amount) || 0;
   const tipAmount      = parseFloat(order.tip_amount)      || 0;
   const deliveryFee    = parseFloat(order.delivery_fee)    || 0;
+  const platformFee    = parseFloat(order.platform_fee)    || 0;
+  const platformFeeRate = parseFloat(order.platform_fee_rate) || 0;
   const total          = parseFloat(order.final_amount || order.total_amount) || 0;
 
   const handleAdvance = async () => {
@@ -2013,6 +2030,7 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
             {discountAmount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>− {c(discountAmount)}</span></div>}
             {tipAmount > 0 && <div className="flex justify-between text-gray-500"><span>Tip</span><span>{c(tipAmount)}</span></div>}
             {deliveryFee > 0 && <div className="flex justify-between text-gray-500"><span>🛵 Delivery fee</span><span>{c(deliveryFee)}</span></div>}
+            {platformFee > 0 && <div className="flex justify-between text-gray-500"><span>Platform charge ({platformFeeRate}%)</span><span>{c(platformFee)}</span></div>}
             <div className="flex justify-between font-bold text-gray-900 text-base pt-1.5 border-t border-gray-200">
               <span>Total</span><span>{c(total)}</span>
             </div>

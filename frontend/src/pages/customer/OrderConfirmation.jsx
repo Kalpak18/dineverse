@@ -594,6 +594,12 @@ export default function OrderConfirmation() {
                     <span>{c(order.delivery_fee)}</span>
                   </div>
                 )}
+                {parseFloat(order.platform_fee || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500 text-xs">
+                    <span>Platform charge ({parseFloat(order.platform_fee_rate || 0)}%)</span>
+                    <span>{c(order.platform_fee)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-gray-900 pt-2 border-t border-gray-100">
                   <span>{order.status === 'paid' ? 'Total paid' : 'Total amount due'}</span>
                   <span className={order.status === 'cancelled' ? 'line-through text-gray-400' : ''}>
@@ -838,6 +844,12 @@ export default function OrderConfirmation() {
                     <span>{c(receiptOrder.tip_amount)}</span>
                   </div>
                 )}
+                {parseFloat(receiptOrder.platform_fee || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Platform charge ({parseFloat(receiptOrder.platform_fee_rate || 0)}%)</span>
+                    <span>{c(receiptOrder.platform_fee)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-gray-900 text-base pt-1">
                   <span>Total Paid</span>
                   <span>{c(receiptOrder.final_amount || receiptOrder.total_amount)}</span>
@@ -921,6 +933,12 @@ export default function OrderConfirmation() {
                       <div className="flex justify-between text-gray-500 text-xs">
                         <span>Delivery fee</span>
                         <span>{c(order.delivery_fee)}</span>
+                      </div>
+                    )}
+                    {parseFloat(order.platform_fee || 0) > 0 && (
+                      <div className="flex justify-between text-gray-500 text-xs">
+                        <span>Platform charge ({parseFloat(order.platform_fee_rate || 0)}%)</span>
+                        <span>{c(order.platform_fee)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-xs text-gray-500 mt-1.5 pt-1.5 border-t border-dashed border-gray-100">
