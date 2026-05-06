@@ -249,23 +249,25 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onItem
                 <div
                   key={item.id}
                   onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
-                  className={`flex items-center gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
+                  className={`flex items-start gap-2 rounded-lg border-l-[3px] px-2 py-1.5 transition-all select-none
                     ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
                     ${ITEM_ROW_STYLE[ist]}`}
                 >
-                  <span className="w-6 h-6 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                  <span className="w-6 h-6 mt-0.5 rounded bg-gray-800/80 flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
                     {item.quantity}
                   </span>
-                  <span className={`flex-1 text-sm font-medium ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
-                    <span className="block">{item.item_name}</span>
-                    {itemDetails(item) && <span className="block text-[11px] font-medium text-gray-400">{itemDetails(item)}</span>}
+                  <span className={`flex-1 text-sm font-medium leading-snug ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                    {item.item_name}
+                    {itemDetails(item) && <span className="block text-[11px] font-normal text-gray-400 mt-0.5">{itemDetails(item)}</span>}
                   </span>
-                  <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
-                    {ITEM_STATUS_LABEL[ist] || ist}
-                  </span>
-                  {!isCancelled && nextIst && (
-                    <span className="text-gray-600 text-xs flex-shrink-0">›</span>
-                  )}
+                  <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
+                    <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded whitespace-nowrap ${ITEM_BADGE_STYLE[ist]}`}>
+                      {ITEM_STATUS_LABEL[ist] || ist}
+                    </span>
+                    {!isCancelled && nextIst && (
+                      <span className="text-gray-600 text-xs">›</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -362,8 +364,8 @@ function RushCard({ order, now, onAdvance, onItemUpdate }) {
               onClick={() => nextIst && onItemUpdate(order.id, item.id, nextIst)}
               className={`flex items-center gap-1 ${nextIst ? 'cursor-pointer' : 'cursor-default'}`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
-              <span className="text-[10px] text-gray-300 truncate flex-1">
+              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1`} style={{ backgroundColor: { pending:'#ef4444', preparing:'#fb923c', ready:'#2dd4bf', served:'#4b5563' }[ist] || '#4b5563' }} />
+              <span className="text-[10px] text-gray-300 leading-snug flex-1">
                 <span className="font-bold text-white">{item.quantity}×</span> {item.item_name}
               </span>
             </div>
@@ -388,19 +390,133 @@ function RushCard({ order, now, onAdvance, onItemUpdate }) {
   );
 }
 
-function KitchenHint() {
-  const [open, setOpen] = useState(() => !localStorage.getItem('dv_hint_kitchen'));
-  if (!open) return null;
+// How it works modal — opens via ? button in header, can always be reopened.
+function HowItWorksModal({ onClose }) {
   return (
-    <div className="bg-gray-800 border-b border-gray-700 px-6 py-3 flex items-start gap-3 text-sm text-gray-300">
-      <span className="text-yellow-400 flex-shrink-0 mt-0.5">💡</span>
-      <div className="flex-1 space-y-1">
-        <p><strong className="text-white">Kitchen Display</strong> — keep this open on your kitchen screen during service.</p>
-        <p>Tap any item row to cycle its status: Pending → Cooking → Ready. A serving slip prints automatically when an item is marked ready — place it with the food so the waiter knows which table to deliver to.</p>
-        <p>Switch to <strong className="text-teal-300">🍽️ Waiter</strong> view (top-right toggle) to see all ready orders and mark them served once delivered to the table.</p>
-        <p>Cancel unavailable items with a reason — the customer is notified instantly.</p>
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 rounded-t-2xl">
+          <h2 className="font-bold text-white text-base">How the Kitchen Display works</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xl leading-none">×</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-5 text-sm text-gray-300">
+
+          {/* Views */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">3 View modes</h3>
+            <div className="space-y-2">
+              <div className="flex gap-2">
+                <span className="text-base flex-shrink-0">⊞</span>
+                <div>
+                  <p className="font-semibold text-white">By Table <span className="text-gray-500 font-normal text-xs">(default)</span></p>
+                  <p className="text-xs text-gray-400">Groups all orders from the same table into one card. Best for dine-in — one card = one table, no matter how many rounds they order.</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-base flex-shrink-0">☰</span>
+                <div>
+                  <p className="font-semibold text-white">Individual</p>
+                  <p className="text-xs text-gray-400">Each order is a separate card. Use when every order needs independent item-level tracking (e.g. different chefs handling different orders).</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <span className="text-base flex-shrink-0">⚡</span>
+                <div>
+                  <p className="font-semibold text-white">Rush mode</p>
+                  <p className="text-xs text-gray-400">All active orders on one screen sorted oldest-first. Switch to this during peak service (15+ orders) so nothing gets missed. Tap any dot to advance that item.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
+          {/* Advancing status */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Updating order status</h3>
+            <div className="space-y-1.5 text-xs text-gray-400">
+              <p>• <span className="text-gray-200">Tap any item row</span> to advance it one step: <span className="text-red-400">Pending</span> → <span className="text-orange-400">Cooking</span> → <span className="text-teal-400">Ready</span> → <span className="text-green-400">Served</span></p>
+              <p>• Use <span className="text-orange-300 font-semibold">🍳 All Start</span> to move every pending item to Cooking at once</p>
+              <p>• Use <span className="text-teal-300 font-semibold">✓ All Ready</span> to mark every cooking item as ready</p>
+              <p>• Use <span className="text-emerald-300 font-semibold">🍽️ Serve All</span> to mark every ready item as served</p>
+              <p>• The <span className="text-white font-semibold">bottom action button</span> advances the whole order (e.g. "Mark Ready →")</p>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
+          {/* Timer urgency */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Timer colors — order age</h3>
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="bg-gray-800 text-gray-400 px-2 py-0.5 rounded text-[10px] font-bold">5m</span>
+                <span className="text-gray-400">Fresh — no action needed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-amber-900/70 text-amber-300 px-2 py-0.5 rounded text-[10px] font-bold">⚠️ 12m</span>
+                <span className="text-gray-400">Needs attention — check status</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-orange-900/70 text-orange-300 px-2 py-0.5 rounded text-[10px] font-bold">⚠️ 17m</span>
+                <span className="text-gray-400">Urgent — prioritise this order</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-red-900/70 text-red-300 px-2 py-0.5 rounded text-[10px] font-bold animate-pulse">🔥 22m</span>
+                <span className="text-gray-400">Critical — customer waiting too long</span>
+              </div>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
+          {/* Cancel */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Cancelling an item</h3>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>Tap the small <span className="text-red-400 font-bold">✕</span> button on the right side of any pending or cooking item.</p>
+              <p>Enter a reason (e.g. "Out of stock", "Sold out today"). The customer is notified instantly with your reason so they know before asking the waiter.</p>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
+          {/* Printing */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Serving slips</h3>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>In <strong className="text-white">Individual</strong> mode, a serving slip prints automatically when you mark an item as Ready.</p>
+              <p>Attach the slip to the food at the pass so the waiter knows which table or customer to deliver it to — no shouting across the kitchen.</p>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
+          {/* New orders */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">New orders</h3>
+            <div className="text-xs text-gray-400 space-y-1">
+              <p>A <span className="text-white">chime sounds</span> when a new order arrives (use the 🔔 button in the header to toggle sound on/off).</p>
+              <p>The new order appears at the top of the <span className="text-yellow-300">Pending</span> column immediately via live update — no need to refresh.</p>
+              <p>Column headers show <span className="text-amber-300 font-semibold">oldest Xm</span> when the oldest order in that column is ≥ 5 min old — useful for the kitchen manager to spot bottlenecks.</p>
+            </div>
+          </section>
+
+        </div>
+
+        <div className="px-5 pb-4">
+          <button
+            onClick={onClose}
+            className="w-full py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium transition-colors"
+          >
+            Got it
+          </button>
+        </div>
       </div>
-      <button onClick={() => { localStorage.setItem('dv_hint_kitchen', '1'); setOpen(false); }} className="text-gray-500 hover:text-gray-300 text-lg leading-none flex-shrink-0">×</button>
     </div>
   );
 }
@@ -483,7 +599,7 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
         </div>
       )}
 
-      {/* Item list — compact tap-to-cycle rows */}
+      {/* Item list — compact tap-to-cycle rows. items-start so multi-line names stay top-aligned */}
       <div className="space-y-0.5 mb-1.5">
         {sortedItems.map((item) => {
           const ist = item.item_status || 'pending';
@@ -493,36 +609,43 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
             <div
               key={item.id}
               onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
-              className={`flex items-center gap-1.5 rounded border-l-[3px] px-2 py-1 transition-all select-none group
+              className={`flex items-start gap-1.5 rounded border-l-[3px] px-2 py-1.5 transition-all select-none group
                 ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
                 ${ITEM_ROW_STYLE[ist]}`}
             >
-              <span className="w-5 h-5 rounded bg-gray-800/80 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+              {/* Qty badge — fixed width, aligned to top */}
+              <span className="w-5 h-5 mt-0.5 rounded bg-gray-800/80 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
                 {item.quantity}
               </span>
-              <span className={`flex-1 text-xs font-medium min-w-0 ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
-                <span className="block truncate">{item.item_name}</span>
+              {/* Item name — wraps naturally, never truncates */}
+              <span className={`flex-1 text-xs font-medium leading-snug ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                {item.item_name}
                 {itemDetails(item) && (
-                  <span className="block truncate text-[10px] text-gray-400">{itemDetails(item)}</span>
+                  <span className="block text-[10px] leading-snug text-gray-400 font-normal mt-0.5">{itemDetails(item)}</span>
                 )}
                 {isCancelled && item.cancellation_reason && (
-                  <span className="block text-[9px] text-red-400">{item.cancellation_reason}</span>
+                  <span className="block text-[9px] text-red-400 mt-0.5">{item.cancellation_reason}</span>
                 )}
               </span>
-              <span className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded flex-shrink-0 ${ITEM_BADGE_STYLE[ist]}`}>
-                {ITEM_STATUS_LABEL[ist]}
-              </span>
-              {/* Cancel button — visible on hover only to keep UI clean */}
-              {!isCancelled && ['pending', 'preparing'].includes(ist) && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
-                  className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 hidden group-hover:flex items-center justify-center flex-shrink-0"
-                  title="Cancel item"
-                >✕</button>
-              )}
-              {!isCancelled && nextIst && (
-                <span className="text-gray-600 text-[10px] flex-shrink-0">›</span>
-              )}
+              {/* Right side — status badge + cancel + advance arrow, top-aligned */}
+              <div className="flex flex-col items-end gap-0.5 flex-shrink-0 mt-0.5">
+                <span className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded whitespace-nowrap ${ITEM_BADGE_STYLE[ist]}`}>
+                  {ITEM_STATUS_LABEL[ist]}
+                </span>
+                <div className="flex items-center gap-0.5">
+                  {/* Cancel — always visible as tiny red button (not hover-only — touchscreens don't hover) */}
+                  {!isCancelled && ['pending', 'preparing'].includes(ist) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
+                      className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center"
+                      title="Cancel item"
+                    >✕</button>
+                  )}
+                  {!isCancelled && nextIst && (
+                    <span className="text-gray-600 text-[10px]">›</span>
+                  )}
+                </div>
+              </div>
             </div>
           );
         })}
@@ -566,6 +689,7 @@ export default function KitchenPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
   const [mobileTab, setMobileTab] = useState('pending');
+  const [showHelp, setShowHelp] = useState(false);
   const now = useTimer();
 
   const playChime = useCallback(() => {
@@ -875,6 +999,13 @@ export default function KitchenPage() {
             <span className="hidden md:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
           </button>
           <button
+            onClick={() => setShowHelp(true)}
+            title="How it works"
+            className="px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
+          >
+            ?
+          </button>
+          <button
             onClick={toggleFullscreen}
             title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             className="hidden md:block px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
@@ -884,7 +1015,7 @@ export default function KitchenPage() {
         </div>
       </div>
 
-      <KitchenHint />
+      {showHelp && <HowItWorksModal onClose={() => setShowHelp(false)} />}
 
       {/* ── Mobile: horizontal status tabs + single column ── */}
       <div className="md:hidden flex-1 flex flex-col overflow-hidden min-h-0">
