@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginCafe, registerCafe, createOwnerAccount, completeCafeSetup, getMe } from '../services/api';
+import { loginCafe, registerCafe, createOwnerAccount, completeCafeSetup, getMe, refreshAuthToken } from '../services/api';
 
 const AuthContext = createContext(null);
 

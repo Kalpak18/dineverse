@@ -123,8 +123,11 @@ export default function OrderConfirmation() {
     };
     socket.on('connect', onConnect);
 
-    // If socket exhausts all reconnection attempts, show stale-data warning
-    socket.on('reconnect_failed', () => setLostConnection(true));
+    // If socket exhausts all reconnection attempts, show stale-data warning and stop interval
+    socket.on('reconnect_failed', () => {
+      setLostConnection(true);
+      clearInterval(pollRef.current);
+    });
 
     // 5. Real-time status update from owner's action
     const onOrderUpdated = (updated) => {
@@ -351,7 +354,9 @@ export default function OrderConfirmation() {
     if (!dineInOrder) return;
     setLoadingBill(true);
     try {
-      const { data } = await getTableBill(slug, dineInOrder.table_number);
+      const customerName = dineInOrder.customer_name
+        || (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').customer_name; } catch { return null; } })();
+      const { data } = await getTableBill(slug, dineInOrder.table_number, customerName);
       setTableBill(data);
     } catch {
       toast.error('Could not load table bill');

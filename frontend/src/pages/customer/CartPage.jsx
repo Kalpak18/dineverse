@@ -746,9 +746,17 @@ export default function CartPage() {
             </div>
           )}
           <button
-            onClick={() => setShowConfirm(true)}
+            onClick={() => {
+              // Validate delivery form before opening confirm modal so errors show inline
+              if (isDelivery) {
+                if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
+                if (!deliveryForm.delivery_phone.trim())   { toast.error('Please enter your phone number for delivery'); return; }
+              }
+              setShowConfirm(true);
+            }}
             disabled={loading || !cafeOpen || (isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder)}
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!cafeOpen ? 'This café is currently closed' : undefined}
           >
             <span>{slowNetwork ? 'Still connecting…' : loading ? 'Placing order...' : 'Place Order'}</span>
             <span>{c(grandTotal)}</span>

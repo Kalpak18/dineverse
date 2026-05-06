@@ -730,10 +730,11 @@ export default function MenuPage() {
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
         <div className="fixed bottom-[calc(60px+1rem)] left-0 right-0 px-4 z-20 max-w-2xl mx-auto flex flex-col gap-2">
-          {activeOrders.length > 0 && itemCount === 0 && (
+          {/* Always show tracking link when there are active orders — even when cart has items */}
+          {activeOrders.length > 0 && (
             <button
               onClick={() => navigate(`/cafe/${slug}/confirmation`)}
-              className="w-full bg-white border border-teal-200 text-teal-700 font-semibold text-sm py-3 rounded-xl shadow-lg flex items-center justify-center gap-2"
+              className="w-full bg-white border border-teal-200 text-teal-700 font-semibold text-sm py-2.5 rounded-xl shadow-lg flex items-center justify-center gap-2"
             >
               📋 Track My Orders
               <span className="bg-teal-100 text-teal-700 text-xs font-bold px-1.5 py-0.5 rounded-full">

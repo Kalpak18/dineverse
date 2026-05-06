@@ -244,8 +244,10 @@ export const updateOffer     = (id, data)   => api.patch(`/offers/${id}`, data);
 export const deleteOffer     = (id)         => api.delete(`/offers/${id}`);
 
 // ─── Table combined bill (customer-facing) ────────────────────
-export const getTableBill = (slug, tableNumber) =>
-  api.get(`/orders/cafe/${slug}/table-bill/${encodeURIComponent(tableNumber)}`);
+export const getTableBill = (slug, tableNumber, customerName) =>
+  api.get(`/orders/cafe/${slug}/table-bill/${encodeURIComponent(tableNumber)}`, {
+    params: customerName ? { customer_name: customerName } : undefined,
+  });
 
 // ─── Reservations ─────────────────────────────────────────────
 export const createReservation = (slug, data) => api.post(`/reservations/cafe/${slug}/reserve`, data);
