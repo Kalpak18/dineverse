@@ -22,10 +22,29 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     build: {
+      // Raise chunk-size warning threshold; our lazy-split chunks are intentionally larger
+      chunkSizeWarningLimit: 600,
       rollupOptions: {
-        // Capacitor native plugin — not installed in web/CI builds, only resolved at runtime on device
         external: ['@capacitor-community/barcode-scanner'],
-        output: {},
+        output: {
+          // Vendor libraries are versioned by npm, so they can be cached forever.
+          // Splitting them into a separate chunk means a deploy that touches only
+          // app code never invalidates the user's cached React/socket.io download.
+          manualChunks(id) {
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('node_modules/react-router') || id.includes('node_modules/@remix-run')) {
+              return 'vendor-router';
+            }
+            if (id.includes('node_modules/socket.io-client') || id.includes('node_modules/engine.io-client')) {
+              return 'vendor-socket';
+            }
+            if (id.includes('node_modules/recharts') || id.includes('node_modules/d3-')) {
+              return 'vendor-charts';
+            }
+          },
+        },
       },
     },
     server: {

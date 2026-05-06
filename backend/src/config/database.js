@@ -3,17 +3,17 @@ const logger = require('../utils/logger');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  // In production use SSL with full cert verification.
-  // Set DB_SSL_REJECT_UNAUTHORIZED=false only if your provider uses self-signed certs (e.g. Render, Railway).
   ssl: process.env.NODE_ENV === 'production'
     ? { rejectUnauthorized: process.env.DB_SSL_REJECT_UNAUTHORIZED !== 'false' }
     : false,
-  // Kill runaway queries after 15 seconds to prevent DB connection starvation
+  // Kill runaway queries after 15 s — prevents slow queries starving the pool
   statement_timeout: 15000,
-  // Idle connections returned to pool after 30 seconds
-  idleTimeoutMillis: 30000,
-  // Max pool size — 20 handles production traffic; reduce to 5 if using PgBouncer
-  max: 20,
+  // Return idle connections quickly; reduces memory on hobby/single-instance plans
+  idleTimeoutMillis: 10000,
+  // Connection timeout: fail fast rather than queue indefinitely
+  connectionTimeoutMillis: 5000,
+  // 10 connections per instance. If scaling horizontally use PgBouncer in front.
+  max: parseInt(process.env.DB_POOL_MAX || '10'),
 });
 
 pool.on('error', (err) => {

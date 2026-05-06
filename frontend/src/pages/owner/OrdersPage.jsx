@@ -1742,11 +1742,16 @@ const HISTORY_DATE_PRESETS = [
   { key: 'all',       label: 'All time' },
 ];
 
+const HISTORY_PAGE_SIZE = 50;
+
 function HistoryView({ orders, dateRange, onDateRangeChange }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const [search, setSearch] = useState('');
+  const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
   const setDateRange = onDateRangeChange;
+
+  useEffect(() => { setVisibleCount(HISTORY_PAGE_SIZE); }, [dateRange, search]);
 
   const dateFiltered = useMemo(() => {
     if (dateRange === 'all') return orders;
@@ -1834,7 +1839,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-        {filtered.map((order) => {
+        {filtered.slice(0, visibleCount).map((order) => {
           const token = order.daily_order_number;
           return (
             <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden border-l-4 border-l-purple-400 flex flex-col">
@@ -1895,6 +1900,17 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
           );
         })}
       </div>
+
+      {filtered.length > visibleCount && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={() => setVisibleCount((n) => n + HISTORY_PAGE_SIZE)}
+            className="px-6 py-2 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 text-sm font-medium transition-colors"
+          >
+            Load more ({filtered.length - visibleCount} remaining)
+          </button>
+        </div>
+      )}
     </div>
   );
 }

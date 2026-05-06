@@ -175,10 +175,18 @@ exports.getCafes = asyncHandler(async (req, res) => {
       `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active,
               c.plan_type, c.plan_start_date, c.plan_expiry_date, c.created_at,
               c.commission_rate,
-              (SELECT COUNT(*) FROM orders o WHERE o.cafe_id = c.id)                                AS total_orders,
-              (SELECT COUNT(*) FROM menu_items m WHERE m.cafe_id = c.id)                            AS menu_items,
-              COALESCE((SELECT SUM(o.commission_amount) FROM orders o WHERE o.cafe_id = c.id AND o.status = 'paid'), 0) AS commission_earned
+              COALESCE(ord.total_orders,      0) AS total_orders,
+              COALESCE(ord.commission_earned, 0) AS commission_earned,
+              COALESCE(mi.menu_items,         0) AS menu_items
        FROM cafes c ${where}
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*)                                              AS total_orders,
+                SUM(commission_amount) FILTER (WHERE status = 'paid') AS commission_earned
+         FROM orders WHERE cafe_id = c.id
+       ) ord ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS menu_items FROM menu_items WHERE cafe_id = c.id
+       ) mi ON true
        ORDER BY c.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, parseInt(limit), offset]

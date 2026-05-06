@@ -907,6 +907,7 @@ function MenuItemCard({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, 
             src={item.image_url}
             alt={item.name}
             className="w-full h-full object-cover"
+            loading="lazy"
             onError={(e) => { e.currentTarget.style.display = 'none'; e.currentTarget.nextSibling.style.display = 'flex'; }}
           />
         ) : null}

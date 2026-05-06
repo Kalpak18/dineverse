@@ -14,6 +14,7 @@ const db = require('./config/database');
 const { apiLimiter, healthLimiter } = require('./middleware/rateLimiter');
 const { createRedisAdapter, redisClients } = require('./config/redis');
 
+const compression = require('compression');
 const hpp = require('hpp');
 const { v4: uuidv4 } = require('uuid');
 
@@ -152,12 +153,20 @@ io.on('connection', (socket) => {
     logger.debug('Socket %s joined admin_room', socket.id);
   });
 
-  socket.on('disconnect', () => {
-    logger.debug('Socket disconnected: %s', socket.id);
+  socket.on('disconnect', (reason) => {
+    // Explicitly leave all rooms so Socket.io frees room-level memory immediately
+    // rather than waiting for the GC cycle.
+    for (const room of socket.rooms) {
+      if (room !== socket.id) socket.leave(room);
+    }
+    logger.debug('Socket %s disconnected (%s)', socket.id, reason);
   });
 });
 
 // ─── Middleware ────────────────────────────────────────────────
+// Gzip/Brotli — compress all JSON responses ≥ 1 KB (~60–70% size reduction)
+app.use(compression({ threshold: 1024 }));
+
 // Razorpay webhook needs the raw body buffer for HMAC verification.
 // Must be registered BEFORE the global express.json() parser.
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
