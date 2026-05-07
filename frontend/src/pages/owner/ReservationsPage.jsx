@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getReservations, updateReservation, deleteReservation } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
+import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
 const STATUS_CONFIG = {
@@ -13,7 +14,9 @@ const STATUS_CONFIG = {
 };
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  // Use the browser's local timezone (IST for owners in India) — toISOString() returns UTC
+  // which is the previous day's date between 00:00 and 05:30 IST.
+  return new Date().toLocaleDateString('en-CA');
 }
 
 function fmtDate(d) {
@@ -44,8 +47,8 @@ export default function ReservationsPage() {
       if (date) params.date = date;
       if (statusFilter) params.status = statusFilter;
       const { data } = await getReservations(params);
-      setReservations(data.reservations);
-    } catch { toast.error('Failed to load reservations'); }
+      setReservations(data.reservations || []);
+    } catch (err) { toast.error(`Couldn't load reservations: ${getApiError(err)}`); }
     finally { setLoading(false); }
   }, [date, statusFilter]);
 
@@ -64,7 +67,7 @@ export default function ReservationsPage() {
       const { data } = await updateReservation(id, { status });
       setReservations((prev) => prev.map((r) => r.id === id ? data.reservation : r));
       toast.success(`Marked as ${STATUS_CONFIG[status].label}`);
-    } catch { toast.error('Failed to update reservation'); }
+    } catch (err) { toast.error(`Couldn't update reservation: ${getApiError(err)}`); }
   };
 
   const handleDelete = async (id) => {
@@ -73,7 +76,7 @@ export default function ReservationsPage() {
       await deleteReservation(id);
       setReservations((prev) => prev.filter((r) => r.id !== id));
       toast.success('Reservation deleted');
-    } catch { toast.error('Failed to delete reservation'); }
+    } catch (err) { toast.error(`Couldn't delete reservation: ${getApiError(err)}`); }
   };
 
   const counts = reservations.reduce((acc, r) => {

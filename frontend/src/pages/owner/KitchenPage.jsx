@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
+import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
 function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -716,7 +717,7 @@ export default function KitchenPage() {
       const { data } = await getOrders({ limit: 100 });
       setOrders(data.orders.filter((o) => KITCHEN_STATUSES.includes(o.status)));
       if (isRefresh) toast('Orders refreshed', { icon: '✓', style: { background: '#1f2937', color: '#fff' } });
-    } catch { toast.error('Failed to load orders'); }
+    } catch (err) { toast.error(`Couldn't load orders: ${getApiError(err)}`); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
@@ -753,7 +754,7 @@ export default function KitchenPage() {
       } else {
         setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: next } : o));
       }
-    } catch { toast.error('Failed to update order'); }
+    } catch (err) { toast.error(`Couldn't update order: ${getApiError(err)}`); }
   };
 
   const handleItemUpdate = async (orderId, itemId, status) => {
@@ -835,7 +836,7 @@ export default function KitchenPage() {
             : prev.filter((o) => o.id !== order.id)
         );
       }));
-    } catch { toast.error('Failed to advance some orders'); }
+    } catch (err) { toast.error(`Couldn't advance some orders: ${getApiError(err)}`); }
   };
 
   const handleAcceptOrder = async (orderId) => {
@@ -843,7 +844,7 @@ export default function KitchenPage() {
       const { data } = await acceptOrder(orderId);
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
       toast.success('Order accepted');
-    } catch { toast.error('Failed to accept order'); }
+    } catch (err) { toast.error(`Couldn't accept order: ${getApiError(err)}`); }
   };
 
   const handleRejectOrder = async (orderId) => {
@@ -853,7 +854,7 @@ export default function KitchenPage() {
       const { data } = await rejectOrder(orderId, reason.trim());
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
       toast.success('Order rejected');
-    } catch { toast.error('Failed to reject order'); }
+    } catch (err) { toast.error(`Couldn't reject order: ${getApiError(err)}`); }
   };
 
   const handleAcceptItem = async (orderId, itemId) => {

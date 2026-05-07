@@ -182,7 +182,7 @@ export default function AnalyticsPage() {
       a.click();
       URL.revokeObjectURL(url);
       toast.success('CSV exported');
-    } catch { toast.error('Export failed'); }
+    } catch (err) { toast.error(`Export failed: ${getApiError(err)}`); }
     finally { setExporting(false); }
   };
 
@@ -263,15 +263,17 @@ export default function AnalyticsPage() {
                 : `${data.summary.paid_orders} paid`}
             />
             <SummaryCard
-              label="Revenue Collected"
+              label="Your Revenue"
               value={c(data.summary.total_revenue)}
               icon="💰"
               color="green"
               sub={[
+                'After DineVerse fee · your share only',
                 `Food: ${c(data.summary.food_revenue ?? data.summary.total_revenue)}`,
                 data.summary.total_tips > 0 ? `Tips: ${c(data.summary.total_tips)}` : null,
                 data.summary.total_delivery_fees > 0 ? `Delivery: ${c(data.summary.total_delivery_fees)}` : null,
-              ].filter(Boolean).join(' · ') || 'From paid orders only'}
+                data.summary.total_platform_fees > 0 ? `(DineVerse fee: ${c(data.summary.total_platform_fees)} — not in this total)` : null,
+              ].filter(Boolean).join(' · ')}
             />
             <SummaryCard
               label="Expenses"

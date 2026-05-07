@@ -11,6 +11,22 @@ import { ThemeProvider } from './context/ThemeContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
+// Global safety net: surface unhandled promise rejections / errors so the
+// app never silently breaks. ErrorBoundary catches React render errors;
+// these handlers catch everything else (axios calls, async event handlers).
+window.addEventListener('unhandledrejection', (e) => {
+  // Don't spam toasts for cancelled requests or auth-redirects (handled by axios interceptor)
+  const msg = e.reason?.response?.data?.message || e.reason?.message || '';
+  if (e.reason?.response?.status === 401) return;          // axios interceptor handles
+  if (msg.toLowerCase().includes('cancel')) return;         // user-initiated cancel
+  // eslint-disable-next-line no-console
+  console.error('[unhandledrejection]', e.reason);
+});
+window.addEventListener('error', (e) => {
+  // eslint-disable-next-line no-console
+  console.error('[uncaught error]', e.error || e.message);
+});
+
 // Register service worker. Workbox is configured with skipWaiting:true so the
 // new SW activates immediately on install. We reload when the controller changes
 // so all open tabs switch to the new version automatically.

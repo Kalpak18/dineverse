@@ -28,20 +28,33 @@ export default class ErrorBoundary extends Component {
 
   render() {
     if (this.state.hasError) {
+      const errMsg = this.state.error?.message || 'An unexpected error occurred';
       return (
         <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50">
-          <div className="text-center max-w-sm">
+          <div className="text-center max-w-md">
             <div className="text-6xl mb-4">⚠️</div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">Something went wrong</h1>
-            <p className="text-gray-500 text-sm mb-6">
-              An unexpected error occurred. Please refresh the page.
+            <p className="text-gray-500 text-sm mb-2">
+              The app hit an unexpected error. You can try refreshing or going back home.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="btn-primary"
-            >
-              Refresh Page
-            </button>
+            <details className="mb-6 text-xs text-left mx-auto max-w-xs bg-white border border-gray-200 rounded-lg p-3">
+              <summary className="cursor-pointer text-gray-500 font-medium">Error details</summary>
+              <p className="mt-2 text-red-600 font-mono break-words">{errMsg}</p>
+            </details>
+            <div className="flex gap-2 justify-center">
+              <button
+                onClick={() => window.location.reload()}
+                className="btn-primary"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={() => { this.setState({ hasError: false, error: null }); window.location.href = '/'; }}
+                className="px-4 py-2 rounded-xl bg-gray-100 text-gray-700 text-sm font-semibold hover:bg-gray-200"
+              >
+                Go Home
+              </button>
+            </div>
           </div>
         </div>
       );

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getWaitlist, updateWaitlistEntry, deleteWaitlistEntry } from '../../services/api';
+import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
 import { useAuth } from '../../context/AuthContext';
@@ -32,8 +33,8 @@ export default function WaitlistPage() {
   const load = useCallback(async () => {
     try {
       const { data } = await getWaitlist();
-      setEntries(data.waitlist);
-    } catch { toast.error('Failed to load waitlist'); }
+      setEntries(data.waitlist || []);
+    } catch (err) { toast.error(`Couldn't load waitlist: ${getApiError(err)}`); }
     finally { setLoading(false); }
   }, []);
 
@@ -60,7 +61,7 @@ export default function WaitlistPage() {
         status === 'no_show'   ? 'Marked as no-show' :
         status === 'cancelled' ? 'Entry cancelled' : 'Updated'
       );
-    } catch { toast.error('Failed to update entry'); }
+    } catch (err) { toast.error(`Couldn't update entry: ${getApiError(err)}`); }
   };
 
   const handleNotify = async (id) => {
@@ -68,7 +69,7 @@ export default function WaitlistPage() {
       await updateWaitlistEntry(id, { notify: true });
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, notified_at: new Date().toISOString() } : e));
       toast.success('Customer notified via SMS 🔔');
-    } catch { toast.error('Failed to notify'); }
+    } catch (err) { toast.error(`Couldn't notify: ${getApiError(err)}`); }
   };
 
   const handleSeatConfirm = async () => {
@@ -84,7 +85,7 @@ export default function WaitlistPage() {
       await deleteWaitlistEntry(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
       toast.success('Entry removed');
-    } catch { toast.error('Failed to remove entry'); }
+    } catch (err) { toast.error(`Couldn't remove entry: ${getApiError(err)}`); }
   };
 
   const displayed = filter === 'waiting'

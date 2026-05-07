@@ -102,8 +102,8 @@ export default function TablesPage() {
       link.click();
       URL.revokeObjectURL(link.href);
       toast.success(`Downloaded ${allTables.length} QR codes`);
-    } catch {
-      toast.error('Failed to generate ZIP');
+    } catch (err) {
+      toast.error(`Couldn't generate ZIP: ${err?.message || 'unknown error'}`);
     } finally {
       setDownloadingZip(false);
     }

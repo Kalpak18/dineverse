@@ -545,10 +545,10 @@ export default function RegisterPage() {
                 {/* Password — hidden once OTP is sent */}
                 {!otpSent && (
                   <div>
-                    <label className="label">Password *</label>
+                    <label className="label">Set Password *</label>
                     <PasswordInput
                       className="input"
-                      placeholder="At least 8 characters"
+                      placeholder="Choose a password (min 8 characters)"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       autoComplete="new-password"
