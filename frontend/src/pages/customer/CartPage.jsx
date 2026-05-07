@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions } from '../../services/api';
+import { placeOrder, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions, getPublicOffers } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -42,6 +42,7 @@ export default function CartPage() {
   const [tip, setTip] = useState(0);
   const [orderError, setOrderError] = useState(null);
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
+  const [allOffers, setAllOffers]       = useState([]);   // Zomato-style offer panel — all active public offers
   const offerDebounce = useRef(null);
   const [couponInput, setCouponInput]     = useState('');
   const [couponApplied, setCouponApplied] = useState(false); // true when offer was set via coupon
@@ -83,6 +84,16 @@ export default function CartPage() {
     document.title = name ? `Cart — ${name}` : 'Your Cart — DineVerse';
     return () => { document.title = 'DineVerse'; };
   }, [session?.cafe_name]);
+
+  // Fetch all public offers once for the Zomato-style "Offers for you" panel.
+  // Owner offers + DineVerse-funded offers; auto-applied ones light up as
+  // the cart total crosses each offer's min_order_amount.
+  useEffect(() => {
+    if (!slug) return;
+    getPublicOffers(slug)
+      .then(({ data }) => setAllOffers(data.offers || []))
+      .catch(() => setAllOffers([]));
+  }, [slug]);
 
   // Upsell suggestions — debounced, only when cart has items
   useEffect(() => {
@@ -201,9 +212,43 @@ export default function CartPage() {
   // Debounced offer preview: refetch when cart total OR customer phone changes
   // (phone matters for first_order eligibility — repeat customers don't qualify)
   const previewPhone = (deliveryForm?.delivery_phone || session?.customer_phone || '').trim();
+  // Track the previously-applied auto offer so we can toast when it
+  // disappears (e.g. customer removed an item and dropped below min_order).
+  const prevAutoOfferRef = useRef(null);
   useEffect(() => {
-    if (couponApplied) return; // don't auto-override a manually entered coupon
-    if (!items.length) { setOfferPreview(null); return; }
+    // If a coupon is manually applied, re-validate it (cart may have shrunk
+    // below min_order or the offer may have hit its usage cap). On failure
+    // auto-remove with a toast so the customer is never about to checkout
+    // expecting a discount that won't apply.
+    if (couponApplied) {
+      if (!items.length) return;
+      clearTimeout(offerDebounce.current);
+      offerDebounce.current = setTimeout(async () => {
+        try {
+          const { data } = await validateCoupon(slug, {
+            coupon_code: couponInput.trim(),
+            items: items.map((i) => ({
+              menu_item_id: i.menu_item_id || i.id,
+              quantity: i.quantity,
+              variant_id: i.variant_id || null,
+              selected_modifiers: i.selected_modifiers || [],
+              modifier_total: i.modifier_total || 0,
+            })),
+            total,
+          });
+          setOfferPreview(data);
+        } catch (err) {
+          // No longer eligible — strip silently and let the auto path take over
+          setCouponApplied(false);
+          setCouponInput('');
+          setOfferPreview(null);
+          toast(err?.response?.data?.message || 'Coupon removed — no longer eligible', { icon: '⚠️' });
+        }
+      }, 500);
+      return () => clearTimeout(offerDebounce.current);
+    }
+
+    if (!items.length) { setOfferPreview(null); prevAutoOfferRef.current = null; return; }
     clearTimeout(offerDebounce.current);
     offerDebounce.current = setTimeout(async () => {
       try {
@@ -220,41 +265,22 @@ export default function CartPage() {
         };
         const { data } = await previewOffer(slug, payload);
         setOfferPreview(data);
+        // Toast when an auto-applied offer disappears because the cart shrank
+        const wasApplied = prevAutoOfferRef.current;
+        const nowApplied = data?.applied ? data.offer_name : null;
+        if (wasApplied && !nowApplied) {
+          toast(`Offer removed: "${wasApplied}" no longer eligible`, { icon: '⚠️', duration: 4000 });
+        }
+        prevAutoOfferRef.current = nowApplied;
       } catch {
         setOfferPreview(null);
       }
     }, 500);
     return () => clearTimeout(offerDebounce.current);
-  }, [slug, total, items, couponApplied, previewPhone]);
+  }, [slug, total, items, couponApplied, previewPhone]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleApplyCoupon = async () => {
-    if (!couponInput.trim()) return;
-    setCouponLoading(true);
-    try {
-      const { data } = await validateCoupon(slug, {
-        coupon_code: couponInput.trim(),
-        items: items.map((i) => ({
-          menu_item_id: i.menu_item_id || i.id,
-          quantity: i.quantity,
-          variant_id: i.variant_id || null,
-          selected_modifiers: i.selected_modifiers || [],
-          modifier_total: i.modifier_total || 0,
-        })),
-        total,
-      });
-      setOfferPreview(data);
-      setCouponApplied(true);
-      toast.success(`Coupon applied! You save ${c(data.discount_amount)}`);
-    } catch (err) {
-      // Clear coupon state so it cannot accidentally be submitted with the order
-      setCouponApplied(false);
-      setCouponInput('');
-      setOfferPreview(null);
-      toast.error(err?.response?.data?.message || 'Invalid coupon code');
-    } finally {
-      setCouponLoading(false);
-    }
-  };
+  // (handleApplyCoupon was removed — coupon application is now inline in the
+  //  OffersPanel's onApplyCode callback, triggered by tapping a specific offer.)
 
   const handleRemoveCoupon = () => {
     setCouponInput('');
@@ -581,78 +607,45 @@ export default function CartPage() {
         />
       </div>
 
-      {/* Coupon code input */}
-      <div className="mx-4 mt-4">
-        {couponApplied ? (
-          <div className={`flex items-center gap-2 rounded-xl px-4 py-2.5 border ${
-            offerPreview?.funded_by === 'platform' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'
-          }`}>
-            <span className="text-lg">{offerPreview?.funded_by === 'platform' ? '⚡' : '🎉'}</span>
-            <div className="flex-1">
-              <p className={`text-xs font-semibold ${offerPreview?.funded_by === 'platform' ? 'text-purple-800' : 'text-green-800'}`}>
-                {offerPreview?.offer_name || couponInput} applied!
-                {offerPreview?.funded_by === 'platform' && <span className="ml-1.5 font-normal text-purple-500">DineVerse Offer</span>}
-              </p>
-              <p className={`text-xs ${offerPreview?.funded_by === 'platform' ? 'text-purple-600' : 'text-green-600'}`}>You save {c(discountAmt)} on this order</p>
-            </div>
-            <button onClick={handleRemoveCoupon} className="text-xs text-gray-400 hover:text-red-500 font-medium px-1">Remove</button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Have a coupon code?"
-              value={couponInput}
-              onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === 'Enter' && handleApplyCoupon()}
-              className="flex-1 text-sm border border-gray-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-brand-500 uppercase placeholder:normal-case placeholder:text-gray-400"
-            />
-            <button
-              onClick={handleApplyCoupon}
-              disabled={!couponInput.trim() || couponLoading}
-              className="text-sm font-semibold bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white px-4 py-2.5 rounded-xl transition-colors whitespace-nowrap"
-            >
-              {couponLoading ? '…' : 'Apply'}
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Auto-detected offer banner */}
-      {!couponApplied && offerPreview?.applied && (
-        <div className={`mx-4 mt-3 flex items-center gap-2 rounded-xl px-4 py-2.5 border ${
-          offerPreview.funded_by === 'platform' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'
-        }`}>
-          <span className="text-lg">{offerPreview.funded_by === 'platform' ? '⚡' : '🎉'}</span>
-          <div>
-            <p className={`text-xs font-semibold ${offerPreview.funded_by === 'platform' ? 'text-purple-800' : 'text-green-800'}`}>
-              {offerPreview.offer_name} automatically applied!
-              {offerPreview.funded_by === 'platform' && <span className="ml-1.5 font-normal text-purple-500">DineVerse Offer</span>}
-            </p>
-            <p className={`text-xs ${offerPreview.funded_by === 'platform' ? 'text-purple-600' : 'text-green-600'}`}>You save {c(discountAmt)} on this order</p>
-          </div>
-        </div>
-      )}
-
-      {/* Near-miss offer nudge — show when an offer is almost within reach */}
-      {!couponApplied && offerPreview?.near_miss && (
-        <div className="mx-4 mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
-          <span className="text-amber-500 text-lg mt-0.5">🏷️</span>
-          <div className="flex-1">
-            <p className="text-xs font-semibold text-amber-800">
-              Add {c(offerPreview.near_miss.amount_needed)} more to unlock{' '}
-              {offerPreview.near_miss.offer_type === 'percentage'
-                ? `${offerPreview.near_miss.discount_value}% off`
-                : `₹${parseFloat(offerPreview.near_miss.discount_value).toFixed(0)} off`}
-              !
-            </p>
-            <p className="text-xs text-amber-700">
-              {offerPreview.near_miss.offer_name}
-              {offerPreview.near_miss.coupon_code ? ` · Use code ${offerPreview.near_miss.coupon_code}` : ''}
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Offers panel — Zomato/Swiggy-style. Auto-applies when threshold met,
+          tap-to-apply for coded offers. Min order is checked against pre-tax total. */}
+      <OffersPanel
+        offers={allOffers}
+        total={total}
+        offerPreview={offerPreview}
+        couponApplied={couponApplied}
+        couponLoading={couponLoading}
+        appliedCode={couponInput}
+        currencyFmt={c}
+        onApplyCode={async (code) => {
+          if (!code) return;
+          setCouponInput(code);
+          setCouponLoading(true);
+          try {
+            const { data } = await validateCoupon(slug, {
+              coupon_code: code,
+              items: items.map((i) => ({
+                menu_item_id: i.menu_item_id || i.id,
+                quantity: i.quantity,
+                variant_id: i.variant_id || null,
+                selected_modifiers: i.selected_modifiers || [],
+                modifier_total: i.modifier_total || 0,
+              })),
+              total,
+            });
+            setOfferPreview(data);
+            setCouponApplied(true);
+            toast.success(`Coupon applied — you save ${c(data.discount_amount)}`);
+          } catch (err) {
+            setCouponInput('');
+            setCouponApplied(false);
+            toast.error(err?.response?.data?.message || 'Coupon could not be applied');
+          } finally {
+            setCouponLoading(false);
+          }
+        }}
+        onRemove={handleRemoveCoupon}
+      />
 
       <div className="mx-4 mt-4 bg-gray-50 rounded-xl p-4">
         <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
@@ -1075,6 +1068,164 @@ export default function CartPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// OffersPanel — Zomato/Swiggy-style "Offers for you" section.
+//
+// Logic:
+//   • Currently applied offer (auto OR coupon) shows at the top with
+//     "Applied · Remove" and the savings amount.
+//   • Coupon-coded offers visible to the customer with their code; tap
+//     "Apply" to use that specific code (becomes the manual coupon).
+//   • Codeless offers show a "Auto-applied when ₹X" hint or, if eligible,
+//     a "Best offer" badge confirming the auto path will pick it.
+//   • Locked offers (min_order not met) show progress: "Add ₹X more".
+//   • Combo offers point the customer back to the menu's Deals tab.
+// ────────────────────────────────────────────────────────────────────
+function OffersPanel({ offers, total, offerPreview, couponApplied, couponLoading, appliedCode, currencyFmt, onApplyCode, onRemove }) {
+  const c = currencyFmt;
+  const orderTotal = parseFloat(total) || 0;
+
+  // Currently applied offer (matches by name+funded_by — backend returns these)
+  const appliedName = offerPreview?.applied ? offerPreview.offer_name : null;
+  const appliedFundedBy = offerPreview?.applied ? offerPreview.funded_by : null;
+  const appliedDiscount = parseFloat(offerPreview?.discount_amount || 0);
+
+  // Group offers
+  const visibleOffers = (offers || []).filter((o) => o.offer_type !== 'combo');
+  const comboCount = (offers || []).filter((o) => o.offer_type === 'combo').length;
+
+  const isApplied = (o) =>
+    appliedName && o.name === appliedName && (o.funded_by || 'owner') === (appliedFundedBy || 'owner');
+
+  const offerLabel = (o) => {
+    if (o.offer_type === 'percentage')   return `${parseFloat(o.discount_value)}% OFF`;
+    if (o.offer_type === 'fixed')        return `${c(o.discount_value)} OFF`;
+    if (o.offer_type === 'first_order')  return `${parseFloat(o.discount_value)}% OFF · First order`;
+    if (o.offer_type === 'bogo')         return 'Buy 2 Get 1 Free';
+    return 'Offer';
+  };
+
+  const minNeeded = (o) => Math.max(0, parseFloat(o.min_order_amount || 0) - orderTotal);
+
+  return (
+    <div className="mx-4 mt-4">
+      {/* Applied banner — sticky on top so customer always sees the discount */}
+      {appliedName && (
+        <div className={`flex items-center gap-2 rounded-xl px-4 py-3 border-2 mb-3 ${
+          appliedFundedBy === 'platform' ? 'bg-purple-50 border-purple-300' : 'bg-green-50 border-green-300'
+        }`}>
+          <span className="text-xl">{appliedFundedBy === 'platform' ? '⚡' : '✓'}</span>
+          <div className="flex-1 min-w-0">
+            <p className={`text-sm font-bold truncate ${appliedFundedBy === 'platform' ? 'text-purple-800' : 'text-green-800'}`}>
+              {appliedName} {couponApplied && appliedCode ? `· ${appliedCode}` : ''}
+            </p>
+            <p className={`text-xs ${appliedFundedBy === 'platform' ? 'text-purple-600' : 'text-green-600'}`}>
+              You saved {c(appliedDiscount)}{appliedFundedBy === 'platform' ? ' · DineVerse offer' : ''}
+            </p>
+          </div>
+          <button onClick={onRemove} className="text-xs font-semibold text-gray-500 hover:text-red-500 px-2 py-1">Remove</button>
+        </div>
+      )}
+
+      {/* Offers list */}
+      {visibleOffers.length === 0 && comboCount === 0 ? null : (
+        <div className="bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden">
+          <div className="px-4 py-3 bg-gradient-to-r from-orange-50 via-yellow-50 to-orange-50 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">🎉 Offers for you</h3>
+            <span className="text-[10px] font-bold uppercase tracking-wide text-orange-600">
+              {visibleOffers.length}{comboCount > 0 ? ` + ${comboCount} combos` : ''}
+            </span>
+          </div>
+
+          <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+            {visibleOffers.map((o) => {
+              const applied  = isApplied(o);
+              const eligible = orderTotal >= parseFloat(o.min_order_amount || 0);
+              const hasCode  = !!o.coupon_code;
+              const platform = o.funded_by === 'platform';
+              const need     = minNeeded(o);
+
+              return (
+                <div key={o.id} className={`px-4 py-3 flex items-start gap-3 ${applied ? 'bg-green-50/50' : ''}`}>
+                  <div className={`flex-shrink-0 w-11 h-11 rounded-xl flex items-center justify-center text-lg ${
+                    platform ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'
+                  }`}>
+                    {platform ? '⚡' : (o.offer_type === 'first_order' ? '🥇' : o.offer_type === 'bogo' ? '🎁' : '🏷️')}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-xs font-black uppercase ${platform ? 'text-purple-700' : 'text-orange-700'}`}>
+                        {offerLabel(o)}
+                      </span>
+                      {o.max_discount_amount && (
+                        <span className="text-[10px] text-gray-400 font-medium">up to {c(o.max_discount_amount)}</span>
+                      )}
+                      {platform && (
+                        <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 rounded">DineVerse</span>
+                      )}
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 mt-0.5 truncate">{o.name}</p>
+                    {o.description && (
+                      <p className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{o.description}</p>
+                    )}
+
+                    {/* Status row */}
+                    <div className="mt-1.5 text-[11px]">
+                      {applied ? (
+                        <span className="text-green-700 font-bold">✓ Applied</span>
+                      ) : !eligible ? (
+                        <div className="flex items-center gap-1 text-amber-700 font-medium">
+                          🔒 Add {c(need)} more to use this
+                        </div>
+                      ) : hasCode ? (
+                        <span className="text-gray-500">Tap "Apply" to use code <span className="font-mono font-bold">{o.coupon_code}</span></span>
+                      ) : (
+                        <span className="text-gray-500">
+                          Auto-applied — {parseFloat(o.min_order_amount || 0) > 0
+                            ? `min order ${c(o.min_order_amount)}`
+                            : 'no minimum'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action button */}
+                  <div className="flex-shrink-0 self-center">
+                    {applied ? (
+                      <span className="inline-block text-[10px] font-bold text-green-700 bg-green-100 px-2 py-1 rounded-md">APPLIED</span>
+                    ) : !eligible ? (
+                      <span className="inline-block text-[10px] font-medium text-gray-400">—</span>
+                    ) : hasCode ? (
+                      <button
+                        onClick={() => onApplyCode(o.coupon_code)}
+                        disabled={couponLoading || couponApplied}
+                        className="text-xs font-bold text-orange-600 hover:text-orange-700 border border-orange-300 rounded-lg px-3 py-1.5 hover:bg-orange-50 disabled:opacity-40 transition-colors"
+                      >
+                        {couponLoading ? '…' : 'Apply'}
+                      </button>
+                    ) : (
+                      <span className="inline-block text-[10px] font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-md">AUTO</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {comboCount > 0 && (
+              <div className="px-4 py-3 bg-gray-50 text-center">
+                <p className="text-xs text-gray-500">
+                  🎁 {comboCount} combo deal{comboCount !== 1 ? 's' : ''} available — see them in the menu
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
