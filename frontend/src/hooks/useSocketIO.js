@@ -35,7 +35,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,
-        reconnectionAttempts: 10,
+        reconnectionAttempts: Infinity, // owner runs this all day; never give up
         transports: ['polling', 'websocket'], // polling first (reliable through Render proxy), upgrades to ws
       });
     }

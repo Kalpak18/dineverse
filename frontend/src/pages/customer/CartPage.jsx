@@ -26,6 +26,7 @@ export default function CartPage() {
   const [sessionTick, setSessionTick] = useState(0); // incremented to re-read localStorage without full reload
   const [loading, setLoading] = useState(false);
   const [slowNetwork, setSlowNetwork] = useState(false); // shows "Still connecting..." after 5s
+  const [submitAttempt, setSubmitAttempt] = useState(0); // 0=idle, 1+=attempt number for retry UI
   const slowNetworkTimer = useRef(null);
   const submittingRef = useRef(false);
   // Persisted idempotency key — survives page remounts/refreshes so retries dedup on server.
@@ -301,60 +302,97 @@ export default function CartPage() {
     setShowConfirm(false);
     // Show "Still connecting…" hint after 5 s so users don't rage-refresh
     slowNetworkTimer.current = setTimeout(() => setSlowNetwork(true), 5000);
-    try {
-      const orderPayload = {
-        customer_name:  session.customer_name,
-        customer_phone: session.customer_phone || undefined,
-        table_number:   session.table_number,
-        order_type:     session.order_type || 'dine-in',
-        notes:          notes.trim() || undefined,
-        tip_amount:     tip || undefined,
-        // Stable per-attempt key — retries send the same UUID, backend deduplicates
-        client_order_id: orderIdRef.current,
-        coupon_code: couponApplied ? couponInput.trim() : null,
-        ...(session.reservation_id && { reservation_id: session.reservation_id }),
-        items: items.map((i) => ({
-          menu_item_id: i.menu_item_id || i.id,
-          quantity: i.quantity,
-          variant_id: i.variant_id || null,
-          variant_name: i.variant_name || null,
-          selected_modifiers: i.selected_modifiers || [],
-          modifier_total: i.modifier_total || 0,
-        })),
-        ...(isDelivery && {
-          delivery_address:      deliveryForm.delivery_address.trim(),
-          delivery_address2:     deliveryForm.delivery_address2.trim() || undefined,
-          delivery_city:         deliveryForm.delivery_city.trim() || undefined,
-          delivery_zipcode:      deliveryForm.delivery_zipcode.trim() || undefined,
-          delivery_phone:        deliveryForm.delivery_phone.trim(),
-          delivery_instructions: deliveryForm.delivery_instructions.trim() || undefined,
-        }),
-      };
 
-      const { data } = await placeOrder(slug, orderPayload);
-      if (data?.order) {
-        // Save to device so order persists on refresh (session kept for future orders)
-        upsertOrder(slug, data.order);
-        clearCart(); // only clear after server confirms the order
-        // Rotate UUID for next order and persist so future mounts get a fresh key
-        const nextId = crypto.randomUUID();
-        sessionStorage.setItem(`dv_order_id_${slug}`, nextId);
-        orderIdRef.current = nextId;
-        navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
+    const orderPayload = {
+      customer_name:  session.customer_name,
+      customer_phone: session.customer_phone || undefined,
+      table_number:   session.table_number,
+      order_type:     session.order_type || 'dine-in',
+      notes:          notes.trim() || undefined,
+      tip_amount:     tip || undefined,
+      // Stable per-attempt key — retries send the same UUID, backend deduplicates
+      client_order_id: orderIdRef.current,
+      coupon_code: couponApplied ? couponInput.trim() : null,
+      ...(session.reservation_id && { reservation_id: session.reservation_id }),
+      items: items.map((i) => ({
+        menu_item_id: i.menu_item_id || i.id,
+        quantity: i.quantity,
+        variant_id: i.variant_id || null,
+        variant_name: i.variant_name || null,
+        selected_modifiers: i.selected_modifiers || [],
+        modifier_total: i.modifier_total || 0,
+      })),
+      ...(isDelivery && {
+        delivery_address:      deliveryForm.delivery_address.trim(),
+        delivery_address2:     deliveryForm.delivery_address2.trim() || undefined,
+        delivery_city:         deliveryForm.delivery_city.trim() || undefined,
+        delivery_zipcode:      deliveryForm.delivery_zipcode.trim() || undefined,
+        delivery_phone:        deliveryForm.delivery_phone.trim(),
+        delivery_instructions: deliveryForm.delivery_instructions.trim() || undefined,
+      }),
+    };
+
+    // Auto-retry with exponential backoff (network-error only). Same client_order_id
+    // each attempt so the backend dedups and we can never create a duplicate order.
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS   = [0, 2000, 4000]; // delay before each attempt
+    let lastErr = null;
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      setSubmitAttempt(attempt + 1);
+      if (BACKOFF_MS[attempt]) {
+        setSlowNetwork(true); // visual: still trying…
+        await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
       }
-    } catch (err) {
-      const isNetworkErr = !err.response; // no response = network/timeout failure
-      const msg = isNetworkErr
-        ? 'Connection lost. Your order may have already been placed — check "My Orders" before trying again.'
-        : getApiError(err);
-      toast.error(msg, { duration: isNetworkErr ? 6000 : 4000 });
-      setOrderError(msg);
-    } finally {
-      clearTimeout(slowNetworkTimer.current);
-      setSlowNetwork(false);
-      setLoading(false);
-      submittingRef.current = false;
+      try {
+        const { data } = await placeOrder(slug, orderPayload);
+        if (data?.order) {
+          upsertOrder(slug, data.order);
+          clearCart();
+          // Reset table_number + area_id for next order so customer doesn't accidentally
+          // place at the wrong table; keep customer_name/phone for convenience.
+          try {
+            const sk = `session_${slug}`;
+            const cur = JSON.parse(localStorage.getItem(sk) || '{}');
+            localStorage.setItem(sk, JSON.stringify({
+              ...cur, table_number: '', area_id: '', reservation_id: undefined,
+            }));
+          } catch { /* ignore parse errors */ }
+          // Rotate UUID so the next order gets a fresh idempotency key
+          const nextId = crypto.randomUUID();
+          sessionStorage.setItem(`dv_order_id_${slug}`, nextId);
+          orderIdRef.current = nextId;
+          clearTimeout(slowNetworkTimer.current);
+          setSlowNetwork(false);
+          setSubmitAttempt(0);
+          setLoading(false);
+          submittingRef.current = false;
+          navigate(`/cafe/${slug}/confirmation`, { state: { order: data.order } });
+          return;
+        }
+        // Server returned 200 but no order body — treat as transient error
+        lastErr = new Error('Empty response');
+      } catch (err) {
+        lastErr = err;
+        const status = err?.response?.status;
+        // Don't retry on validation/auth/business errors (4xx). Only retry on
+        // network failures (no response) or 5xx server errors.
+        if (status && status < 500 && status !== 408 && status !== 425 && status !== 429) break;
+      }
     }
+
+    // All attempts failed
+    clearTimeout(slowNetworkTimer.current);
+    setSlowNetwork(false);
+    setSubmitAttempt(0);
+    setLoading(false);
+    submittingRef.current = false;
+    const isNetworkErr = !lastErr?.response;
+    const msg = isNetworkErr
+      ? 'Connection issue — your order is safe. Tap "Place Order" again to confirm; we won\'t create a duplicate.'
+      : getApiError(lastErr);
+    toast.error(msg, { duration: isNetworkErr ? 7000 : 4000 });
+    setOrderError(msg);
   };
 
   return (
@@ -789,7 +827,15 @@ export default function CartPage() {
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
             title={!cafeOpen ? 'This café is currently closed' : undefined}
           >
-            <span>{slowNetwork ? 'Still connecting…' : loading ? 'Placing order...' : 'Place Order'}</span>
+            <span>
+              {slowNetwork && submitAttempt > 1
+                ? `Reconnecting… (${submitAttempt}/3)`
+                : slowNetwork
+                ? 'Still connecting…'
+                : loading
+                ? 'Placing order…'
+                : 'Place Order'}
+            </span>
             <span>{c(grandTotal)}</span>
           </button>
         </div>
@@ -1012,7 +1058,11 @@ export default function CartPage() {
                   disabled={loading}
                   className="btn-primary w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {slowNetwork ? 'Still connecting…' : loading ? 'Placing...' : 'Yes, Place Order'}
+                  {slowNetwork && submitAttempt > 1
+                    ? `Reconnecting… (${submitAttempt}/3)`
+                    : slowNetwork ? 'Still connecting…'
+                    : loading ? 'Placing…'
+                    : 'Yes, Place Order'}
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}
