@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill,
-  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot, getLiveTables } from '../../services/api';
+  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -25,7 +25,7 @@ const QUICK_REASONS = [
   'Item unavailable today',
 ];
 
-const TABS = { ORDERS: 'orders', BILLS: 'bills', TABLES: 'tables', HISTORY: 'history' };
+const TABS = { ORDERS: 'orders', BILLS: 'bills', HISTORY: 'history' };
 
 function itemDetails(item) {
   const parts = [];
@@ -75,7 +75,6 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('');
   const [detailOrderId, setDetailOrderId] = useState(null);
   const [activeTab, setActiveTab] = useState(TABS.ORDERS);
-  const [tables, setTables] = useState([]);
   // Cancel with reason
   const [cancelTarget, setCancelTarget] = useState(null);
   // Billing modal — lifted to top level so OrderCard can open it too
@@ -101,10 +100,6 @@ export default function OrdersPage() {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
-  useEffect(() => {
-    getLiveTables().then(r => setTables(r.data.tables || [])).catch(() => {});
-  }, []);
-
   useSocketIO(
     cafe?.id,
     (order) => {
@@ -124,40 +119,43 @@ export default function OrdersPage() {
     }
   );
 
-  // Opens BillingModal — stores orderId so bill always reflects live order state
+  // Opens BillingModal — builds bill object at click-time so the modal opens
+  // immediately (no dependency on a separate orders.find() pass that could fail
+  // if the order is filtered out by another view).
   const openOrderBilling = useCallback((order) => {
+    if (!order) return;
+    const taxAmt = parseFloat(order.tax_amount) || 0;
+    const total  = parseFloat(order.total_amount) || 0;
+    const bill = {
+      isTakeaway:     order.order_type === 'takeaway',
+      customerName:   order.customer_name,
+      orderNumber:    order.daily_order_number,
+      table_number:   order.table_number,
+      // Subtotal = food pre-tax. total_amount stores food+tax for non-inclusive
+      // GST and food-incl-tax for inclusive. Subtracting tax_amount gives the
+      // pre-tax base in BOTH modes — eliminates the "GST counted twice" display.
+      subtotal:        Math.max(0, total - taxAmt),
+      taxAmount:       taxAmt,
+      taxRate:         parseFloat(order.tax_rate) || 0,
+      discountAmount:  parseFloat(order.discount_amount) || 0,
+      tipAmount:       parseFloat(order.tip_amount) || 0,
+      deliveryFee:     parseFloat(order.delivery_fee) || 0,
+      platformFee:     parseFloat(order.platform_fee) || 0,
+      platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
+      total:           parseFloat(order.final_amount || order.total_amount) || 0,
+      aggregatedItems: (order.items || []).map((i) => ({
+        name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
+      })),
+      orders: [order],
+    };
     setBillingModal({
-      orderId: order.id,
-      onConfirm: (cashReceived, paymentMode) => handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode),
+      bill,
+      onConfirm: (cashReceived, paymentMode) =>
+        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Build the bill object from live orders state (keeps modal data fresh)
-  const billingBill = billingModal?.orderId
-    ? (() => {
-        const o = orders.find((x) => x.id === billingModal.orderId);
-        if (!o) return null;
-        return {
-          isTakeaway:     o.order_type === 'takeaway',
-          customerName:   o.customer_name,
-          orderNumber:    o.daily_order_number,
-          table_number:   o.table_number,
-          subtotal:       parseFloat(o.total_amount)    || 0,
-          taxAmount:      parseFloat(o.tax_amount)      || 0,
-          taxRate:        parseFloat(o.tax_rate)        || 0,
-          discountAmount: parseFloat(o.discount_amount) || 0,
-          tipAmount:      parseFloat(o.tip_amount)      || 0,
-          deliveryFee:    parseFloat(o.delivery_fee)    || 0,
-          platformFee:    parseFloat(o.platform_fee)    || 0,
-          platformFeeRate: parseFloat(o.platform_fee_rate) || 0,
-          total:          parseFloat(o.final_amount || o.total_amount) || 0,
-          aggregatedItems: (o.items || []).map((i) => ({
-            name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
-          })),
-          orders: [o],
-        };
-      })()
-    : billingModal?.bill || null;
+  const billingBill = billingModal?.bill || null;
 
   const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null) => {
     try {
@@ -272,10 +270,15 @@ export default function OrdersPage() {
           itemMap: {},
         };
       }
-      const bill = tableMap[o.table_number];
+      const bill   = tableMap[o.table_number];
+      const taxAmt = parseFloat(o.tax_amount) || 0;
+      const tot    = parseFloat(o.total_amount) || 0;
       bill.orders.push(o);
-      bill.subtotal       += parseFloat(o.total_amount)    || 0;
-      bill.taxAmount      += parseFloat(o.tax_amount)      || 0;
+      // Subtotal is food pre-tax (total_amount minus tax_amount). Adding raw
+      // total_amount made the breakdown sum higher than the actual bill.total
+      // because the tax line was then shown again.
+      bill.subtotal       += Math.max(0, tot - taxAmt);
+      bill.taxAmount      += taxAmt;
       bill.discountAmount += parseFloat(o.discount_amount) || 0;
       bill.tipAmount      += parseFloat(o.tip_amount)      || 0;
       bill.deliveryFee    += parseFloat(o.delivery_fee)    || 0;
@@ -332,7 +335,7 @@ export default function OrdersPage() {
   if (loading) return <LoadingSpinner />;
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="max-w-4xl space-y-5 pb-32">
       <PageHint
         storageKey="dv_hint_orders"
         title="Orders — manage every order from receipt to payment"
@@ -340,7 +343,7 @@ export default function OrdersPage() {
           { icon: '📋', text: 'Orders tab: live incoming orders. Advance each order: Accept → Preparing → Ready → Served → Bill. Dine-in and delivery go through all steps; takeaway skips Served.' },
           { icon: '💳', text: 'Prepaid orders (paid online) show a 💳 badge and a "Mark Complete" button — no billing modal needed.' },
           { icon: '🧾', text: 'Bills tab: collect cash or card payment. Multiple rounds for the same dine-in table are merged into one bill automatically.' },
-          { icon: '🍽️', text: 'Tables tab: live floor view — empty, reserved, active, ready, served. Click a table to open its order.' },
+          { icon: '🍽️', text: 'Floor view (Tables in sidebar): live table grid with reservations + waitlist. Click a table to open its order.' },
           { icon: '🕐', text: 'History tab: all paid orders. Filter by date range, search by order number, and reprint any receipt.' },
           { icon: '💬', text: 'Chat button on each card lets you message the customer in real time (e.g. "Your order is almost ready!").' },
         ]}
@@ -357,7 +360,6 @@ export default function OrdersPage() {
         {[
           { key: TABS.ORDERS,  label: 'Orders',  count: orders.filter(isOrdersTabVisible).length },
           { key: TABS.BILLS,   label: 'Bills',   count: billsCount },
-          { key: TABS.TABLES,  label: 'Tables',  count: tables.length },
           { key: TABS.HISTORY, label: 'History', count: historyFilteredCount },
         ].map(({ key, label, count }) => (
           <button
@@ -496,17 +498,8 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* ── Tables Tab ── */}
-      {activeTab === TABS.TABLES && (
-        <TablesView
-          tables={tables}
-          orders={orders}
-          onOpenDetail={(order) => setDetailOrderId(order.id)}
-          onOpenBilling={openOrderBilling}
-          onStatusUpdate={handleStatusUpdate}
-          c={(n) => fmtCurrency(n, cafe?.currency)}
-        />
-      )}
+      {/* Tables tab moved out — use the dedicated /owner/tables page in the sidebar
+          for live table grid + reservations + waitlist. */}
 
       {/* ── History Tab ── */}
       {activeTab === TABS.HISTORY && (
@@ -1037,18 +1030,23 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
   };
 
   const openTakeawayBilling = (order) => {
+    const taxAmt = parseFloat(order.tax_amount) || 0;
+    const total  = parseFloat(order.total_amount) || 0;
     const bill = {
       isTakeaway: true,
       customerName: order.customer_name,
       orderNumber: order.daily_order_number,
       table_number: 'Takeaway',
-      subtotal:       parseFloat(order.total_amount)    || 0,
-      taxAmount:      parseFloat(order.tax_amount)      || 0,
-      taxRate:        parseFloat(order.tax_rate)        || 0,
-      discountAmount: parseFloat(order.discount_amount) || 0,
-      tipAmount:      parseFloat(order.tip_amount)      || 0,
-      deliveryFee:    parseFloat(order.delivery_fee)    || 0,
-      total:          parseFloat(order.final_amount || order.total_amount) || 0,
+      // food pre-tax (see openOrderBilling for explanation)
+      subtotal:        Math.max(0, total - taxAmt),
+      taxAmount:       taxAmt,
+      taxRate:         parseFloat(order.tax_rate) || 0,
+      discountAmount:  parseFloat(order.discount_amount) || 0,
+      tipAmount:       parseFloat(order.tip_amount) || 0,
+      deliveryFee:     parseFloat(order.delivery_fee) || 0,
+      platformFee:     parseFloat(order.platform_fee) || 0,
+      platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
+      total:           parseFloat(order.final_amount || order.total_amount) || 0,
       aggregatedItems: (order.items || []).map((i) => ({
         name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
