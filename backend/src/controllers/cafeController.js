@@ -6,7 +6,10 @@ const cache = require('../utils/cache');
 // Public: get café by slug (for customer-facing pages)
 exports.getCafeBySlug = asyncHandler(async (req, res) => {
   const { slug } = req.params;
-  const cacheKey = `cafe:${slug}`;
+  // v2 — bumped after adding commission_rate to the cached payload (migration 064).
+  // Ensures already-served customers get the fresh rate immediately, not after the
+  // old key's 60s TTL expires.
+  const cacheKey = `cafev2:${slug}`;
   const cached = await cache.get(cacheKey);
   if (cached) return ok(res, { cafe: cached });
 
@@ -21,6 +24,10 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
             c.opening_hours,
             COALESCE(c.timezone, 'Asia/Kolkata')      AS timezone,
             COALESCE(c.razorpay_route_enabled, false) AS razorpay_route_enabled,
+            -- Critical: customer-facing platform charge rate.
+            -- Must be exposed so the cart shows the SAME rate the backend will
+            -- charge — otherwise the displayed total ≠ the billed total.
+            COALESCE(c.commission_rate, 2.00)         AS commission_rate,
             c.plan_tier,
             ROUND(AVG(r.rating)::numeric, 1)          AS avg_rating,
             COUNT(r.id)::int                          AS rating_count

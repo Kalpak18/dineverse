@@ -374,7 +374,11 @@ export default function CafeEntry() {
       delivery_min_order: cafe?.delivery_min_order,
       delivery_est_mins:  cafe?.delivery_est_mins,
       delivery_radius_km: cafe?.delivery_radius_km,
-      platform_fee_rate:  parseFloat(cafe?.commission_rate ?? 2),
+      // Use the rate the server reports. Default to 0 (not 2) so a missing
+      // backend field shows "no platform charge" rather than silently picking
+      // a number that may not match what the server will actually charge.
+      // The trust-check on the server will reject any drift > ₹1 if rates diverge.
+      platform_fee_rate:  parseFloat(cafe?.commission_rate ?? 0),
     };
     localStorage.setItem(`session_${slug}`, JSON.stringify(session));
     navigate(`/cafe/${slug}/menu`);

@@ -419,6 +419,27 @@ exports.createOrder = asyncHandler(async (req, res) => {
       : 0;
     trueFinal = parseFloat((trueFinal + platformFee).toFixed(2));
 
+    // ── Trust check: the price the customer was shown must equal what we charge.
+    // Frontend may pass `client_quoted_total` — the rupee amount on the "Place Order"
+    // button. If it disagrees with our computed final by more than ₹1 (rounding),
+    // refuse the order with a clear error so the customer can refresh and re-confirm
+    // at the correct price. Prevents the "shown ₹306, charged ₹315" trust violation.
+    if (req.body.client_quoted_total != null) {
+      const quoted = parseFloat(req.body.client_quoted_total);
+      if (!Number.isNaN(quoted) && Math.abs(quoted - trueFinal) > 1.0) {
+        await client.query('ROLLBACK');
+        logger.warn(
+          'Order price drift for cafe %s: quoted ₹%s, computed ₹%s (Δ ₹%s)',
+          cafeId, quoted.toFixed(2), trueFinal.toFixed(2), (trueFinal - quoted).toFixed(2)
+        );
+        return fail(
+          res,
+          `Price changed since you opened the cart (was ₹${quoted.toFixed(2)}, now ₹${trueFinal.toFixed(2)}). Please refresh to see the latest total.`,
+          409
+        );
+      }
+    }
+
     // Insert order
     let orderResult;
     try {

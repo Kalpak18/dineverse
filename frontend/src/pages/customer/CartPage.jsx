@@ -312,6 +312,9 @@ export default function CartPage() {
       tip_amount:     tip || undefined,
       // Stable per-attempt key — retries send the same UUID, backend deduplicates
       client_order_id: orderIdRef.current,
+      // Trust check: backend rejects if its computed total drifts > ₹1 from this.
+      // Customer is never charged a different amount than what they tapped.
+      client_quoted_total: grandTotal,
       coupon_code: couponApplied ? couponInput.trim() : null,
       ...(session.reservation_id && { reservation_id: session.reservation_id }),
       items: items.map((i) => ({
