@@ -14,6 +14,7 @@ import { loadReservations, upsertReservation, removeReservation } from '../../ut
 import { getOrderStatus, cancelOrder, getCafeBySlug, getCustomerMessages, postCustomerMessage } from '../../services/api';
 import toast from 'react-hot-toast';
 import { pushNotification } from '../../utils/customerNotifications';
+import { isInclusiveTax } from '../../utils/billDisplay';
 
 const ORDER_STATUS = {
   pending:   { label: 'Waiting',   color: 'bg-yellow-100 text-yellow-800 border-yellow-200', dot: 'bg-yellow-400', icon: '⏳' },
@@ -433,24 +434,42 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
           ))}
         </div>
 
-        {/* Price breakdown */}
+        {/* Price breakdown — handles inclusive vs exclusive GST so the line items
+            visually sum to the displayed Total without double-counting tax. */}
         <div className="pt-2 border-t border-gray-100 space-y-1 text-sm">
-          <div className="flex justify-between text-gray-500">
-            <span>Order subtotal</span>
-            <span>{c(order.total_amount)}</span>
-          </div>
-          {parseFloat(order.tax_amount || 0) > 0 && (
-            <>
-              <div className="flex justify-between text-gray-500">
-                <span>CGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
-                <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
-              </div>
-              <div className="flex justify-between text-gray-500">
-                <span>SGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
-                <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
-              </div>
-            </>
-          )}
+          {(() => {
+            const inclusive = isInclusiveTax(order);
+            const taxAmt = parseFloat(order.tax_amount || 0);
+            const taxRate = parseFloat(order.tax_rate || 0);
+            const totalAmt = parseFloat(order.total_amount || 0);
+            const subtotalDisplay = inclusive ? totalAmt : (totalAmt - taxAmt);
+            return (
+              <>
+                <div className="flex justify-between text-gray-500">
+                  <span>Order subtotal{inclusive && taxAmt > 0 ? ' (incl. GST)' : ''}</span>
+                  <span>{c(subtotalDisplay)}</span>
+                </div>
+                {taxAmt > 0 && (
+                  inclusive ? (
+                    <div className="pl-3 -mt-0.5 text-[11px] text-gray-400 italic">
+                      includes GST {taxRate}% &nbsp;·&nbsp; CGST {c(taxAmt / 2)} + SGST {c(taxAmt / 2)}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-gray-500">
+                        <span>CGST ({(taxRate / 2).toFixed(1)}%)</span>
+                        <span>{c(taxAmt / 2)}</span>
+                      </div>
+                      <div className="flex justify-between text-gray-500">
+                        <span>SGST ({(taxRate / 2).toFixed(1)}%)</span>
+                        <span>{c(taxAmt / 2)}</span>
+                      </div>
+                    </>
+                  )
+                )}
+              </>
+            );
+          })()}
           {parseFloat(order.discount_amount || 0) > 0 && (
             <div className="flex justify-between text-green-600 text-xs">
               <span>Discount</span>
@@ -467,6 +486,12 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
             <div className="flex justify-between text-gray-500 text-xs">
               <span>🛵 Delivery fee</span>
               <span>{c(order.delivery_fee)}</span>
+            </div>
+          )}
+          {parseFloat(order.platform_fee || 0) > 0 && (
+            <div className="flex justify-between text-gray-500 text-xs">
+              <span>Platform charge ({parseFloat(order.platform_fee_rate || 0)}%)</span>
+              <span>{c(order.platform_fee)}</span>
             </div>
           )}
           <div className="flex justify-between font-bold text-gray-900">

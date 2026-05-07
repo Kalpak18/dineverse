@@ -606,7 +606,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">GST Rate (%)</label>
               <select className="input" value={form.gst_rate} onChange={(e) => setForm((f) => ({ ...f, gst_rate: parseInt(e.target.value) }))}>
@@ -621,32 +621,74 @@ export default function ProfilePage() {
               </p>
             </div>
             <div>
-              <label className="label">Tax Treatment</label>
-              <div className="flex rounded-xl border border-gray-200 overflow-hidden mt-0.5">
-                {[{ v: true, l: 'Tax Inclusive' }, { v: false, l: 'Tax Exclusive' }].map(({ v, l }) => (
-                  <button key={l} type="button" onClick={() => setForm((f) => ({ ...f, tax_inclusive: v }))}
-                    className={`flex-1 py-2.5 text-xs font-medium transition-colors ${form.tax_inclusive === v ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                    {l}
-                  </button>
-                ))}
+              <label className="label">How are your menu prices listed?</label>
+              <div className="flex flex-col gap-2 mt-0.5">
+                <button type="button" onClick={() => setForm((f) => ({ ...f, tax_inclusive: true }))}
+                  className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border-2 text-left transition-colors ${form.tax_inclusive === true ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                  <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.tax_inclusive === true ? 'border-brand-500 bg-brand-500' : 'border-gray-300'}`}>
+                    {form.tax_inclusive === true && <span className="block w-1.5 h-1.5 rounded-full bg-white m-auto mt-[3px]" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900">GST included in menu price</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">e.g. Item priced ₹100 → customer pays ₹100 (GST extracted for returns).</p>
+                  </div>
+                </button>
+                <button type="button" onClick={() => setForm((f) => ({ ...f, tax_inclusive: false }))}
+                  className={`flex items-start gap-2.5 px-3 py-2.5 rounded-xl border-2 text-left transition-colors ${form.tax_inclusive === false ? 'border-brand-500 bg-brand-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                  <span className={`mt-0.5 w-4 h-4 rounded-full border-2 flex-shrink-0 ${form.tax_inclusive === false ? 'border-brand-500 bg-brand-500' : 'border-gray-300'}`}>
+                    {form.tax_inclusive === false && <span className="block w-1.5 h-1.5 rounded-full bg-white m-auto mt-[3px]" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900">GST added on top at checkout</p>
+                    <p className="text-[11px] text-gray-500 mt-0.5">e.g. Item priced ₹100 → customer pays ₹{form.gst_rate > 0 ? (100 * (1 + form.gst_rate / 100)).toFixed(0) : '100'}.</p>
+                  </div>
+                </button>
               </div>
-              {form.gst_rate > 0 && (
-                <div className={`mt-2 rounded-lg px-3 py-2 text-xs leading-relaxed ${form.tax_inclusive ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
-                  {form.tax_inclusive ? (
-                    <>
-                      <p className="font-semibold mb-0.5">✓ GST is already inside your menu prices</p>
-                      <p>Example: You set item price ₹100 → customer pays <strong>₹100</strong>. GST ({form.gst_rate}%) is extracted from that ₹100 for your returns.</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="font-semibold mb-0.5">+ GST is added on top of your menu prices</p>
-                      <p>Example: You set item price ₹100 → customer pays <strong>₹{(100 * (1 + form.gst_rate / 100)).toFixed(0)}</strong> (₹100 + {form.gst_rate}% GST added at checkout).</p>
-                    </>
-                  )}
-                </div>
-              )}
             </div>
           </div>
+
+          {/* Live customer-side bill preview — owner can see exactly what's shown to the customer */}
+          {form.gst_rate > 0 && (
+            <div className="mt-1 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-blue-700 mb-2">Customer's bill preview · ₹100 menu price</p>
+              {(() => {
+                const r = parseFloat(form.gst_rate) || 0;
+                const platformRate = 2; // standard
+                let base, tax, customerSeesItem, total;
+                if (form.tax_inclusive) {
+                  customerSeesItem = 100;
+                  base = parseFloat((100 / (1 + r / 100)).toFixed(2));
+                  tax  = parseFloat((100 - base).toFixed(2));
+                } else {
+                  customerSeesItem = 100;
+                  base = 100;
+                  tax  = parseFloat((100 * r / 100).toFixed(2));
+                }
+                const subtotal = form.tax_inclusive ? customerSeesItem : (customerSeesItem + tax);
+                const platformFee = parseFloat((subtotal * platformRate / 100).toFixed(2));
+                total = parseFloat((subtotal + platformFee).toFixed(2));
+                return (
+                  <div className="bg-white rounded-lg p-3 text-[12px] space-y-1 font-mono">
+                    <div className="flex justify-between text-gray-600"><span>Item × 1</span><span>₹{customerSeesItem.toFixed(2)}</span></div>
+                    {form.tax_inclusive ? (
+                      <>
+                        <div className="flex justify-between text-gray-500"><span>Order subtotal (incl. GST)</span><span>₹{subtotal.toFixed(2)}</span></div>
+                        <div className="pl-3 text-[11px] text-gray-400 italic">includes GST {r}% · CGST ₹{(tax/2).toFixed(2)} + SGST ₹{(tax/2).toFixed(2)}</div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex justify-between text-gray-500"><span>Order subtotal</span><span>₹{base.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-gray-500"><span>CGST ({(r/2).toFixed(1)}%)</span><span>₹{(tax/2).toFixed(2)}</span></div>
+                        <div className="flex justify-between text-gray-500"><span>SGST ({(r/2).toFixed(1)}%)</span><span>₹{(tax/2).toFixed(2)}</span></div>
+                      </>
+                    )}
+                    <div className="flex justify-between text-gray-500"><span>Platform charge ({platformRate}%)</span><span>₹{platformFee.toFixed(2)}</span></div>
+                    <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-100"><span>Total</span><span>₹{total.toFixed(2)}</span></div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
 
           <div className="border-t border-gray-100 pt-4 space-y-4">
             <p className="text-sm font-semibold text-gray-700">Billing Details</p>

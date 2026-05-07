@@ -67,11 +67,13 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   const sgst = totalTax / 2;
 
   // Breakdown fields from bill object (populated by BillingModal/openOrderBilling)
-  const subtotalAmt  = parseFloat(bill.subtotal || 0);
-  const discountAmt  = parseFloat(bill.discountAmount || 0);
-  const tipAmt       = parseFloat(bill.tipAmount || 0);
-  const deliveryFee  = parseFloat(bill.deliveryFee || 0);
-  const hasBreakdown = hasGst || discountAmt > 0 || tipAmt > 0 || deliveryFee > 0;
+  const subtotalAmt    = parseFloat(bill.subtotal || 0);
+  const discountAmt    = parseFloat(bill.discountAmount || 0);
+  const tipAmt         = parseFloat(bill.tipAmount || 0);
+  const deliveryFee    = parseFloat(bill.deliveryFee || 0);
+  const platformFee    = parseFloat(bill.platformFee || 0);
+  const platformFeeRate = parseFloat(bill.platformFeeRate || 0);
+  const hasBreakdown   = hasGst || discountAmt > 0 || tipAmt > 0 || deliveryFee > 0 || platformFee > 0;
 
   const change      = cashReceived != null ? (parseFloat(cashReceived) - total) : null;
 
@@ -296,6 +298,12 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     <tr>
       <td class="lbl">Delivery Fee</td>
       <td class="val">${sym}${fmt(deliveryFee)}</td>
+    </tr>
+    ` : ''}
+    ${platformFee > 0 ? `
+    <tr>
+      <td class="lbl">Platform charge${platformFeeRate > 0 ? ` (${platformFeeRate}%)` : ''}</td>
+      <td class="val">${sym}${fmt(platformFee)}</td>
     </tr>
     ` : ''}
     <tr class="grand-total">

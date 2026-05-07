@@ -9,6 +9,7 @@ import DeliveryMap from '../../components/DeliveryMap';
 import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { pushNotification } from '../../utils/customerNotifications';
+import { isInclusiveTax } from '../../utils/billDisplay';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },
@@ -558,24 +559,43 @@ export default function OrderConfirmation() {
                 </div>
               )}
 
-              {/* Price breakdown */}
+              {/* Price breakdown — inclusive vs exclusive GST handled correctly so the
+                  line items always SUM to the displayed total (no double-counting). */}
               <div className="border-t border-gray-200 pt-4 space-y-3 text-sm">
-                <div className="flex justify-between text-gray-500">
-                  <span>Order subtotal</span>
-                  <span>{c(order.total_amount)}</span>
-                </div>
-                {parseFloat(order.tax_amount || 0) > 0 && (
-                  <>
-                    <div className="flex justify-between text-gray-500">
-                      <span>CGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
-                      <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
-                    </div>
-                    <div className="flex justify-between text-gray-500">
-                      <span>SGST ({(parseFloat(order.tax_rate || 0) / 2).toFixed(1)}%)</span>
-                      <span>{c(parseFloat(order.tax_amount || 0) / 2)}</span>
-                    </div>
-                  </>
-                )}
+                {(() => {
+                  const inclusive = isInclusiveTax(order);
+                  const taxAmt = parseFloat(order.tax_amount || 0);
+                  const taxRate = parseFloat(order.tax_rate || 0);
+                  const totalAmt = parseFloat(order.total_amount || 0);
+                  const subtotalDisplay = inclusive ? totalAmt : (totalAmt - taxAmt);
+                  return (
+                    <>
+                      <div className="flex justify-between text-gray-500">
+                        <span>Order subtotal{inclusive && taxAmt > 0 ? ' (incl. GST)' : ''}</span>
+                        <span>{c(subtotalDisplay)}</span>
+                      </div>
+                      {taxAmt > 0 && (
+                        inclusive ? (
+                          // Informational: italicized + indented, NOT added to total
+                          <div className="pl-3 -mt-1 text-[11px] text-gray-400 italic">
+                            includes GST {taxRate}% &nbsp;·&nbsp; CGST {c(taxAmt / 2)} + SGST {c(taxAmt / 2)}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex justify-between text-gray-500">
+                              <span>CGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-500">
+                              <span>SGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                          </>
+                        )
+                      )}
+                    </>
+                  );
+                })()}
                 {parseFloat(order.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600 text-xs">
                     <span>Discount</span>
@@ -814,24 +834,41 @@ export default function OrderConfirmation() {
                 ))}
               </div>
 
-              {/* Totals */}
+              {/* Totals — inclusive vs exclusive GST handled correctly */}
               <div className="border-t border-dashed border-gray-200 pt-3 space-y-1 text-sm">
-                <div className="flex justify-between text-gray-500">
-                  <span>Order subtotal</span>
-                  <span>{c(receiptOrder.total_amount)}</span>
-                </div>
-                {parseFloat(receiptOrder.tax_amount || 0) > 0 && (
-                  <>
-                    <div className="flex justify-between text-gray-500">
-                      <span>CGST ({(receiptOrder.tax_rate / 2).toFixed(1)}%)</span>
-                      <span>{c(receiptOrder.tax_amount / 2)}</span>
-                    </div>
-                    <div className="flex justify-between text-gray-500">
-                      <span>SGST ({(receiptOrder.tax_rate / 2).toFixed(1)}%)</span>
-                      <span>{c(receiptOrder.tax_amount / 2)}</span>
-                    </div>
-                  </>
-                )}
+                {(() => {
+                  const inclusive = isInclusiveTax(receiptOrder);
+                  const taxAmt = parseFloat(receiptOrder.tax_amount || 0);
+                  const taxRate = parseFloat(receiptOrder.tax_rate || 0);
+                  const totalAmt = parseFloat(receiptOrder.total_amount || 0);
+                  const subtotalDisplay = inclusive ? totalAmt : (totalAmt - taxAmt);
+                  return (
+                    <>
+                      <div className="flex justify-between text-gray-500">
+                        <span>Order subtotal{inclusive && taxAmt > 0 ? ' (incl. GST)' : ''}</span>
+                        <span>{c(subtotalDisplay)}</span>
+                      </div>
+                      {taxAmt > 0 && (
+                        inclusive ? (
+                          <div className="pl-3 -mt-0.5 text-[11px] text-gray-400 italic">
+                            includes GST {taxRate}% &nbsp;·&nbsp; CGST {c(taxAmt / 2)} + SGST {c(taxAmt / 2)}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex justify-between text-gray-500">
+                              <span>CGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-500">
+                              <span>SGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                          </>
+                        )
+                      )}
+                    </>
+                  );
+                })()}
                 {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
@@ -901,22 +938,39 @@ export default function OrderConfirmation() {
                     </div>
                   ))}
                   <div className="pt-2 space-y-1 text-sm">
-                    <div className="flex justify-between text-gray-500">
-                      <span>Order subtotal</span>
-                      <span>{c(order.total_amount)}</span>
-                    </div>
-                    {parseFloat(order.tax_amount || 0) > 0 && (
-                      <>
-                        <div className="flex justify-between text-gray-500">
-                          <span>CGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
-                          <span>{c(order.tax_amount / 2)}</span>
-                        </div>
-                        <div className="flex justify-between text-gray-500">
-                          <span>SGST ({(order.tax_rate / 2).toFixed(1)}%)</span>
-                          <span>{c(order.tax_amount / 2)}</span>
-                        </div>
-                      </>
-                    )}
+                    {(() => {
+                      const inclusive = isInclusiveTax(order);
+                      const taxAmt = parseFloat(order.tax_amount || 0);
+                      const taxRate = parseFloat(order.tax_rate || 0);
+                      const totalAmt = parseFloat(order.total_amount || 0);
+                      const subtotalDisplay = inclusive ? totalAmt : (totalAmt - taxAmt);
+                      return (
+                        <>
+                          <div className="flex justify-between text-gray-500">
+                            <span>Order subtotal{inclusive && taxAmt > 0 ? ' (incl. GST)' : ''}</span>
+                            <span>{c(subtotalDisplay)}</span>
+                          </div>
+                          {taxAmt > 0 && (
+                            inclusive ? (
+                              <div className="pl-3 -mt-0.5 text-[11px] text-gray-400 italic">
+                                includes GST {taxRate}% &nbsp;·&nbsp; CGST {c(taxAmt / 2)} + SGST {c(taxAmt / 2)}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex justify-between text-gray-500">
+                                  <span>CGST ({(taxRate / 2).toFixed(1)}%)</span>
+                                  <span>{c(taxAmt / 2)}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-500">
+                                  <span>SGST ({(taxRate / 2).toFixed(1)}%)</span>
+                                  <span>{c(taxAmt / 2)}</span>
+                                </div>
+                              </>
+                            )
+                          )}
+                        </>
+                      );
+                    })()}
                     {parseFloat(order.discount_amount || 0) > 0 && (
                       <div className="flex justify-between text-green-600 text-xs">
                         <span>Discount</span>
