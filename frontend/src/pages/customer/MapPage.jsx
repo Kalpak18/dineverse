@@ -87,6 +87,10 @@ function popupHtml(cafe) {
     ? `<img src="${esc(cafe.logo_url)}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1.5px solid #f3f4f6"/>`
     : `<div style="width:40px;height:40px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#f97316;flex-shrink:0;border:1.5px solid #f3f4f6">${esc(cafe.name.charAt(0).toUpperCase())}</div>`;
 
+  const ratingHtml = cafe.avg_rating != null
+    ? `<div style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #fde68a;border-radius:99px;padding:3px 10px;margin-bottom:8px;margin-left:6px;font-size:11px;font-weight:700;color:#a16207;">★ ${parseFloat(cafe.avg_rating).toFixed(1)} <span style="color:#a16207;opacity:0.7;font-weight:500">(${cafe.rating_count || 0})</span></div>`
+    : '';
+
   return `<div style="font-family:system-ui,-apple-system,sans-serif;min-width:200px;max-width:240px;">
     <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
       ${logoHtml}
@@ -95,7 +99,10 @@ function popupHtml(cafe) {
         ${cafe.address ? `<p style="margin:0;font-size:11px;color:#9ca3af;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${esc(cafe.address)}</p>` : ''}
       </div>
     </div>
-    ${dist ? `<div style="display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:99px;padding:3px 10px;margin-bottom:8px;font-size:11px;font-weight:700;color:#ea580c;">📍 ${esc(dist)} away</div>` : ''}
+    <div style="display:flex;flex-wrap:wrap;align-items:center;">
+      ${dist ? `<div style="display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:99px;padding:3px 10px;margin-bottom:8px;font-size:11px;font-weight:700;color:#ea580c;">📍 ${esc(dist)} away</div>` : ''}
+      ${ratingHtml}
+    </div>
     <a href="/cafe/${esc(cafe.slug)}" style="display:block;text-align:center;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;padding:8px 14px;border-radius:10px;text-decoration:none;font-size:12px;font-weight:700;letter-spacing:0.01em;box-shadow:0 2px 8px rgba(249,115,22,.35);">
       View Menu →
     </a>
@@ -112,15 +119,14 @@ export default function MapPage() {
   const cafeMarkersRef  = useRef(new Map());
   const userMarkerRef   = useRef(null);
 
-  const [cafes,        setCafes]        = useState([]);
+  const [cafes,        setCafes]        = useState([]);    // ALL DineVerse cafes (for map markers)
   const [loading,      setLoading]      = useState(false);
   const [locating,     setLocating]     = useState(true);  // true while waiting for GPS
   const [geoError,     setGeoError]     = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [selectedId,   setSelectedId]   = useState(null);
   const [radius,       setRadius]       = useState(10);
-  const [searchQuery,  setSearchQuery]  = useState('');
-  const [searching,    setSearching]    = useState(false);
+  const [searchQuery,  setSearchQuery]  = useState('');    // case-insensitive name/city filter for sidebar list
   const [mobileTab,    setMobileTab]    = useState('map');
 
   // ── 1. Init map ─────────────────────────────────────────────────────────────
@@ -133,11 +139,12 @@ export default function MapPage() {
       attributionControl: true,
     }).setView(INDIA_CENTER, 5);
 
-    // OpenStreetMap standard — richest free tile source: shows every building, road, POI
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-      subdomains:  'abc',
-      maxZoom:     19,
+    // CartoDB Voyager — modern, clean labels, building outlines visible from
+    // mid-zoom, retina @2x tiles for sharp displays. Free, no API key.
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
+      subdomains:  'abcd',
+      maxZoom:     20,
     }).addTo(map);
 
     // Zoom controls — bottom right
@@ -152,17 +159,17 @@ export default function MapPage() {
     };
   }, []);
 
-  // ── 2. Fetch nearby DineVerse cafés ─────────────────────────────────────────
-  const fetchNearby = useCallback(async (lat, lng, r) => {
+  // ── 2. Fetch ALL DineVerse cafés (distance-sorted from given lat/lng) ──────
+  // No radius filter — we want every café to show on the map regardless of zoom.
+  // The sidebar list filters by radius client-side using the returned distance_km.
+  const fetchAllCafes = useCallback(async (lat, lng) => {
     setLoading(true);
     try {
-      const { data } = await getNearbyCafes(lat, lng, r);
+      // Pass a huge radius (effectively all cafés worldwide) — backend caps at 500.
+      const { data } = await getNearbyCafes(lat, lng, 20000);
       setCafes(data.cafes || []);
-      if ((data.cafes || []).length === 0) {
-        toast('No DineVerse cafés found in this area — try a wider radius', { icon: '☕' });
-      }
     } catch {
-      toast.error('Failed to load nearby cafés');
+      toast.error('Failed to load cafés');
       setCafes([]);
     } finally {
       setLoading(false);
@@ -184,8 +191,10 @@ export default function MapPage() {
       (err) => {
         setGeoError(err.code === 1 ? 'denied' : 'unavailable');
         setLocating(false);
-        // Fall back to India overview on error
+        // Fall back to India overview on error AND still fetch all cafés
+        // (using India center as the distance origin so the list isn't empty)
         mapRef.current?.setView(INDIA_CENTER, 5);
+        fetchAllCafes(INDIA_CENTER[0], INDIA_CENTER[1]);
       },
       { timeout: 10000, enableHighAccuracy: false, maximumAge: 60000 }
     );
@@ -208,20 +217,14 @@ export default function MapPage() {
       } else {
         setLocating(false);
       }
-      requestGeo((loc) => fetchNearby(loc.lat, loc.lng, radius));
+      requestGeo((loc) => fetchAllCafes(loc.lat, loc.lng));
     };
     run();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── 4. Re-fetch when radius changes ─────────────────────────────────────────
-  const prevRadiusRef = useRef(radius);
-  useEffect(() => {
-    if (prevRadiusRef.current === radius) return;
-    prevRadiusRef.current = radius;
-    if (userLocation) fetchNearby(userLocation.lat, userLocation.lng, radius);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [radius]);
+  // Note: changing the radius slider only filters the sidebar list (client-side).
+  // Map markers always show every café — no refetch needed.
 
   // ── 5. Sync markers ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -280,28 +283,47 @@ export default function MapPage() {
     });
   }, [selectedId, cafes]);
 
-  // ── Nominatim search ────────────────────────────────────────────────────────
+  // ── Derived: cafés shown in the sidebar list ────────────────────────────────
+  // Filtered by (a) selected radius and (b) case-insensitive search across
+  // name/city/address. Order preserved (backend already sorts by distance asc).
+  const q = searchQuery.trim().toLowerCase();
+  const filteredCafes = cafes.filter((c) => {
+    if (q) {
+      const hay = `${c.name || ''} ${c.city || ''} ${c.address || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    // Apply radius only when there's no active search — search results override radius
+    if (!q && c.distance_km != null && parseFloat(c.distance_km) > radius) return false;
+    return true;
+  });
+
+  // ── Cafe search (case-insensitive, distance-sorted) ──────────────────────
+  // Live filter on the loaded cafe list; submit jumps the map to the first match.
+  // Falls back to Nominatim geocoding if no café matches (so "Mumbai" still works).
   const handleSearch = async (e) => {
     e.preventDefault();
     const q = searchQuery.trim();
     if (!q) return;
-    setSearching(true);
+    // First match in the already-loaded, distance-sorted list
+    const match = filteredCafes[0];
+    if (match && match.latitude && match.longitude) {
+      setSelectedId(match.id);
+      mapRef.current?.setView([parseFloat(match.latitude), parseFloat(match.longitude)], 16);
+      setTimeout(() => cafeMarkersRef.current.get(match.id)?.marker.openPopup(), 350);
+      return;
+    }
+    // No café matched — fall back to Nominatim location search to recenter the map
     try {
-      const res  = await fetch(
+      const res = await fetch(
         `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', India')}&format=json&limit=1`,
         { headers: { 'Accept-Language': 'en' } }
       );
       const data = await res.json();
-      if (!data.length) { toast.error('Location not found'); return; }
+      if (!data.length) { toast.error('No café or place matched that name'); return; }
       const loc = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      setUserLocation(loc);
-      setGeoError(null);
       mapRef.current?.setView([loc.lat, loc.lng], 13);
-      fetchNearby(loc.lat, loc.lng, radius);
     } catch {
       toast.error('Search failed — try again');
-    } finally {
-      setSearching(false);
     }
   };
 
@@ -370,17 +392,16 @@ export default function MapPage() {
                 </span>
                 <input
                   className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-gray-50 placeholder-gray-400"
-                  placeholder="Search city or area…"
+                  placeholder="Search café name, city or area…"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
               <button
                 type="submit"
-                disabled={searching}
-                className="bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap"
+                className="bg-brand-500 hover:bg-brand-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap"
               >
-                {searching ? '…' : 'Search'}
+                Search
               </button>
             </form>
 
@@ -434,11 +455,16 @@ export default function MapPage() {
               <div>
                 <p className="text-sm font-bold text-gray-900">
                   {loading ? 'Searching…'
-                    : userLocation ? `${cafes.length} café${cafes.length !== 1 ? 's' : ''} nearby`
+                    : q ? `${filteredCafes.length} match${filteredCafes.length !== 1 ? 'es' : ''} for "${q}"`
+                    : userLocation ? `${filteredCafes.length} café${filteredCafes.length !== 1 ? 's' : ''} nearby`
                     : 'Find cafés near you'}
                 </p>
-                {userLocation && !loading && (
-                  <p className="text-xs text-gray-400 mt-0.5">Within {radius} km · DineVerse only</p>
+                {!loading && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {q
+                      ? `All distances · ${cafes.length} total on map`
+                      : `Within ${radius} km · ${cafes.length} total on map`}
+                  </p>
                 )}
               </div>
               <select
@@ -470,17 +496,21 @@ export default function MapPage() {
                 </div>
               )}
 
-              {!loading && userLocation && cafes.length === 0 && (
+              {!loading && userLocation && filteredCafes.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
                   <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-3xl mb-4">☕</div>
-                  <p className="text-sm font-bold text-gray-700 mb-1">No cafés found nearby</p>
-                  <p className="text-xs text-gray-400">Try increasing the search radius above.</p>
+                  <p className="text-sm font-bold text-gray-700 mb-1">
+                    {q ? `No cafés match "${q}"` : 'No cafés in this radius'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {q ? 'Try a different name or clear search.' : 'Increase the radius or scroll the map to see more.'}
+                  </p>
                 </div>
               )}
 
-              {!loading && cafes.length > 0 && (
+              {!loading && filteredCafes.length > 0 && (
                 <div className="p-3 space-y-2">
-                  {cafes.map((cafe) => (
+                  {filteredCafes.map((cafe) => (
                     <CafeCard
                       key={cafe.id}
                       cafe={cafe}
@@ -530,7 +560,7 @@ export default function MapPage() {
                 <div className="bg-white/90 backdrop-blur-sm border border-gray-200 shadow-md rounded-full px-3.5 py-1.5 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
                   <span className="text-xs font-semibold text-gray-700">
-                    {cafes.length} DineVerse café{cafes.length !== 1 ? 's' : ''} in area
+                    {cafes.length} DineVerse café{cafes.length !== 1 ? 's' : ''} on map
                   </span>
                 </div>
               </div>
@@ -573,10 +603,16 @@ function CafeCard({ cafe, selected, onSelect, onNavigate }) {
         {cafe.address && (
           <p className="text-xs text-gray-400 truncate mt-0.5">{cafe.address}</p>
         )}
-        <div className="flex items-center gap-2 mt-1.5">
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           {distLabel && (
             <span className="text-[11px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
               {distLabel}
+            </span>
+          )}
+          {cafe.avg_rating != null && (
+            <span className="text-[11px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5">
+              ★ {parseFloat(cafe.avg_rating).toFixed(1)}
+              <span className="text-yellow-600/70 font-normal ml-0.5">({cafe.rating_count})</span>
             </span>
           )}
           <button

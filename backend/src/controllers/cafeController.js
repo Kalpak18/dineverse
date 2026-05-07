@@ -56,14 +56,30 @@ exports.exploreCafes = asyncHandler(async (req, res) => {
   ok(res, { cafes: result.rows });
 });
 
-// Public: get cafés near a lat/lng point, sorted by distance
+// Public: get cafés sorted by distance from a lat/lng point.
+// Returns ALL active DineVerse cafés by default so the map can show every pin
+// regardless of zoom. Pass `radius` to clamp; pass `q` for case-insensitive
+// name/city search; ratings are joined in for the cafe card.
 exports.getNearbyCafes = asyncHandler(async (req, res) => {
-  const lat    = parseFloat(req.query.lat);
-  const lng    = parseFloat(req.query.lng);
-  const radius = Math.min(500, Math.max(0.5, parseFloat(req.query.radius) || 30));
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+  // No radius cap if not specified (used by map to show all cafes globally).
+  // Old behaviour was 30km default; keep clamp 0.5..20000 (basically world-wide).
+  const radius = req.query.radius != null
+    ? Math.min(20000, Math.max(0.5, parseFloat(req.query.radius)))
+    : 20000;
+  const q = (req.query.q || '').trim();
 
   if (isNaN(lat) || isNaN(lng)) return fail(res, 'lat and lng are required', 400);
   if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return fail(res, 'Invalid coordinates', 400);
+
+  const params = [lat, lng, radius];
+  let qClause  = '';
+  if (q) {
+    params.push(`%${q}%`);
+    // ILIKE = case-insensitive; matches name OR city so "Mumbai" or "starbucks" both work
+    qClause = `AND (c.name ILIKE $${params.length} OR c.city ILIKE $${params.length})`;
+  }
 
   const result = await db.query(`
     WITH dist AS (
@@ -77,9 +93,24 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
       FROM cafes c
       WHERE c.is_active = true AND c.setup_completed = true AND c.plan_expiry_date > NOW()
         AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL
+        ${qClause}
+    ),
+    rated AS (
+      SELECT cafe_id,
+             ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+             COUNT(*)::int                  AS rating_count
+      FROM order_ratings
+      GROUP BY cafe_id
     )
-    SELECT * FROM dist WHERE distance_km <= $3 ORDER BY distance_km ASC LIMIT 100
-  `, [lat, lng, radius]);
+    SELECT d.*,
+           COALESCE(r.avg_rating, NULL) AS avg_rating,
+           COALESCE(r.rating_count, 0)  AS rating_count
+    FROM dist d
+    LEFT JOIN rated r ON r.cafe_id = d.id
+    WHERE d.distance_km <= $3
+    ORDER BY d.distance_km ASC
+    LIMIT 500
+  `, params);
 
   ok(res, { cafes: result.rows });
 });
