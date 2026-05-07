@@ -8,6 +8,8 @@ import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { AdminAuthProvider } from './context/AdminAuthContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import ErrorBoundary from './components/ErrorBoundary';
 import './index.css';
 
@@ -59,6 +61,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <AuthProvider>
             <CartProvider>
               <App />
+              <Analytics />
+              <SpeedInsights />
               <Toaster
                 position="top-center"
                 gutter={8}

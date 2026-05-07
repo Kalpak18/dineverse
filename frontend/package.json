@@ -18,6 +18,8 @@
   "dependencies": {
     "@capacitor-community/barcode-scanner": "^4.0.1",
     "@capacitor/core": "^6.0.0",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "axios": "^1.7.2",
     "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
