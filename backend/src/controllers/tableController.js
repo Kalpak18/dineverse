@@ -119,18 +119,31 @@ exports.getLiveTables = asyncHandler(async (req, res) => {
       'SELECT id, area_id, label FROM cafe_tables WHERE cafe_id = $1 AND is_active = true ORDER BY label ASC',
       [req.cafeId]
     ),
-    // Active dine-in orders grouped by table_number (pending / confirmed / preparing / ready / served)
+    // Active dine-in orders grouped by table_number.
+    // Table is "occupied" while EITHER bill OR items are unfinished:
+    //   - status NOT IN ('paid','cancelled')  → bill not settled OR kitchen still working
+    //   - OR status='paid' but no 'served' event yet → bill paid early (before food
+    //     was delivered). Owner must mark the order served to clear the table.
     db.query(
       `SELECT
          o.id, o.table_number, o.customer_name, o.status,
          o.final_amount, o.daily_order_number, o.order_number,
-         o.created_at,
+         o.created_at, o.payment_verified,
          COUNT(oi.id)::int AS item_count
        FROM orders o
        LEFT JOIN order_items oi ON oi.order_id = o.id
        WHERE o.cafe_id = $1
          AND o.order_type = 'dine-in'
-         AND o.status NOT IN ('paid', 'cancelled')
+         AND (
+           o.status NOT IN ('paid', 'cancelled')
+           OR (
+             o.status = 'paid'
+             AND NOT EXISTS (
+               SELECT 1 FROM order_events e
+               WHERE e.order_id = o.id AND e.to_status = 'served'
+             )
+           )
+         )
        GROUP BY o.id
        ORDER BY o.created_at ASC`,
       [req.cafeId]

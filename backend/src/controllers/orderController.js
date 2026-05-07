@@ -1133,6 +1133,7 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   // Fetch the order, verify it belongs to this slug and is payable
   const result = await db.query(
     `SELECT o.id, o.status, o.final_amount, o.total_amount, o.payment_verified,
+            o.platform_fee, o.platform_discount_amount,
             o.customer_name, o.order_number,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
             c.name AS cafe_name, c.email AS cafe_email,
@@ -1155,11 +1156,18 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   const amountPaise = Math.round(parseFloat(order.final_amount || order.total_amount) * 100);
   if (amountPaise <= 0) return fail(res, 'Invalid order amount', 400);
 
-  // Build Razorpay Route transfer — 1% commission to platform, 99% to café
+  // Build Razorpay Route transfer using the actual stored commission, not a
+  // hardcoded percentage. Café gets (final_amount − platform_fee + platform_discount_amount):
+  //   • final_amount = customer's bill (incl. platform fee already added on top)
+  //   • platform_fee = DineVerse's commission for this order (configurable per café)
+  //   • platform_discount_amount = DineVerse-funded discount (refund to café for absorbed promo)
   const routeTransfers = [];
   if (order.razorpay_route_enabled && order.razorpay_account_id) {
-    // Minimum transfer is ₹1 (100 paise); skip routing for tiny orders
-    const cafeSharePaise = Math.floor(amountPaise * 0.99);
+    const platformFee     = parseFloat(order.platform_fee || 0);
+    const platformCredit  = parseFloat(order.platform_discount_amount || 0);
+    const cafeShareRupees = Math.max(0, parseFloat(order.final_amount || 0) - platformFee + platformCredit);
+    const cafeSharePaise  = Math.floor(cafeShareRupees * 100);
+    // Minimum Razorpay transfer is ₹1 (100 paise); skip routing for tiny orders
     if (cafeSharePaise >= 100) {
       routeTransfers.push({
         account:  order.razorpay_account_id,
@@ -1167,9 +1175,11 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
         currency: 'INR',
         on_hold:  0,
         notes: {
-          cafe_slug: slug,
-          order_id:  id,
-          type:      'food_order_payout',
+          cafe_slug:  slug,
+          order_id:   id,
+          type:       'food_order_payout',
+          platform_fee_inr:    platformFee.toFixed(2),
+          platform_credit_inr: platformCredit.toFixed(2),
         },
       });
     }
@@ -1292,7 +1302,7 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
        RETURNING id, order_number,
                  COALESCE(daily_order_number, order_number) AS daily_order_number,
                  customer_name, table_number, order_type, status,
-                 total_amount, final_amount, updated_at`,
+                 total_amount, final_amount, platform_fee, platform_discount_amount, updated_at`,
       [razorpay_payment_id, id]
     );
     updatedOrder = updated.rows[0];
@@ -1324,17 +1334,19 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   (async () => {
     try {
       const cafeRow = await db.query(
-        `SELECT commission_rate, razorpay_account_id, razorpay_route_enabled
-         FROM cafes WHERE id = $1`,
+        `SELECT razorpay_account_id, razorpay_route_enabled FROM cafes WHERE id = $1`,
         [cafeId]
       );
       const cafe = cafeRow.rows[0];
       if (!cafe?.razorpay_route_enabled || !cafe?.razorpay_account_id) return; // no linked account yet
 
-      const finalAmt   = parseFloat(updatedOrder.final_amount) || 0;
-      const rate       = parseFloat(cafe.commission_rate) || 5;
-      const commission = parseFloat((finalAmt * rate / 100).toFixed(2));
-      const netPaise   = Math.round((finalAmt - commission) * 100);
+      // Use the order's stored platform_fee — this is what the customer was charged
+      // and what's recorded in commission accounting. Recomputing from rate × final
+      // would double-count because final_amount already includes the platform fee.
+      const finalAmt       = parseFloat(updatedOrder.final_amount) || 0;
+      const platformFee    = parseFloat(updatedOrder.platform_fee || 0);
+      const platformCredit = parseFloat(updatedOrder.platform_discount_amount || 0);
+      const netPaise       = Math.round((finalAmt - platformFee + platformCredit) * 100);
 
       if (netPaise <= 0) return;
 
