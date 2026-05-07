@@ -7,6 +7,7 @@ import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
 import { AdminAuthProvider } from './context/AdminAuthContext';
+import { RiderAuthProvider } from './context/RiderAuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
@@ -58,6 +59,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <BrowserRouter>
         <AdminAuthProvider>
+          <RiderAuthProvider>
           <AuthProvider>
             <CartProvider>
               <App />
@@ -99,6 +101,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
               />
             </CartProvider>
           </AuthProvider>
+          </RiderAuthProvider>
         </AdminAuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

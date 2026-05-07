@@ -61,6 +61,10 @@ const ModifiersPage       = lazy(() => import('./pages/owner/ModifiersPage'));
 const WaiterPage          = lazy(() => import('./pages/owner/WaiterPage'));
 const ProfilePage         = lazy(() => import('./pages/owner/ProfilePage'));
 
+// Rider PWA
+const RiderLoginPage      = lazy(() => import('./pages/rider/RiderLoginPage'));
+const RiderJobsPage       = lazy(() => import('./pages/rider/RiderJobsPage'));
+
 // Admin
 const AdminLoginPage          = lazy(() => import('./pages/admin/AdminLoginPage'));
 const AdminSetupPage          = lazy(() => import('./pages/admin/AdminSetupPage'));
@@ -176,6 +180,12 @@ export default function App() {
           </Route>
 
           <Route path="/driver/:orderId/:token" element={<DriverTracking />} />
+
+          {/* Rider PWA — logged-in rider experience (separate from magic-link DriverTracking) */}
+          <Route path="/rider"                    element={<Navigate to="/rider/jobs" replace />} />
+          <Route path="/rider/login"              element={<RiderLoginPage />} />
+          <Route path="/rider/jobs"               element={<RiderJobsPage />} />
+
           <Route path="/restaurants/:city/:slug" element={<CitySlugRedirect />} />
 
           {/* Owner auth */}

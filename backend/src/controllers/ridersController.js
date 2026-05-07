@@ -4,9 +4,11 @@ const asyncHandler = require('../utils/asyncHandler');
 
 // ─── Rider pool ───────────────────────────────────────────────
 
+const isEmail = (e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e || '');
+
 exports.getRiders = asyncHandler(async (req, res) => {
   const { rows } = await db.query(
-    `SELECT id, name, phone, is_active, created_at
+    `SELECT id, name, phone, email, is_active, last_seen_at, created_at
      FROM cafe_riders WHERE cafe_id = $1 ORDER BY name`,
     [req.cafeId]
   );
@@ -14,30 +16,52 @@ exports.getRiders = asyncHandler(async (req, res) => {
 });
 
 exports.createRider = asyncHandler(async (req, res) => {
-  const { name, phone } = req.body;
+  const { name, phone, email } = req.body;
   if (!name?.trim()) return fail(res, 'Name is required', 400);
-  const { rows } = await db.query(
-    `INSERT INTO cafe_riders (cafe_id, name, phone)
-     VALUES ($1, $2, $3) RETURNING id, name, phone, is_active`,
-    [req.cafeId, name.trim(), phone?.trim() || null]
-  );
-  ok(res, { rider: rows[0] }, 'Rider added');
+  const cleanEmail = email?.trim().toLowerCase() || null;
+  if (cleanEmail && !isEmail(cleanEmail)) return fail(res, 'Invalid email address', 400);
+
+  try {
+    const { rows } = await db.query(
+      `INSERT INTO cafe_riders (cafe_id, name, phone, email)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, name, phone, email, is_active`,
+      [req.cafeId, name.trim(), phone?.trim() || null, cleanEmail]
+    );
+    ok(res, { rider: rows[0] }, 'Rider added');
+  } catch (err) {
+    if (err.code === '23505') {
+      return fail(res, 'A rider with this email already exists', 409);
+    }
+    throw err;
+  }
 });
 
 exports.updateRider = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, phone, is_active } = req.body;
-  const { rows } = await db.query(
-    `UPDATE cafe_riders SET
-       name      = COALESCE($1, name),
-       phone     = COALESCE($2, phone),
-       is_active = COALESCE($3, is_active)
-     WHERE id = $4 AND cafe_id = $5
-     RETURNING id, name, phone, is_active`,
-    [name?.trim() || null, phone?.trim() || null, is_active ?? null, id, req.cafeId]
-  );
-  if (!rows.length) return fail(res, 'Rider not found', 404);
-  ok(res, { rider: rows[0] }, 'Rider updated');
+  const { name, phone, email, is_active } = req.body;
+  const cleanEmail = email !== undefined ? (email?.trim().toLowerCase() || null) : undefined;
+  if (cleanEmail && !isEmail(cleanEmail)) return fail(res, 'Invalid email address', 400);
+
+  try {
+    const { rows } = await db.query(
+      `UPDATE cafe_riders SET
+         name      = COALESCE($1, name),
+         phone     = COALESCE($2, phone),
+         email     = CASE WHEN $3::TEXT IS NOT NULL THEN $3::VARCHAR(120) ELSE email END,
+         is_active = COALESCE($4, is_active)
+       WHERE id = $5 AND cafe_id = $6
+       RETURNING id, name, phone, email, is_active`,
+      [name?.trim() || null, phone?.trim() || null, cleanEmail !== undefined ? cleanEmail : null, is_active ?? null, id, req.cafeId]
+    );
+    if (!rows.length) return fail(res, 'Rider not found', 404);
+    ok(res, { rider: rows[0] }, 'Rider updated');
+  } catch (err) {
+    if (err.code === '23505') {
+      return fail(res, 'A rider with this email already exists', 409);
+    }
+    throw err;
+  }
 });
 
 exports.deleteRider = asyncHandler(async (req, res) => {

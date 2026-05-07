@@ -313,6 +313,37 @@ export const getCurrentShift  = ()      => api.get('/shifts/current');
 export const getShifts        = (params) => api.get('/shifts', { params });
 export const getShiftSummary  = (id)    => api.get(`/shifts/${id}/summary`);
 
+// ─── Rider PWA (Delivery riders) ─────────────────────────────
+// Separate axios instance — different token (rider JWT, not owner JWT)
+const riderApi = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || '/api',
+  timeout: 15000,
+});
+riderApi.interceptors.request.use((config) => {
+  const t = localStorage.getItem('dineverse_rider_token');
+  if (t) config.headers.Authorization = `Bearer ${t}`;
+  return config;
+});
+riderApi.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem('dineverse_rider_token');
+      window.dispatchEvent(new Event('rider:logout'));
+    }
+    return Promise.reject(err);
+  }
+);
+
+export const riderSendOtp     = (email)        => riderApi.post('/rider/auth/send-otp', { email });
+export const riderVerifyOtp   = (email, otp)   => riderApi.post('/rider/auth/verify-otp', { email, otp });
+export const riderGetMe       = ()             => riderApi.get('/rider/auth/me');
+export const riderGetJobs     = ()             => riderApi.get('/rider/jobs');
+export const riderGetJob      = (id)           => riderApi.get(`/rider/jobs/${id}`);
+export const riderUpdateJob   = (id, status, failure_reason) =>
+  riderApi.patch(`/rider/jobs/${id}/status`, { status, ...(failure_reason && { failure_reason }) });
+export const riderPingLocation = (lat, lng)    => riderApi.patch('/rider/location', { lat, lng });
+
 // ─── Loyalty (Owner) ──────────────────────────────────────────
 export const getLoyaltyProgram    = ()           => api.get('/loyalty/program');
 export const saveLoyaltyProgram   = (data)       => api.post('/loyalty/program', data);

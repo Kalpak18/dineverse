@@ -142,7 +142,7 @@ export default function ProfilePage() {
   // Delivery — riders + platforms
   const [riders, setRiders]           = useState([]);
   const [platforms, setPlatforms]     = useState([]);
-  const [newRider, setNewRider]       = useState({ name: '', phone: '' });
+  const [newRider, setNewRider]       = useState({ name: '', phone: '', email: '' });
   const [newPlatform, setNewPlatform] = useState({ platform: '', api_key: '', display_name: '' });
   const [deliveryLoading, setDeliveryLoading] = useState(false);
 
@@ -811,9 +811,17 @@ export default function ProfilePage() {
                 <div className="space-y-2">
                   {riders.map((r) => (
                     <div key={r.id} className={`flex items-center justify-between px-3 py-2 rounded-xl border ${r.is_active ? 'border-gray-200 bg-white' : 'border-gray-100 bg-gray-50 opacity-60'}`}>
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                        {r.phone && <p className="text-xs text-gray-400">{r.phone}</p>}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-800 truncate">{r.name}</p>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          {r.phone && <p className="text-xs text-gray-400">📞 {r.phone}</p>}
+                          {r.email && <p className="text-xs text-gray-400 truncate">✉️ {r.email}</p>}
+                          {r.email && (
+                            <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              Login enabled
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <button
                         onClick={async () => {
@@ -830,31 +838,40 @@ export default function ProfilePage() {
               )}
 
               {/* Add new rider */}
-              <div className="flex gap-2 pt-1">
-                <input type="text" placeholder="Rider name" value={newRider.name}
-                  onChange={(e) => setNewRider((r) => ({ ...r, name: e.target.value }))}
-                  className="input flex-1" />
-                <input type="tel" placeholder="Phone" value={newRider.phone}
-                  onChange={(e) => setNewRider((r) => ({ ...r, phone: e.target.value }))}
-                  className="input w-32" />
-                <button
-                  type="button"
-                  disabled={!newRider.name.trim() || deliveryLoading}
-                  onClick={async () => {
-                    if (!newRider.name.trim()) return;
-                    setDeliveryLoading(true);
-                    try {
-                      const { data } = await createRider(newRider);
-                      setRiders((prev) => [...prev, data.rider]);
-                      setNewRider({ name: '', phone: '' });
-                      toast.success('Rider added');
-                    } catch { toast.error('Failed to add rider'); }
-                    finally { setDeliveryLoading(false); }
-                  }}
-                  className="btn-primary px-4 whitespace-nowrap disabled:opacity-50"
-                >
-                  + Add
-                </button>
+              <div className="space-y-2 pt-1">
+                <div className="flex gap-2">
+                  <input type="text" placeholder="Rider name *" value={newRider.name}
+                    onChange={(e) => setNewRider((r) => ({ ...r, name: e.target.value }))}
+                    className="input flex-1" />
+                  <input type="tel" placeholder="Phone" value={newRider.phone}
+                    onChange={(e) => setNewRider((r) => ({ ...r, phone: e.target.value }))}
+                    className="input w-32" />
+                </div>
+                <div className="flex gap-2">
+                  <input type="email" placeholder="Email (so they can log in to the rider app)" value={newRider.email}
+                    onChange={(e) => setNewRider((r) => ({ ...r, email: e.target.value }))}
+                    className="input flex-1" />
+                  <button
+                    type="button"
+                    disabled={!newRider.name.trim() || deliveryLoading}
+                    onClick={async () => {
+                      if (!newRider.name.trim()) return;
+                      setDeliveryLoading(true);
+                      try {
+                        const { data } = await createRider(newRider);
+                        setRiders((prev) => [...prev, data.rider]);
+                        setNewRider({ name: '', phone: '', email: '' });
+                        toast.success(newRider.email
+                          ? 'Rider added — share dine-verse.com/rider/login with them'
+                          : 'Rider added');
+                      } catch (err) { toast.error(err.response?.data?.message || 'Failed to add rider'); }
+                      finally { setDeliveryLoading(false); }
+                    }}
+                    className="btn-primary px-4 whitespace-nowrap disabled:opacity-50"
+                  >
+                    + Add
+                  </button>
+                </div>
               </div>
             </div>
           )}

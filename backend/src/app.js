@@ -220,6 +220,7 @@ app.use('/api/waitlist',       waitlistRoutes);
 app.use('/api/customers',      customerRoutes);
 app.use('/api/notifications',  require('./routes/notifications'));
 app.use('/api/delivery',       require('./routes/delivery'));
+app.use('/api/rider',          require('./routes/rider'));
 app.use('/api/testimonials',   require('./routes/testimonials'));
 app.use('/api/push',           require('./routes/push'));
 app.use('/api/aggregator',     require('./routes/aggregator'));
