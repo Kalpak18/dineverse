@@ -459,7 +459,7 @@ exports.enableRoute = asyncHandler(async (req, res) => {
     [req.cafeId]
   );
   // Bust the public café cache so razorpay_route_enabled is immediately visible
-  if (updated.rows[0]?.slug) await cache.del(`cafe:${updated.rows[0].slug}`);
+  if (updated.rows[0]?.slug) await cache.del(`cafev2:${updated.rows[0].slug}`);
 
   ok(res, { route_enabled: true }, 'Payout routing activated!');
 });
