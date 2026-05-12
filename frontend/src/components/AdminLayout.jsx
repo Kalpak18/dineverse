@@ -6,7 +6,7 @@ import DineLogo from './DineLogo';
 const navItems = [
   { to: '/admin/dashboard',  label: 'Dashboard',  icon: '📊' },
   { to: '/admin/cafes',      label: 'Cafes',       icon: '🏪' },
-  { to: '/admin/revenue',    label: 'Revenue',     icon: '💰' },
+  { to: '/admin/revenue',    label: 'Commission',  icon: '💰' },
   { to: '/admin/tickets',    label: 'Support',     icon: '🎫' },
   { to: '/admin/analytics',  label: 'Analytics',   icon: '📈' },
   { to: '/admin/settings',   label: 'Settings',    icon: '⚙️' },

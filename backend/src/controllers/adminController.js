@@ -75,25 +75,13 @@ exports.getMe = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/dashboard ────────────────────────────────
 exports.getDashboard = asyncHandler(async (req, res) => {
-  const [cafeStats, revenueStats, ticketStats, recentPayments, recentSignups, commissionStats] = await Promise.all([
+  const [cafeStats, ticketStats, recentSignups, commissionStats] = await Promise.all([
     // Cafe counts
     db.query(`
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE plan_type = 'free_trial' AND plan_expiry_date > NOW()) AS active_trials,
-        COUNT(*) FILTER (WHERE plan_type = 'yearly' AND plan_expiry_date > NOW())     AS active_paid,
-        COUNT(*) FILTER (WHERE plan_expiry_date < NOW())                              AS expired,
-        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')             AS new_this_month
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS new_this_month
       FROM cafes WHERE is_active = true
-    `),
-    // Revenue
-    db.query(`
-      SELECT
-        COALESCE(SUM(amount_paise) FILTER (WHERE status='completed'), 0) AS total_paise,
-        COALESCE(SUM(amount_paise) FILTER (WHERE status='completed'
-          AND created_at >= DATE_TRUNC('month', NOW())), 0)               AS this_month_paise,
-        COUNT(*) FILTER (WHERE status='completed')                        AS total_payments
-      FROM payments
     `),
     // Tickets
     db.query(`
@@ -103,49 +91,30 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'resolved')    AS resolved
       FROM support_tickets
     `),
-    // Recent payments
-    db.query(`
-      SELECT p.id, p.amount_paise, p.plan_type, p.status, p.created_at,
-             c.name AS cafe_name, c.email AS cafe_email
-      FROM payments p
-      JOIN cafes c ON p.cafe_id = c.id
-      WHERE p.status = 'completed'
-      ORDER BY p.created_at DESC LIMIT 5
-    `),
     // Recent signups
     db.query(`
-      SELECT id, name, email, plan_type, plan_expiry_date, created_at
+      SELECT id, name, email, created_at
       FROM cafes ORDER BY created_at DESC LIMIT 5
     `),
     // Commission totals
     db.query(`
       SELECT
-        COALESCE(SUM(commission_amount), 0)                                                    AS total_commission,
+        COALESCE(SUM(commission_amount), 0)                                                         AS total_commission,
         COALESCE(SUM(commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS this_month_commission,
-        COUNT(*) FILTER (WHERE status = 'paid')                                                AS paid_orders
+        COUNT(*) FILTER (WHERE status = 'paid')                                                     AS paid_orders
       FROM orders
     `),
   ]);
 
-  const rev = revenueStats.rows[0];
   const com = commissionStats.rows[0];
   ok(res, {
     cafes: cafeStats.rows[0],
-    revenue: {
-      total_rupees: parseInt(rev.total_paise) / 100,
-      this_month_rupees: parseInt(rev.this_month_paise) / 100,
-      total_payments: parseInt(rev.total_payments),
-    },
     commission: {
       total: parseFloat(com.total_commission),
       this_month: parseFloat(com.this_month_commission),
       paid_orders: parseInt(com.paid_orders),
     },
     tickets: ticketStats.rows[0],
-    recent_payments: recentPayments.rows.map((p) => ({
-      ...p,
-      amount_rupees: p.amount_paise / 100,
-    })),
     recent_signups: recentSignups.rows,
   });
 });

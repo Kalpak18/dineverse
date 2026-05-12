@@ -36,7 +36,7 @@ export default function AdminDashboardPage() {
 
   if (loading) return <LoadingSpinner />;
 
-  const { cafes, revenue, tickets, recent_payments, recent_signups } = data;
+  const { cafes, commission, tickets, recent_signups } = data;
 
   return (
     <div className="space-y-6">
@@ -48,66 +48,32 @@ export default function AdminDashboardPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard icon="🏪" label="Total Cafes" value={cafes.total} sub={`+${cafes.new_this_month} this month`} color="orange" />
-        <StatCard icon="💰" label="Total Revenue" value={`₹${revenue.total_rupees.toLocaleString('en-IN')}`} sub={`₹${revenue.this_month_rupees.toLocaleString('en-IN')} this month`} color="green" />
-        <StatCard icon="🚀" label="Active Paid" value={cafes.active_paid} sub={`${cafes.active_trials} on trial`} color="blue" />
+        <StatCard icon="💰" label="Commission Earned" value={`₹${Number(commission.total).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`} sub={`₹${Number(commission.this_month).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} this month`} color="green" />
+        <StatCard icon="📦" label="Total Orders" value={Number(commission.paid_orders).toLocaleString('en-IN')} sub="paid orders" color="blue" />
         <StatCard icon="🎫" label="Open Tickets" value={tickets.open} sub={`${tickets.in_progress} in progress`} color="yellow" />
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Recent Payments */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4">Recent Payments</h2>
-          {recent_payments.length === 0 ? (
-            <p className="text-gray-500 text-sm">No payments yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {recent_payments.map((p) => (
-                <div key={p.id} className="flex items-center justify-between text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium text-white truncate">{p.cafe_name}</p>
-                    <p className="text-xs text-gray-500">{new Date(p.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
-                  </div>
-                  <span className="font-bold text-green-400 ml-2">₹{p.amount_rupees.toLocaleString('en-IN')}</span>
+      {/* Recent Signups */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+        <h2 className="font-semibold text-white mb-4">Recent Signups</h2>
+        {recent_signups.length === 0 ? (
+          <p className="text-gray-500 text-sm">No signups yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {recent_signups.map((c) => (
+              <div key={c.id} className="flex items-center justify-between text-sm">
+                <div className="min-w-0">
+                  <p className="font-medium text-white truncate">{c.name}</p>
+                  <p className="text-xs text-gray-500">{c.email}</p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Recent Signups */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4">Recent Signups</h2>
-          {recent_signups.length === 0 ? (
-            <p className="text-gray-500 text-sm">No signups yet.</p>
-          ) : (
-            <div className="space-y-3">
-              {recent_signups.map((c) => (
-                <div key={c.id} className="flex items-center justify-between text-sm">
-                  <div className="min-w-0">
-                    <p className="font-medium text-white truncate">{c.name}</p>
-                    <p className="text-xs text-gray-500">{c.email}</p>
-                  </div>
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    c.plan_type === 'yearly'
-                      ? 'bg-green-900/50 text-green-400'
-                      : 'bg-amber-900/50 text-amber-400'
-                  }`}>
-                    {c.plan_type === 'yearly' ? 'Paid' : 'Trial'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                <p className="text-xs text-gray-500 ml-2">
+                  {new Date(c.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-
-      {/* Expired cafes warning */}
-      {parseInt(cafes.expired) > 0 && (
-        <div className="bg-red-900/20 border border-red-800 rounded-xl px-4 py-3 flex items-center gap-3 text-sm text-red-400">
-          <span>⚠️</span>
-          <span><strong>{cafes.expired}</strong> café{cafes.expired !== '1' ? 's have' : ' has'} expired subscriptions.</span>
-        </div>
-      )}
     </div>
   );
 }
