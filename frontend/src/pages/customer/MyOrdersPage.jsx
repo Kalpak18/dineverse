@@ -48,6 +48,7 @@ export default function MyOrdersPage() {
   const [orders, setOrders]           = useState([]);
   const [reservations, setReservations] = useState([]);
   const [cafeName, setCafeName]       = useState('');
+  const [cafeInfo, setCafeInfo]       = useState(null);
   // Respect ?tab=reservations from the bottom nav Bookings tab
   const [activeTab, setActiveTab]     = useState(
     searchParams.get('tab') === 'reservations' ? TABS.RESERVATIONS : TABS.ACTIVE
@@ -79,6 +80,7 @@ export default function MyOrdersPage() {
     getCafeBySlug(slug).then(({ data }) => {
       setCafeName(data.cafe?.name || '');
       if (data.cafe?.currency) setCafeCurrency(data.cafe.currency);
+      setCafeInfo(data.cafe || null);
     }).catch(() => {});
 
     setInitialized(true);
@@ -306,6 +308,7 @@ export default function MyOrdersPage() {
                   key={order.id}
                   order={order}
                   slug={slug}
+                  cafeInfo={cafeInfo}
                   socketRef={socketRef}
                   onCancel={handleCancel}
                   onDismiss={handleDismissOrder}
@@ -342,6 +345,7 @@ export default function MyOrdersPage() {
                       <OrderCard
                         order={order}
                         slug={slug}
+                        cafeInfo={cafeInfo}
                         socketRef={socketRef}
                         onCancel={handleCancel}
                         onDismiss={handleDismissOrder}
@@ -360,10 +364,11 @@ export default function MyOrdersPage() {
 }
 
 // ─── Order Card ───────────────────────────────────────────────
-function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
+function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onReorder }) {
   const [chatOpen, setChatOpen] = useState(false);
+  const [receiptOrder, setReceiptOrder] = useState(null);
   const currency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
-  const c = (n) => fmtCurrency(n, currency);
+  const c = (n) => fmtCurrency(n, cafeInfo?.currency || currency);
   const cfg        = ORDER_STATUS[order.status] || ORDER_STATUS.pending;
   const isPending  = order.status === 'pending';
   const isTerminal = ['paid', 'cancelled'].includes(order.status);
@@ -527,6 +532,14 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
               Cancel Order
             </button>
           )}
+          {order.status === 'paid' && (
+            <button
+              onClick={() => setReceiptOrder(order)}
+              className="flex-1 py-2 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold transition-colors"
+            >
+              🧾 View Receipt
+            </button>
+          )}
           {order.status === 'paid' && onReorder && (order.items || []).length > 0 && (
             <button
               onClick={() => onReorder(order)}
@@ -554,6 +567,122 @@ function OrderCard({ order, slug, socketRef, onCancel, onDismiss, onReorder }) {
           onToggle={() => setChatOpen((v) => !v)}
         />
       </div>
+
+      {/* Digital receipt modal */}
+      {receiptOrder && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 px-4 pb-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setReceiptOrder(null); }}
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="bg-brand-600 text-white text-center px-5 pt-5 pb-4 flex-shrink-0">
+              {cafeInfo?.logo_url && (
+                <img src={cafeInfo.logo_url} alt={cafeInfo.name} className="w-12 h-12 rounded-xl mx-auto mb-2 object-cover" />
+              )}
+              <p className="font-bold text-base">{cafeInfo?.name || 'Café'}</p>
+              {cafeInfo?.address && <p className="text-xs text-brand-200 mt-0.5">{cafeInfo.address}</p>}
+              {cafeInfo?.gst_number && <p className="text-xs text-brand-200 mt-0.5">GSTIN: {cafeInfo.gst_number}</p>}
+            </div>
+
+            <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Token {fmtToken(receiptOrder.daily_order_number, receiptOrder.order_type)}</span>
+                <span>{new Date(receiptOrder.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>{receiptOrder.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${receiptOrder.table_number}`}</span>
+                <span>Customer: {receiptOrder.customer_name}</span>
+              </div>
+
+              <div className="border-t border-dashed border-gray-200 pt-3 space-y-1.5">
+                {(receiptOrder.items || []).map((item, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-700">{item.item_name} × {item.quantity}</span>
+                    <span className="font-medium text-gray-900">{c(item.subtotal)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="border-t border-dashed border-gray-200 pt-3 space-y-1 text-sm">
+                {(() => {
+                  const inclusive = isInclusiveTax(receiptOrder);
+                  const taxAmt = parseFloat(receiptOrder.tax_amount || 0);
+                  const taxRate = parseFloat(receiptOrder.tax_rate || 0);
+                  const totalAmt = parseFloat(receiptOrder.total_amount || 0);
+                  const subtotalDisplay = inclusive ? totalAmt : (totalAmt - taxAmt);
+                  return (
+                    <>
+                      <div className="flex justify-between text-gray-500">
+                        <span>Order subtotal{inclusive && taxAmt > 0 ? ' (incl. GST)' : ''}</span>
+                        <span>{c(subtotalDisplay)}</span>
+                      </div>
+                      {taxAmt > 0 && (
+                        inclusive ? (
+                          <div className="pl-3 -mt-0.5 text-[11px] text-gray-400 italic">
+                            includes GST {taxRate}% &nbsp;·&nbsp; CGST {c(taxAmt / 2)} + SGST {c(taxAmt / 2)}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex justify-between text-gray-500">
+                              <span>CGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                            <div className="flex justify-between text-gray-500">
+                              <span>SGST ({(taxRate / 2).toFixed(1)}%)</span>
+                              <span>{c(taxAmt / 2)}</span>
+                            </div>
+                          </>
+                        )
+                      )}
+                    </>
+                  );
+                })()}
+                {parseFloat(receiptOrder.discount_amount || 0) > 0 && (
+                  <div className="flex justify-between text-green-600">
+                    <span>Discount</span>
+                    <span>−{c(receiptOrder.discount_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(receiptOrder.tip_amount || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Tip</span>
+                    <span>{c(receiptOrder.tip_amount)}</span>
+                  </div>
+                )}
+                {parseFloat(receiptOrder.delivery_fee || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>🛵 Delivery fee</span>
+                    <span>{c(receiptOrder.delivery_fee)}</span>
+                  </div>
+                )}
+                {parseFloat(receiptOrder.platform_fee || 0) > 0 && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>Platform charge ({parseFloat(receiptOrder.platform_fee_rate || 0)}%)</span>
+                    <span>{c(receiptOrder.platform_fee)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-gray-900 text-base pt-1">
+                  <span>Total Paid</span>
+                  <span>{c(receiptOrder.final_amount || receiptOrder.total_amount)}</span>
+                </div>
+              </div>
+
+              <div className="text-center pt-2">
+                <div className="inline-flex items-center gap-1.5 bg-green-50 border border-green-200 rounded-full px-4 py-1.5">
+                  <span className="text-green-600 font-bold text-xs">✓ PAID</span>
+                </div>
+                <p className="text-xs text-gray-400 mt-3">Thank you for dining with us!</p>
+              </div>
+            </div>
+
+            <div className="px-5 pb-4 flex-shrink-0">
+              <button onClick={() => setReceiptOrder(null)} className="w-full py-2.5 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
