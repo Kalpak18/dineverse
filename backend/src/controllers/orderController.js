@@ -714,14 +714,31 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
 
+  // Acquire a per-order advisory lock so concurrent requests for the same order
+  // serialize here instead of both passing the transition check simultaneously.
+  // hashtext() maps the UUID string to a 32-bit int for pg_try_advisory_xact_lock.
+  const client = await db.pool.connect();
+  try {
+    await client.query('BEGIN');
+    const lockRes = await client.query(
+      `SELECT pg_try_advisory_xact_lock(hashtext($1)) AS acquired`, [id]
+    );
+    if (!lockRes.rows[0].acquired) {
+      await client.query('ROLLBACK');
+      return fail(res, 'Order is already being updated — please try again', 409);
+    }
+
   // Fetch current status + payment flag + transfer flag to set commission_status correctly
-  const currentRow = await db.query(
+  const currentRow = await client.query(
     `SELECT status, payment_verified, razorpay_transfer_id,
             COALESCE(payment_mode, '') AS payment_mode
      FROM orders WHERE id = $1 AND cafe_id = $2`,
     [id, req.cafeId]
   );
-  if (currentRow.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (currentRow.rows.length === 0) {
+    await client.query('ROLLBACK');
+    return fail(res, 'Order not found', 404);
+  }
   const { status: currentStatus, payment_verified: isPrepaid,
           razorpay_transfer_id: existingTransferId,
           payment_mode: existingPaymentMode } = currentRow.rows[0];
@@ -738,6 +755,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     cancelled: [],
   };
   if (!TRANSITIONS[currentStatus]?.includes(status)) {
+    await client.query('ROLLBACK');
     return fail(res, `Cannot move order from "${currentStatus}" to "${status}"`, 400);
   }
 
@@ -754,7 +772,6 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1} - total_amount`);
     params.push(cash_received);
   }
-  // Record payment_mode when supplied by staff (cash/upi/card/online)
   const validModes = ['cash', 'upi', 'card', 'online'];
   if (status === 'paid' && payment_mode && validModes.includes(payment_mode)) {
     setClauses.push(`payment_mode = $${idx++}`);
@@ -765,8 +782,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const idIdx   = idx++;
   const cafeIdx = idx;
 
-  // Atomic read + write: capture old status and apply update in one round-trip
-  const result = await db.query(
+  const result = await client.query(
     `WITH prev AS (SELECT status FROM orders WHERE id = $${idIdx} AND cafe_id = $${cafeIdx})
      UPDATE orders SET ${setClauses.join(', ')}
      WHERE id = $${idIdx} AND cafe_id = $${cafeIdx}
@@ -778,10 +794,15 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
                (SELECT status FROM prev) AS prev_status`,
     params
   );
-  if (result.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (result.rows.length === 0) {
+    await client.query('ROLLBACK');
+    return fail(res, 'Order not found', 404);
+  }
   const fromStatus = result.rows[0].prev_status;
 
-  // Log the status transition (fire-and-forget — don't fail the request if this errors)
+  await client.query('COMMIT');
+
+  // Log the status transition (fire-and-forget)
   db.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
      VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -797,7 +818,6 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
-  // On first paid transition: record commission amount, payment_mode, and commission_status
   if (status === 'paid' && fromStatus !== 'paid') {
     db.query(
       `SELECT customer_phone, final_amount, platform_fee, razorpay_transfer_id, payment_mode
@@ -808,13 +828,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
               razorpay_transfer_id: transferId,
               payment_mode: dbPaymentMode } = fullOrder.rows[0];
 
-      // Use the platform_fee calculated at order-creation time — already includes
-      // the correct per-café rate and is what the customer was shown on their bill.
       const commissionAmount = parseFloat(platform_fee || 0);
-
-      // Determine how this commission will be collected:
-      //   auto_deducted → Razorpay transfer already sent to café (online prepaid order)
-      //   cash_due      → in-person payment; café owes DineVerse this amount
       const resolvedMode     = payment_mode || dbPaymentMode || 'cash';
       const commissionStatus = transferId ? 'auto_deducted' : 'cash_due';
 
@@ -837,6 +851,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   }
 
   ok(res, { order: updatedOrder });
+
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 // ─── Owner: dashboard stats ───────────────────────────────────

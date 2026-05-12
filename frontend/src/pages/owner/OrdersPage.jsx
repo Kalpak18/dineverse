@@ -86,6 +86,8 @@ export default function OrdersPage() {
   const [chatMessages, setChatMessages] = useState({}); // { orderId: Message[] }
   const [chatLoading, setChatLoading] = useState({}); // { orderId: bool }
   const socketRef = useRef(null);
+  // Tracks order IDs currently being mutated — prevents double-tap / concurrent updates
+  const inFlightRef = useRef(new Set());
 
   const loadOrders = useCallback(async () => {
     try {
@@ -158,6 +160,8 @@ export default function OrdersPage() {
   const billingBill = billingModal?.bill || null;
 
   const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null) => {
+    if (inFlightRef.current.has(orderId)) return;
+    inFlightRef.current.add(orderId);
     try {
       await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode);
       setOrders((prev) =>
@@ -168,25 +172,36 @@ export default function OrdersPage() {
       toast.success(`Order marked as ${newStatus}`);
     } catch (err) {
       toast.error(getApiError(err));
-      throw err; // re-throw so callers (BillingModal, handleCollect) can detect failure
+      throw err;
+    } finally {
+      inFlightRef.current.delete(orderId);
     }
   };
 
   const handleKitchenModeToggle = async (orderId, mode) => {
+    if (inFlightRef.current.has(`km:${orderId}`)) return;
+    inFlightRef.current.add(`km:${orderId}`);
     try {
       const { data } = await setKitchenMode(orderId, mode);
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
       toast.error(getApiError(err));
+    } finally {
+      inFlightRef.current.delete(`km:${orderId}`);
     }
   };
 
   const handleItemStatusUpdate = async (orderId, itemId, status) => {
+    const key = `item:${orderId}:${itemId}`;
+    if (inFlightRef.current.has(key)) return;
+    inFlightRef.current.add(key);
     try {
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
     } catch (err) {
       toast.error(getApiError(err));
+    } finally {
+      inFlightRef.current.delete(key);
     }
   };
 
