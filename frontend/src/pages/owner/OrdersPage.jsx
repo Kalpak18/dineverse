@@ -1338,16 +1338,16 @@ const PAYMENT_MODES = [
   { value: 'card',    label: '💳 Card / POS' },
 ];
 
-function BillingModal({ bill, onConfirm, onClose }) {
+function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   // step: 'collect' → select payment & mark paid  |  'receipt' → print / done
-  const [step, setStep]           = useState('collect');
+  const [step, setStep]           = useState(initialStep);
   const [confirming, setConfirming] = useState(false);
   const [cashInput, setCashInput] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
-  // saved values carried into receipt step
-  const [paidMode, setPaidMode]   = useState(null);
+  // saved values carried into receipt step (pre-seeded when viewing history)
+  const [paidMode, setPaidMode]   = useState(bill.paidMode || null);
   const [paidCash, setPaidCash]   = useState(null);
 
   const grandTotal  = bill.total;
@@ -1777,7 +1777,33 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const [search, setSearch] = useState('');
   const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
+  const [receiptBill, setReceiptBill] = useState(null);
   const setDateRange = onDateRangeChange;
+
+  const openReceipt = (order) => {
+    const taxAmt = parseFloat(order.tax_amount) || 0;
+    const total  = parseFloat(order.total_amount) || 0;
+    setReceiptBill({
+      isTakeaway:     order.order_type === 'takeaway',
+      customerName:   order.customer_name,
+      orderNumber:    order.daily_order_number,
+      table_number:   order.table_number,
+      subtotal:        Math.max(0, total - taxAmt),
+      taxAmount:       taxAmt,
+      taxRate:         parseFloat(order.tax_rate) || 0,
+      discountAmount:  parseFloat(order.discount_amount) || 0,
+      tipAmount:       parseFloat(order.tip_amount) || 0,
+      deliveryFee:     parseFloat(order.delivery_fee) || 0,
+      platformFee:     parseFloat(order.platform_fee) || 0,
+      platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
+      total:           parseFloat(order.final_amount || order.total_amount) || 0,
+      paidMode:        order.payment_mode || 'cash',
+      aggregatedItems: (order.items || []).map((i) => ({
+        name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
+      })),
+      orders: [order],
+    });
+  };
 
   useEffect(() => { setVisibleCount(HISTORY_PAGE_SIZE); }, [dateRange, search]);
 
@@ -1866,6 +1892,15 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
         </div>
       )}
 
+      {receiptBill && (
+        <BillingModal
+          bill={receiptBill}
+          onConfirm={null}
+          onClose={() => setReceiptBill(null)}
+          initialStep="receipt"
+        />
+      )}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.slice(0, visibleCount).map((order) => {
           const token = order.daily_order_number;
@@ -1900,29 +1935,45 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                   )}
                 </div>
               </div>
-              <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between">
+              <div className="px-4 py-3 border-t border-gray-50 flex items-center justify-between gap-2">
                 <span className="font-bold text-gray-900 text-sm">{c(order.final_amount || order.total_amount)}</span>
-                <button
-                  onClick={() => printBill({
-                    cafe,
-                    isPaid: true,
-                    bill: {
-                      isTakeaway: order.order_type === 'takeaway',
-                      customerName: order.customer_name,
-                      orderNumber: token,
-                      table_number: order.table_number,
-                      total: parseFloat(order.final_amount || order.total_amount),
-                      aggregatedItems: (order.items || []).map((i) => ({
-                        name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
-                      })),
-                      orders: [order],
-                    },
-                  })}
-                  className="text-xs px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
-                  title="Print bill"
-                >
-                  🖨️ Print
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openReceipt(order)}
+                    className="text-xs px-3 py-1.5 rounded-xl bg-purple-50 text-purple-600 hover:bg-purple-100 transition-colors font-medium"
+                  >
+                    🧾 Receipt
+                  </button>
+                  <button
+                    onClick={() => printBill({
+                      cafe,
+                      isPaid: true,
+                      bill: {
+                        isTakeaway: order.order_type === 'takeaway',
+                        customerName: order.customer_name,
+                        orderNumber: token,
+                        table_number: order.table_number,
+                        subtotal:        Math.max(0, (parseFloat(order.total_amount) || 0) - (parseFloat(order.tax_amount) || 0)),
+                        taxAmount:       parseFloat(order.tax_amount) || 0,
+                        taxRate:         parseFloat(order.tax_rate) || 0,
+                        discountAmount:  parseFloat(order.discount_amount) || 0,
+                        tipAmount:       parseFloat(order.tip_amount) || 0,
+                        deliveryFee:     parseFloat(order.delivery_fee) || 0,
+                        platformFee:     parseFloat(order.platform_fee) || 0,
+                        platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
+                        total: parseFloat(order.final_amount || order.total_amount),
+                        aggregatedItems: (order.items || []).map((i) => ({
+                          name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
+                        })),
+                        orders: [order],
+                      },
+                    })}
+                    className="text-xs px-3 py-1.5 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors font-medium"
+                    title="Print bill"
+                  >
+                    🖨️ Print
+                  </button>
+                </div>
               </div>
             </div>
           );
