@@ -3,6 +3,7 @@ import {
   adminGetPlatformOffers, adminCreatePlatformOffer,
   adminUpdatePlatformOffer, adminDeletePlatformOffer,
   adminGetPlatformOfferStats, adminGetCafes,
+  adminListOwnerOffers, adminToggleOwnerOffer,
 } from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -33,6 +34,31 @@ export default function AdminOffersPage() {
   const [saving, setSaving]       = useState(false);
   const [stats, setStats]         = useState(null);
   const [statsId, setStatsId]     = useState(null);
+  const [tab, setTab]             = useState('platform'); // 'platform' | 'restaurant'
+  const [ownerOffers, setOwnerOffers] = useState([]);
+  const [ownerFilter, setOwnerFilter] = useState({ cafeId: '', active: 'true' });
+
+  const loadOwnerOffers = async () => {
+    try {
+      const params = {};
+      if (ownerFilter.cafeId) params.cafe_id = ownerFilter.cafeId;
+      if (ownerFilter.active === 'true' || ownerFilter.active === 'false') params.active = ownerFilter.active;
+      const { data } = await adminListOwnerOffers(params);
+      setOwnerOffers(data.offers || []);
+    } catch { toast.error('Failed to load restaurant offers'); }
+  };
+  useEffect(() => {
+    if (tab === 'restaurant') loadOwnerOffers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, ownerFilter]);
+
+  const toggleOwnerOffer = async (offer) => {
+    try {
+      await adminToggleOwnerOffer(offer.id, !offer.is_active);
+      setOwnerOffers((prev) => prev.map((o) => o.id === offer.id ? { ...o, is_active: !o.is_active } : o));
+      toast.success(`Offer ${offer.is_active ? 'paused' : 'activated'}`);
+    } catch (e) { toast.error(e.response?.data?.message || 'Toggle failed'); }
+  };
 
   const load = async () => {
     try {
@@ -147,18 +173,111 @@ export default function AdminOffersPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-5xl">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Platform Offers</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Create DineVerse-funded campaigns. Discounts are absorbed by platform, netted against café commission.</p>
+          <h1 className="text-2xl font-bold text-white">Offers</h1>
+          <p className="text-sm text-gray-400 mt-0.5">
+            {tab === 'platform'
+              ? 'DineVerse-funded campaigns. Discounts absorbed by platform, netted against café commission.'
+              : 'Read-only view of restaurant-funded offers. Activate/pause to moderate but content stays with the café.'}
+          </p>
         </div>
-        <button onClick={openCreate}
-          className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition-colors">
-          + New Campaign
-        </button>
+        {tab === 'platform' && (
+          <button onClick={openCreate}
+            className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition-colors flex-shrink-0">
+            + New Campaign
+          </button>
+        )}
       </div>
 
-      {/* Offer list */}
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-900 border border-gray-800 rounded-xl p-1 w-fit">
+        {[
+          { v: 'platform',   l: '⚡ DineVerse Offers',   c: offers.length },
+          { v: 'restaurant', l: '🏷️ Restaurant Offers', c: ownerOffers.length || '—' },
+        ].map(({ v, l, c }) => (
+          <button key={v} onClick={() => setTab(v)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tab === v ? 'bg-orange-500 text-white' : 'text-gray-400 hover:text-white'
+            }`}>
+            {l} <span className="opacity-70 ml-1">({c})</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── RESTAURANT OFFERS TAB ── */}
+      {tab === 'restaurant' && (
+        <div className="space-y-3">
+          <div className="bg-gray-900 border border-gray-800 rounded-2xl p-4 flex flex-wrap items-center gap-3">
+            <span className="text-xs text-gray-400 font-semibold uppercase tracking-wide">Filter</span>
+            <select value={ownerFilter.cafeId} onChange={(e) => setOwnerFilter((f) => ({ ...f, cafeId: e.target.value }))}
+              className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-500">
+              <option value="">All cafés</option>
+              {cafes.map((c) => <option key={c.id} value={c.id}>{c.name} · {c.city || ''}</option>)}
+            </select>
+            <select value={ownerFilter.active} onChange={(e) => setOwnerFilter((f) => ({ ...f, active: e.target.value }))}
+              className="bg-gray-800 border border-gray-700 text-white text-xs rounded-lg px-3 py-1.5 focus:outline-none focus:border-orange-500">
+              <option value="true">Active only</option>
+              <option value="false">Inactive only</option>
+              <option value="">All statuses</option>
+            </select>
+            <span className="ml-auto text-xs text-gray-500">{ownerOffers.length} {ownerOffers.length === 1 ? 'offer' : 'offers'}</span>
+          </div>
+
+          {ownerOffers.length === 0 && (
+            <div className="text-center py-16 text-gray-500">No restaurant offers match these filters.</div>
+          )}
+
+          {ownerOffers.map((o) => (
+            <div key={o.id} className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-white font-bold">{o.name}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900 text-orange-300 font-medium">
+                      {o.offer_type === 'percentage' ? '% Off'
+                        : o.offer_type === 'fixed' ? '₹ Off'
+                        : o.offer_type === 'combo' ? 'Combo'
+                        : o.offer_type === 'bogo' ? 'BOGO'
+                        : o.offer_type === 'first_order' ? 'First Order'
+                        : o.offer_type}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${o.is_active ? 'bg-green-900 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+                      {o.is_active ? 'Active' : 'Paused'}
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-300 mt-1">{o.cafe_name} <span className="text-gray-500">· {o.cafe_city || '—'}</span></p>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-400">
+                    <span className="text-orange-400 font-semibold">
+                      {o.offer_type === 'combo' ? `Combo ₹${fmt(o.combo_price)}`
+                        : o.offer_type === 'percentage' ? `${o.discount_value}% off`
+                        : `₹${o.discount_value} off`}
+                      {o.max_discount_amount ? ` (max ₹${fmt(o.max_discount_amount)})` : ''}
+                    </span>
+                    {o.min_order_amount > 0 && <span>Min ₹{fmt(o.min_order_amount)}</span>}
+                    {o.coupon_code && <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">{o.coupon_code}</span>}
+                    {o.start_date && <span>From {o.start_date}</span>}
+                    {o.end_date && <span>Until {o.end_date}</span>}
+                    {o.max_uses && <span>{o.uses_count}/{o.max_uses} uses</span>}
+                  </div>
+                  {o.description && <p className="text-xs text-gray-500 mt-1">{o.description}</p>}
+                </div>
+                <button onClick={() => toggleOwnerOffer(o)}
+                  className={`flex-shrink-0 px-3 py-1.5 text-xs rounded-lg transition-colors ${
+                    o.is_active
+                      ? 'bg-yellow-900 text-yellow-300 hover:bg-yellow-800'
+                      : 'bg-green-900 text-green-300 hover:bg-green-800'
+                  }`}>
+                  {o.is_active ? 'Pause' : 'Activate'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── PLATFORM OFFERS TAB ── */}
+      {tab === 'platform' && (
       <div className="space-y-3">
         {offers.length === 0 && (
           <div className="text-center py-16 text-gray-500">No platform offers yet. Create your first campaign.</div>
@@ -232,6 +351,7 @@ export default function AdminOffersPage() {
           </div>
         ))}
       </div>
+      )}
 
       {/* Create / Edit form modal */}
       {showForm && (

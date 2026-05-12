@@ -127,6 +127,9 @@ export const adminCreatePlatformOffer    = (data)   => adminApi.post('/admin/off
 export const adminUpdatePlatformOffer    = (id, data) => adminApi.patch(`/admin/offers/${id}`, data);
 export const adminDeletePlatformOffer    = (id)     => adminApi.delete(`/admin/offers/${id}`);
 export const adminGetPlatformOfferStats  = (id)     => adminApi.get(`/admin/offers/${id}/stats`);
+// Owner offers — admin oversight (read + toggle active)
+export const adminListOwnerOffers        = (params) => adminApi.get('/admin/owner-offers', { params });
+export const adminToggleOwnerOffer       = (id, is_active) => adminApi.patch(`/admin/owner-offers/${id}/toggle`, { is_active });
 
 // ─── Cafe open/close toggle (owner) ──────────────────────────
 export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');

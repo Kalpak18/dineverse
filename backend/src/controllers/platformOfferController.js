@@ -163,6 +163,57 @@ exports.deletePlatformOffer = asyncHandler(async (req, res) => {
   ok(res, {}, 'Platform offer deleted');
 });
 
+// ─── Admin: list ALL owner-created offers across every café ─────
+// Read-only inventory view. Admin can toggle active/inactive (e.g. to disable
+// a misleading offer) but cannot edit the offer's content — that stays with
+// the café owner who created it.
+exports.adminListOwnerOffers = asyncHandler(async (req, res) => {
+  const { cafe_id, active } = req.query;
+  const params = [];
+  const where = [];
+  if (cafe_id) { params.push(cafe_id); where.push(`o.cafe_id = $${params.length}`); }
+  if (active === 'true')  where.push('o.is_active = true');
+  if (active === 'false') where.push('o.is_active = false');
+
+  const sql = `
+    SELECT o.id, o.cafe_id, o.name, o.description, o.offer_type,
+           o.discount_value, o.combo_price, o.coupon_code,
+           o.min_order_amount, o.max_discount_amount, o.max_uses, o.uses_count,
+           o.start_date, o.end_date, o.is_active, o.created_at,
+           c.name AS cafe_name, c.slug AS cafe_slug, c.city AS cafe_city
+    FROM offers o
+    JOIN cafes c ON c.id = o.cafe_id
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY o.created_at DESC
+    LIMIT 500
+  `;
+  const { rows } = await db.query(sql, params);
+  ok(res, { offers: rows });
+});
+
+// ─── Admin: toggle active flag on an owner offer ─────────────────
+// Used to quickly disable a misleading or fraudulent offer without removing it.
+// Admin actions are audited via logger so the café owner can see why.
+exports.adminToggleOwnerOffer = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+  if (typeof is_active !== 'boolean') return fail(res, 'is_active (boolean) required', 400);
+
+  const { rows } = await db.query(
+    `UPDATE offers SET is_active = $1 WHERE id = $2
+     RETURNING id, name, cafe_id, is_active`,
+    [is_active, id]
+  );
+  if (!rows.length) return fail(res, 'Offer not found', 404);
+
+  // Audit trail
+  const logger = require('../utils/logger');
+  logger.warn('Admin toggled owner offer %s (cafe %s) to is_active=%s',
+    rows[0].name, rows[0].cafe_id, is_active);
+
+  ok(res, { offer: rows[0] }, `Offer ${is_active ? 'activated' : 'paused'}`);
+});
+
 // ─── Admin: get usage / redemption stats for a platform offer ─────
 
 exports.getPlatformOfferStats = asyncHandler(async (req, res) => {

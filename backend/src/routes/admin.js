@@ -13,6 +13,7 @@ const {
 const {
   getPlatformOffers, getPlatformOffer, createPlatformOffer,
   updatePlatformOffer, deletePlatformOffer, getPlatformOfferStats,
+  adminListOwnerOffers, adminToggleOwnerOffer,
 } = require('../controllers/platformOfferController');
 
 // Public (one-time setup + login + password reset)
@@ -51,5 +52,9 @@ router.post('/offers',            requireAdmin, createPlatformOffer);
 router.patch('/offers/:id',       requireAdmin, updatePlatformOffer);
 router.delete('/offers/:id',      requireAdmin, deletePlatformOffer);
 router.get ('/offers/:id/stats',  requireAdmin, getPlatformOfferStats);
+
+// Owner offers — admin oversight (list-only + activate/pause)
+router.get  ('/owner-offers',                  requireAdmin, adminListOwnerOffers);
+router.patch('/owner-offers/:id/toggle',       requireAdmin, adminToggleOwnerOffer);
 
 module.exports = router;
