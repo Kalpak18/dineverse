@@ -117,28 +117,27 @@ export default function ExplorePage() {
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
 
-  // Get user location on mount
+  // Get user location on mount, then immediately load nearby cafes
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setUserLat(FALLBACK_LAT);
-      setUserLng(FALLBACK_LNG);
+    const onCoords = (lat, lng) => {
+      setUserLat(lat);
+      setUserLng(lng);
       setLocLoading(false);
+      // Auto-load nearby cafes so the page isn't empty on open
+      fetchCafes('', lat, lng, true);
+      setCommitted(true);
+    };
+
+    if (!navigator.geolocation) {
+      onCoords(FALLBACK_LAT, FALLBACK_LNG);
       return;
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setUserLat(pos.coords.latitude);
-        setUserLng(pos.coords.longitude);
-        setLocLoading(false);
-      },
-      () => {
-        setUserLat(FALLBACK_LAT);
-        setUserLng(FALLBACK_LNG);
-        setLocLoading(false);
-      },
+      (pos) => onCoords(pos.coords.latitude, pos.coords.longitude),
+      ()    => onCoords(FALLBACK_LAT, FALLBACK_LNG),
       { timeout: 6000 }
     );
-  }, []);
+  }, [fetchCafes]);
 
   const fetchCafes = useCallback(async (q, lat, lng, forCommit = false) => {
     if (abortRef.current) abortRef.current = false; // signal old fetch to discard
@@ -374,16 +373,18 @@ export default function ExplorePage() {
             {cafes.length === 0 ? (
               <div className="text-center py-20">
                 <p className="text-5xl mb-4">😕</p>
-                <h2 className="text-xl font-bold text-gray-800 mb-2">No cafés found for "{query}"</h2>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">
+                  {query.trim() ? `No cafés found for "${query.trim()}"` : 'No cafés near you yet'}
+                </h2>
                 <p className="text-gray-500 text-sm">
-                  Try a different name or city
+                  {query.trim() ? 'Try a different name or city' : 'DineVerse is expanding — check back soon'}
                 </p>
               </div>
             ) : (
               <>
                 <p className="text-sm text-gray-500 mb-5">
-                  <span className="font-semibold text-gray-800">{cafes.length}</span> café{cafes.length !== 1 ? 's' : ''} matching
-                  {' '}<strong>"{query.trim()}"</strong>
+                  <span className="font-semibold text-gray-800">{cafes.length}</span> café{cafes.length !== 1 ? 's' : ''}
+                  {query.trim() ? <> matching <strong>"{query.trim()}"</strong></> : ' near you'}
                   {userLat && <span className="text-gray-400"> · sorted by distance</span>}
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
