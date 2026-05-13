@@ -170,6 +170,21 @@ exports.updateCafe = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { is_active, commission_rate } = req.body;
 
+  // Block deactivation if the café has outstanding cash commission dues
+  if (is_active === false || is_active === 'false') {
+    const cashDueRes = await db.query(
+      `SELECT COUNT(*) FROM orders WHERE cafe_id = $1 AND commission_status = 'cash_due'`,
+      [id]
+    );
+    if (parseInt(cashDueRes.rows[0].count) > 0) {
+      return fail(
+        res,
+        'Cannot deactivate: this café has outstanding commission dues. Settle all cash commissions first.',
+        400
+      );
+    }
+  }
+
   if (is_active !== undefined) {
     await db.query('UPDATE cafes SET is_active = $1 WHERE id = $2', [is_active, id]);
   }
@@ -181,7 +196,7 @@ exports.updateCafe = asyncHandler(async (req, res) => {
   }
 
   const result = await db.query(
-    `SELECT id, name, email, is_active, plan_type, plan_expiry_date FROM cafes WHERE id = $1`,
+    `SELECT id, name, email, is_active, commission_rate FROM cafes WHERE id = $1`,
     [id]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);

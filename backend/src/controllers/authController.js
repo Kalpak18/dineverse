@@ -848,16 +848,39 @@ exports.deleteCafe = asyncHandler(async (req, res) => {
     return fail(res, 'Confirmation name does not match your café name', 400);
   }
 
+  // Block if any commission is still owed to the platform
+  const cashDueRes = await db.query(
+    `SELECT COUNT(*) FROM orders WHERE cafe_id = $1 AND commission_status = 'cash_due'`,
+    [req.cafeId]
+  );
+  if (parseInt(cashDueRes.rows[0].count) > 0) {
+    return fail(
+      res,
+      'Cannot deactivate or delete: this café has outstanding commission dues. Settle all cash commissions first.',
+      400
+    );
+  }
+
   if (action === 'deactivate') {
     await db.query('UPDATE cafes SET is_active = false WHERE id = $1', [req.cafeId]);
     logger.info('Café deactivated: %s (%s)', cafe.name, req.cafeId);
     return ok(res, {}, 'Café deactivated. Contact support to reactivate.');
   }
 
-  // Hard delete — relies on CASCADE constraints on FK references
+  // Preserve order/commission history before deleting the café row.
+  // Stamp the café name onto orphaned rows so admin reports stay meaningful.
+  await db.query(
+    `UPDATE orders SET deleted_cafe_name = $1, cafe_id = NULL WHERE cafe_id = $2`,
+    [cafe.name, req.cafeId]
+  );
+  await db.query(
+    `UPDATE commission_settlements SET deleted_cafe_name = $1, cafe_id = NULL WHERE cafe_id = $2`,
+    [cafe.name, req.cafeId]
+  );
+
   await db.query('DELETE FROM cafes WHERE id = $1', [req.cafeId]);
-  logger.info('Café hard-deleted: %s (%s)', cafe.name, req.cafeId);
-  ok(res, {}, 'Café and all associated data permanently deleted.');
+  logger.info('Café hard-deleted (orders preserved): %s (%s)', cafe.name, req.cafeId);
+  ok(res, {}, 'Café permanently deleted. Historical order data has been preserved in platform records.');
 });
 
 // ─── Refresh Token ────────────────────────────────────────────
