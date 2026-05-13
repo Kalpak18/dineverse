@@ -117,37 +117,15 @@ export default function ExplorePage() {
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
 
-  // Get user location on mount, then immediately load nearby cafes
-  useEffect(() => {
-    const onCoords = (lat, lng) => {
-      setUserLat(lat);
-      setUserLng(lng);
-      setLocLoading(false);
-      // Auto-load nearby cafes so the page isn't empty on open
-      fetchCafes('', lat, lng, true);
-      setCommitted(true);
-    };
-
-    if (!navigator.geolocation) {
-      onCoords(FALLBACK_LAT, FALLBACK_LNG);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => onCoords(pos.coords.latitude, pos.coords.longitude),
-      ()    => onCoords(FALLBACK_LAT, FALLBACK_LNG),
-      { timeout: 6000 }
-    );
-  }, [fetchCafes]);
-
   const fetchCafes = useCallback(async (q, lat, lng, forCommit = false) => {
-    if (abortRef.current) abortRef.current = false; // signal old fetch to discard
+    if (abortRef.current) abortRef.current = false;
     const token = {};
     abortRef.current = token;
 
     setLoading(true);
     try {
       const { data } = await getNearbyCafes(lat, lng, { q: q || undefined });
-      if (abortRef.current !== token) return; // stale result
+      if (abortRef.current !== token) return;
       if (forCommit) {
         setCafes(data.cafes);
         setSuggestions([]);
@@ -162,6 +140,27 @@ export default function ExplorePage() {
       if (abortRef.current === token) setLoading(false);
     }
   }, []);
+
+  // Get user location on mount, then immediately load nearby cafes
+  useEffect(() => {
+    const onCoords = (lat, lng) => {
+      setUserLat(lat);
+      setUserLng(lng);
+      setLocLoading(false);
+      fetchCafes('', lat, lng, true);
+      setCommitted(true);
+    };
+
+    if (!navigator.geolocation) {
+      onCoords(FALLBACK_LAT, FALLBACK_LNG);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => onCoords(pos.coords.latitude, pos.coords.longitude),
+      ()    => onCoords(FALLBACK_LAT, FALLBACK_LNG),
+      { timeout: 6000 }
+    );
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced suggestion fetch as user types
   useEffect(() => {
