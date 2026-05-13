@@ -30,7 +30,8 @@
       "Bash(Select-Object Name)"
     ],
     "additionalDirectories": [
-      "c:\\Users\\kalpa\\.claude\\plans"
+      "c:\\Users\\kalpa\\.claude\\plans",
+      "c:\\Users\\kalpa\\.claude\\projects\\c--Users-kalpa-Desktop-foodie\\memory"
     ]
   }
 }
