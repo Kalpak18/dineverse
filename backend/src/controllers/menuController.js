@@ -13,7 +13,7 @@ exports.getCategories = asyncHandler(async (req, res) => {
     'SELECT * FROM categories WHERE cafe_id = $1 ORDER BY display_order ASC, name ASC',
     [req.cafeId]
   );
-  ok(res, { categories: result.rows });
+  ok(res, { categories: result.rows }); // flat list; parent_id included for frontend to nest if needed
 });
 
 exports.validateCategory = [
@@ -24,10 +24,21 @@ exports.createCategory = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
-  const { name, display_order } = req.body;
+  const { name, display_order, parent_id } = req.body;
+
+  // Validate parent belongs to this cafe (if provided)
+  if (parent_id) {
+    const parentCheck = await db.query(
+      'SELECT id, parent_id FROM categories WHERE id = $1 AND cafe_id = $2',
+      [parent_id, req.cafeId]
+    );
+    if (!parentCheck.rows.length) return fail(res, 'Parent category not found', 404);
+    if (parentCheck.rows[0].parent_id) return fail(res, 'Subcategories cannot have subcategories', 400);
+  }
+
   const result = await db.query(
-    'INSERT INTO categories (cafe_id, name, display_order) VALUES ($1, $2, $3) RETURNING *',
-    [req.cafeId, name, display_order || 0]
+    'INSERT INTO categories (cafe_id, name, display_order, parent_id) VALUES ($1, $2, $3, $4) RETURNING *',
+    [req.cafeId, name, display_order || 0, parent_id || null]
   );
   await bustMenuCache(req.cafeId);
   ok(res, { category: result.rows[0] }, 'Category created', 201);
@@ -35,14 +46,27 @@ exports.createCategory = asyncHandler(async (req, res) => {
 
 exports.updateCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, display_order } = req.body;
+  const { name, display_order, parent_id } = req.body;
+
+  // Validate parent (if changing it)
+  if (parent_id !== undefined && parent_id !== null) {
+    if (parent_id === id) return fail(res, 'A category cannot be its own parent', 400);
+    const parentCheck = await db.query(
+      'SELECT id, parent_id FROM categories WHERE id = $1 AND cafe_id = $2',
+      [parent_id, req.cafeId]
+    );
+    if (!parentCheck.rows.length) return fail(res, 'Parent category not found', 404);
+    if (parentCheck.rows[0].parent_id) return fail(res, 'Subcategories cannot have subcategories', 400);
+  }
+
   const result = await db.query(
     `UPDATE categories
-     SET name = COALESCE($1, name),
-         display_order = COALESCE($2, display_order)
-     WHERE id = $3 AND cafe_id = $4
+     SET name          = COALESCE($1, name),
+         display_order = COALESCE($2, display_order),
+         parent_id     = CASE WHEN $3::boolean THEN $4::uuid ELSE parent_id END
+     WHERE id = $5 AND cafe_id = $6
      RETURNING *`,
-    [name, display_order, id, req.cafeId]
+    [name || null, display_order ?? null, parent_id !== undefined, parent_id || null, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
   await bustMenuCache(req.cafeId);

@@ -60,6 +60,7 @@ export default function MenuPage() {
   const [foodFilter, setFoodFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState(null);
+  const [selectedSubCatId, setSelectedSubCatId] = useState(null); // null = show all (direct + all subs)
   const [modifierDialog, setModifierDialog] = useState({
     item: null,
     groups: [],
@@ -117,12 +118,15 @@ export default function MenuPage() {
         setMenu(menuData);
         const offersData = offersRes.data.offers || [];
         setOffers(offersData);
-        // Select first non-empty category; fall back to first if all empty
+        // Select first non-empty category (including subcategory items); fall back to first if all empty
         const hasCombos = offersData.some((o) => o.offer_type === 'combo');
         if (hasCombos) {
           setSelectedCatId('__deals__');
         } else if (menuData.length > 0) {
-          const firstNonEmpty = menuData.find((cat) => cat.items.some((i) => i.is_available));
+          const hasAvailable = (cat) =>
+            cat.items.some((i) => i.is_available) ||
+            (cat.subcategories || []).some((s) => s.items.some((i) => i.is_available));
+          const firstNonEmpty = menuData.find(hasAvailable);
           setSelectedCatId(firstNonEmpty?.id ?? menuData[0].id);
         }
       })
@@ -307,24 +311,30 @@ export default function MenuPage() {
     return [...platform, ...owner];
   }, [offers]);
 
-  // Only non-empty categories (skip categories with zero available items)
+  // All items in a category tree (direct items + subcategory items)
+  const allCatItems = (cat) => [
+    ...cat.items,
+    ...(cat.subcategories || []).flatMap((s) => s.items),
+  ];
+
+  // Only non-empty categories (skip categories with zero available items anywhere in tree)
   const categories = useMemo(() =>
     menu
-      .filter((cat) => cat.items.some((i) => i.is_available))
+      .filter((cat) => allCatItems(cat).some((i) => i.is_available))
       .map((cat) => ({
         ...cat,
-        thumbnail: cat.items.find((i) => i.image_url && i.is_available)?.image_url ?? null,
+        thumbnail: allCatItems(cat).find((i) => i.image_url && i.is_available)?.image_url ?? null,
       })),
     [menu]
   );
 
-  // Items to display — search searches across all categories
+  // Items to display — search searches across all categories (including subcategories)
   const displayItems = useMemo(() => {
     const q = search.trim().toLowerCase();
 
     if (q) {
       return menu.flatMap((cat) =>
-        cat.items
+        allCatItems(cat)
           .filter((item) => {
             if (!item.is_available) return false;
             if (foodFilter === 'veg' && !item.is_veg) return false;
@@ -341,16 +351,23 @@ export default function MenuPage() {
 
     const cat = menu.find((c) => c.id === selectedCatId);
     if (!cat) return [];
-    return cat.items.filter((item) => {
+
+    // If a subcategory is selected, show only its items; otherwise show all (direct + all subs)
+    const baseItems = selectedSubCatId
+      ? (cat.subcategories || []).find((s) => s.id === selectedSubCatId)?.items ?? []
+      : allCatItems(cat);
+
+    return baseItems.filter((item) => {
       if (!item.is_available) return false;
       if (foodFilter === 'veg' && !item.is_veg) return false;
       if (foodFilter === 'nonveg' && item.is_veg) return false;
       return true;
     });
-  }, [menu, selectedCatId, foodFilter, search]);
+  }, [menu, selectedCatId, selectedSubCatId, foodFilter, search]);
 
   const handleCategorySelect = (catId) => {
     setSelectedCatId(catId);
+    setSelectedSubCatId(null);
     setSearch('');
     contentRef.current?.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -695,6 +712,37 @@ export default function MenuPage() {
                 </p>
               )}
             </div>
+
+            {/* Subcategory chips — only shown when the selected category has subcategories */}
+            {!isSearching && selectedCat?.subcategories?.length > 0 && (
+              <div className="px-3 pb-2 flex gap-2 overflow-x-auto scrollbar-none">
+                <button
+                  onClick={() => setSelectedSubCatId(null)}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                    selectedSubCatId === null
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
+                  }`}
+                >
+                  All
+                </button>
+                {selectedCat.subcategories
+                  .filter((s) => s.items.some((i) => i.is_available))
+                  .map((sub) => (
+                    <button
+                      key={sub.id}
+                      onClick={() => setSelectedSubCatId(selectedSubCatId === sub.id ? null : sub.id)}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        selectedSubCatId === sub.id
+                          ? 'bg-brand-500 text-white border-brand-500'
+                          : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
+                      }`}
+                    >
+                      {sub.name}
+                    </button>
+                  ))}
+              </div>
+            )}
 
             {/* Items grid */}
             {displayItems.length === 0 ? (

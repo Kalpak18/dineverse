@@ -16,18 +16,31 @@ import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 
-// Group items by category, return array of { category, items[] }
+// Group items by category (supports subcategories).
+// Returns array of { ...category, items[], subcategories: [{ ...sub, items[] }] }
 function groupByCategory(items, categories) {
   const catMap = {};
-  categories.forEach((c) => { catMap[c.id] = { ...c, items: [] }; });
-  catMap['__none__'] = { id: null, name: 'Uncategorized', items: [] };
+  categories.forEach((c) => { catMap[c.id] = { ...c, items: [], subcategories: [] }; });
+  catMap['__none__'] = { id: null, name: 'Uncategorized', items: [], subcategories: [] };
+
+  // Wire subcategories into their parents
+  categories.forEach((c) => {
+    if (c.parent_id && catMap[c.parent_id]) {
+      catMap[c.parent_id].subcategories.push(catMap[c.id]);
+    }
+  });
 
   items.forEach((item) => {
     const key = item.category_id && catMap[item.category_id] ? item.category_id : '__none__';
     catMap[key].items.push(item);
   });
 
-  return Object.values(catMap).filter((g) => g.items.length > 0);
+  // Return only top-level categories (no parent_id) that have items anywhere in their tree
+  const hasItems = (cat) =>
+    cat.items.length > 0 || cat.subcategories.some((s) => s.items.length > 0);
+
+  const tops = Object.values(catMap).filter((c) => !c.parent_id);
+  return tops.filter(hasItems);
 }
 
 export default function MenuManagementPage() {
@@ -259,6 +272,7 @@ export default function MenuManagementPage() {
       {catModal !== null && (
         <CategoryModal
           category={catModal === 'new' ? null : catModal}
+          categories={categories}
           onClose={() => setCatModal(null)}
           onSaved={(saved) => {
             if (catModal === 'new') {
@@ -315,6 +329,7 @@ function FoodTypeSection({ type, label, icon, groups, collapsedGroups, onToggleG
             groups.map((group) => {
               const groupKey = `${type}-${group.id || 'none'}`;
               const isCatCollapsed = collapsedGroups[groupKey];
+              const totalCount = group.items.length + group.subcategories.reduce((s, sub) => s + sub.items.length, 0);
               return (
                 <div key={groupKey} className="bg-white">
                   {/* Level 2: Category header */}
@@ -325,25 +340,54 @@ function FoodTypeSection({ type, label, icon, groups, collapsedGroups, onToggleG
                     <div className="flex items-center gap-2">
                       <span className="text-gray-400 text-xs">└──</span>
                       <span className="font-semibold text-gray-800 text-sm">{group.name}</span>
-                      <span className="badge bg-gray-100 text-gray-500">{group.items.length}</span>
+                      <span className="badge bg-gray-100 text-gray-500">{totalCount}</span>
                     </div>
                     <span className="text-gray-300 text-xs">{isCatCollapsed ? '▼' : '▲'}</span>
                   </button>
 
-                  {/* Level 3: Items */}
                   {!isCatCollapsed && (
-                    <div className="px-5 pb-3 space-y-2">
-                      {group.items.map((item) => (
-                        <ItemRow
-                          key={item.id}
-                          item={item}
-                          onEdit={onEdit}
-                          onDelete={onDelete}
-                          onToggleAvail={onToggleAvail}
-                          onRestock={onRestock}
-                        />
-                      ))}
-                    </div>
+                    <>
+                      {/* Level 3: Direct items (no subcategory) */}
+                      {group.items.length > 0 && (
+                        <div className="px-5 pb-2 space-y-2">
+                          {group.items.map((item) => (
+                            <ItemRow key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} onToggleAvail={onToggleAvail} onRestock={onRestock} />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Level 3: Subcategories */}
+                      {group.subcategories.map((sub) => {
+                        const subKey = `${type}-sub-${sub.id}`;
+                        const isSubCollapsed = collapsedGroups[subKey];
+                        return (
+                          <div key={sub.id} className="border-t border-gray-50">
+                            <button
+                              onClick={() => onToggleGroup(subKey)}
+                              className="w-full flex items-center justify-between pl-10 pr-5 py-2 hover:bg-gray-50 transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-300 text-xs">└──</span>
+                                <span className="font-medium text-gray-600 text-sm">{sub.name}</span>
+                                <span className="badge bg-gray-100 text-gray-400 text-xs">{sub.items.length}</span>
+                              </div>
+                              <span className="text-gray-300 text-xs">{isSubCollapsed ? '▼' : '▲'}</span>
+                            </button>
+                            {!isSubCollapsed && sub.items.length > 0 && (
+                              <div className="pl-10 pr-5 pb-3 space-y-2">
+                                {sub.items.map((item) => (
+                                  <ItemRow key={item.id} item={item} onEdit={onEdit} onDelete={onDelete} onToggleAvail={onToggleAvail} onRestock={onRestock} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {totalCount === 0 && (
+                        <p className="px-5 pb-3 text-xs text-gray-400">No items yet.</p>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -658,43 +702,89 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
         </div>
 
         {/* Category — required, inline chips + create */}
-        <div>
-          <label className="label">
-            Category <span className="text-red-500">*</span>
-            {!hasCat && <span className="ml-1 text-xs text-amber-500 font-normal">— select one to unlock the rest</span>}
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {localCategories.map((c) => (
-              <button key={c.id} type="button"
-                onClick={() => setForm({ ...form, category_id: form.category_id === c.id ? '' : c.id })}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                  form.category_id === c.id
-                    ? 'bg-brand-500 text-white border-brand-500'
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                }`}>
-                {c.name}
-              </button>
-            ))}
-            {showNewCat ? (
-              <div className="flex items-center gap-1.5">
-                <input autoFocus type="text" placeholder="Category name"
-                  className="input py-1.5 text-sm w-36" value={newCatName}
-                  onChange={(e) => setNewCatName(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); } if (e.key === 'Escape') setShowNewCat(false); }} />
-                <button type="button" onClick={handleCreateCategory} disabled={creatingCat || !newCatName.trim()}
-                  className="text-xs bg-brand-500 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50">
-                  {creatingCat ? '...' : 'Add'}
-                </button>
-                <button type="button" onClick={() => setShowNewCat(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+        {(() => {
+          const topCats = localCategories.filter((c) => !c.parent_id);
+          // Resolve the "active top-level" — the selected cat itself, or its parent if it's a sub
+          const selectedCat = localCategories.find((c) => c.id === form.category_id);
+          const activeTopId = selectedCat?.parent_id || form.category_id || null;
+          const subsOfActive = localCategories.filter((c) => c.parent_id === activeTopId);
+
+          const selectTop = (id) => {
+            // If re-clicking the same top, deselect
+            if (activeTopId === id && !selectedCat?.parent_id) {
+              setForm({ ...form, category_id: '' });
+            } else {
+              // Select the top category (clear any sub selection)
+              setForm({ ...form, category_id: id });
+            }
+          };
+
+          const selectSub = (subId) => {
+            setForm({ ...form, category_id: form.category_id === subId ? activeTopId : subId });
+          };
+
+          return (
+            <div className="space-y-2">
+              <div>
+                <label className="label">
+                  Category <span className="text-red-500">*</span>
+                  {!hasCat && <span className="ml-1 text-xs text-amber-500 font-normal">— select one to unlock the rest</span>}
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {topCats.map((c) => (
+                    <button key={c.id} type="button"
+                      onClick={() => selectTop(c.id)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                        activeTopId === c.id
+                          ? 'bg-brand-500 text-white border-brand-500'
+                          : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                      }`}>
+                      {c.name}
+                    </button>
+                  ))}
+                  {showNewCat ? (
+                    <div className="flex items-center gap-1.5">
+                      <input autoFocus type="text" placeholder="Category name"
+                        className="input py-1.5 text-sm w-36" value={newCatName}
+                        onChange={(e) => setNewCatName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); } if (e.key === 'Escape') setShowNewCat(false); }} />
+                      <button type="button" onClick={handleCreateCategory} disabled={creatingCat || !newCatName.trim()}
+                        className="text-xs bg-brand-500 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50">
+                        {creatingCat ? '...' : 'Add'}
+                      </button>
+                      <button type="button" onClick={() => setShowNewCat(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setShowNewCat(true)}
+                      className="px-3 py-1.5 rounded-full text-sm font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
+                      + New
+                    </button>
+                  )}
+                </div>
               </div>
-            ) : (
-              <button type="button" onClick={() => setShowNewCat(true)}
-                className="px-3 py-1.5 rounded-full text-sm font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
-                + New
-              </button>
-            )}
-          </div>
-        </div>
+
+              {/* Subcategory chips — appear only when a top category with subs is selected */}
+              {activeTopId && subsOfActive.length > 0 && (
+                <div className="pl-3 border-l-2 border-brand-100">
+                  <p className="text-xs text-gray-400 mb-1.5">Subcategory <span className="text-gray-300">(optional)</span></p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {subsOfActive.map((sub) => (
+                      <button key={sub.id} type="button"
+                        onClick={() => selectSub(sub.id)}
+                        className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                          form.category_id === sub.id
+                            ? 'bg-brand-400 text-white border-brand-400'
+                            : 'bg-white text-gray-500 border-gray-200 hover:border-brand-300'
+                        }`}>
+                        {sub.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Everything below is locked until a category is chosen */}
         <fieldset disabled={detailsLocked} className={`space-y-4 transition-opacity ${detailsLocked ? 'opacity-40 pointer-events-none select-none' : ''}`}>
@@ -876,12 +966,16 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
 }
 
 /* ── Category Modal ── */
-function CategoryModal({ category, onClose, onSaved }) {
+function CategoryModal({ category, categories = [], onClose, onSaved }) {
   const [name, setName] = useState(category?.name || '');
+  const [parentId, setParentId] = useState(category?.parent_id || null);
   const [saving, setSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(Boolean(category));
   const [allModifierGroups, setAllModifierGroups] = useState([]);
   const [attachedGroupIds, setAttachedGroupIds] = useState([]);
+
+  // Only top-level categories can be parents (no sub-of-sub); exclude self when editing
+  const parentOptions = categories.filter((c) => !c.parent_id && c.id !== category?.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -916,8 +1010,8 @@ function CategoryModal({ category, onClose, onSaved }) {
     setSaving(true);
     try {
       const { data } = category
-        ? await updateCategory(category.id, { name })
-        : await createCategory({ name });
+        ? await updateCategory(category.id, { name, parent_id: parentId })
+        : await createCategory({ name, parent_id: parentId });
       await setCategoryModifierGroups(data.category.id, attachedGroupIds);
       toast.success(category ? 'Category updated' : 'Category added');
       onSaved(data.category);
@@ -936,6 +1030,38 @@ function CategoryModal({ category, onClose, onSaved }) {
           <p className="text-xs text-gray-400 mb-2">e.g. Momos, Pizza, Burgers — shared across Veg & Non-Veg</p>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus required />
         </div>
+        {parentOptions.length > 0 && (
+          <div>
+            <label className="label">Parent Category <span className="text-gray-400 font-normal">(optional — makes this a subcategory)</span></label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => setParentId(null)}
+                className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                  parentId === null
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                }`}
+              >
+                None (top-level)
+              </button>
+              {parentOptions.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setParentId(parentId === c.id ? null : c.id)}
+                  className={`px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    parentId === c.id
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                  }`}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="border border-gray-200 rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div>

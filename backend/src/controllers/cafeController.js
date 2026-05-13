@@ -165,7 +165,7 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
 
   const [categoriesResult, itemsResult] = await Promise.all([
     db.query(
-      `SELECT id, name, display_order FROM categories
+      `SELECT id, name, display_order, parent_id FROM categories
        WHERE cafe_id = $1
        ORDER BY display_order ASC, name ASC`,
       [cafeId]
@@ -180,14 +180,29 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  const menu = categoriesResult.rows.map((cat) => ({
-    ...cat,
-    items: itemsResult.rows.filter((item) => item.category_id === cat.id),
-  }));
+  const allCats = categoriesResult.rows;
+  const topLevel = allCats.filter((c) => !c.parent_id);
+  const subMap = {}; // parent_id -> subcategory[]
+  allCats.filter((c) => c.parent_id).forEach((c) => {
+    if (!subMap[c.parent_id]) subMap[c.parent_id] = [];
+    subMap[c.parent_id].push(c);
+  });
 
-  const uncategorized = itemsResult.rows.filter((item) => !item.category_id);
+  const menu = topLevel.map((cat) => {
+    const subs = (subMap[cat.id] || []).map((sub) => ({
+      ...sub,
+      items: itemsResult.rows.filter((item) => item.category_id === sub.id),
+    }));
+    const directItems = itemsResult.rows.filter((item) => item.category_id === cat.id);
+    return { ...cat, subcategories: subs, items: directItems };
+  });
+
+  // Items assigned to a subcategory's parent but belonging to an orphaned sub are already covered.
+  // Items with no category at all go into Other.
+  const categorizedIds = new Set(allCats.map((c) => c.id));
+  const uncategorized = itemsResult.rows.filter((item) => !item.category_id || !categorizedIds.has(item.category_id));
   if (uncategorized.length > 0) {
-    menu.push({ id: null, name: 'Other', display_order: 999, items: uncategorized });
+    menu.push({ id: null, name: 'Other', display_order: 999, subcategories: [], items: uncategorized });
   }
 
   await cache.set(cacheKey, menu, 30_000);
