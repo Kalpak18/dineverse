@@ -3,7 +3,8 @@ import {
   getCategories, createCategory, updateCategory, deleteCategory,
   getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability,
   updateStock,
-  getModifierGroups, getItemModifierGroups, setItemModifierGroups,
+  getModifierGroups, createModifierGroup, createModifierOption,
+  getItemModifierGroups, setItemModifierGroups,
   getCategoryModifierGroups, setCategoryModifierGroups,
   getItemVariants, saveItemVariants,
 } from '../../services/api';
@@ -469,6 +470,12 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
   const [attachedGroupIds, setAttachedGroupIds] = useState([]);
   const [variantRows, setVariantRows] = useState([]);
 
+  // Inline group creation state
+  const [showInlineGroup, setShowInlineGroup] = useState(false);
+  const [inlineGroup, setInlineGroup] = useState({ name: '', selection_type: 'single', is_required: false });
+  const [inlineGroupSaving, setInlineGroupSaving] = useState(false);
+  const [inlineOptionRows, setInlineOptionRows] = useState([{ name: '', price: '0' }]);
+
   useEffect(() => {
     let cancelled = false;
     const loadModifierConfig = async () => {
@@ -500,6 +507,40 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     setAttachedGroupIds((prev) =>
       prev.includes(groupId) ? prev.filter((id) => id !== groupId) : [...prev, groupId]
     );
+  };
+
+  const handleInlineGroupSave = async () => {
+    if (!inlineGroup.name.trim()) { toast.error('Group name is required'); return; }
+    setInlineGroupSaving(true);
+    try {
+      const { data } = await createModifierGroup({
+        name: inlineGroup.name.trim(),
+        selection_type: inlineGroup.selection_type,
+        is_required: inlineGroup.is_required,
+        min_selections: 0,
+        max_selections: inlineGroup.selection_type === 'single' ? 1 : 10,
+      });
+      const newGroup = data.group;
+      const validOptions = inlineOptionRows.filter((o) => o.name.trim());
+      if (validOptions.length) {
+        await Promise.all(
+          validOptions.map((o) =>
+            createModifierOption(newGroup.id, { name: o.name.trim(), price: parseFloat(o.price) || 0 })
+          )
+        );
+      }
+      const refreshed = await getModifierGroups();
+      setAllModifierGroups(refreshed.data.groups || []);
+      setAttachedGroupIds((prev) => [...prev, newGroup.id]);
+      setInlineGroup({ name: '', selection_type: 'single', is_required: false });
+      setInlineOptionRows([{ name: '', price: '0' }]);
+      setShowInlineGroup(false);
+      toast.success(`"${newGroup.name}" created and attached`);
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setInlineGroupSaving(false);
+    }
   };
 
   const addVariantRow = () => setVariantRows((prev) => [...prev, { name: '', price: '' }]);
@@ -738,25 +779,140 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
               </div>
               {configLoading && <span className="text-xs text-gray-400">Loading...</span>}
             </div>
-            {allModifierGroups.length === 0 ? (
-              <p className="text-xs text-gray-400 mt-2">No add-on groups yet. Create them from the Add-ons page, then attach them here.</p>
-            ) : (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {allModifierGroups.map((group) => (
+
+            {/* Group pills + New Group button */}
+            <div className="mt-2 flex flex-wrap gap-2">
+              {allModifierGroups.map((group) => (
+                <button
+                  key={group.id}
+                  type="button"
+                  onClick={() => toggleAttachedGroup(group.id)}
+                  className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                    attachedGroupIds.includes(group.id)
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                  }`}
+                >
+                  {group.name}
+                  {group.is_required ? ' · Required' : ''}
+                </button>
+              ))}
+
+              {/* Inline group creation trigger */}
+              {!showInlineGroup && (
+                <button
+                  type="button"
+                  onClick={() => setShowInlineGroup(true)}
+                  className="px-2.5 py-1.5 rounded-full border border-dashed border-gray-300 text-xs font-medium text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors"
+                >
+                  + New Group
+                </button>
+              )}
+            </div>
+
+            {/* Inline group creation form */}
+            {showInlineGroup && (
+              <div className="mt-3 border border-brand-200 rounded-xl p-3 space-y-3 bg-orange-50/40">
+                <p className="text-xs font-semibold text-gray-700">New add-on group</p>
+
+                {/* Group name */}
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Group name (e.g. Spice Level, Add-ons)"
+                  className="input text-sm"
+                  value={inlineGroup.name}
+                  onChange={(e) => setInlineGroup((g) => ({ ...g, name: e.target.value }))}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setShowInlineGroup(false); }}
+                />
+
+                {/* Single / Multiple toggle */}
+                <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs">
                   <button
-                    key={group.id}
                     type="button"
-                    onClick={() => toggleAttachedGroup(group.id)}
-                    className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                      attachedGroupIds.includes(group.id)
-                        ? 'bg-brand-500 text-white border-brand-500'
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                    }`}
+                    onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'single' }))}
+                    className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'single' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
                   >
-                    {group.name}
-                    {group.is_required ? ' · Required' : ''}
+                    Single choice
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'multiple' }))}
+                    className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'multiple' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}
+                  >
+                    Multiple choice
+                  </button>
+                </div>
+
+                {/* Required toggle */}
+                <label className="flex items-center gap-2 text-xs cursor-pointer text-gray-600">
+                  <input
+                    type="checkbox"
+                    className="rounded"
+                    checked={inlineGroup.is_required}
+                    onChange={(e) => setInlineGroup((g) => ({ ...g, is_required: e.target.checked }))}
+                  />
+                  Required — customer must pick before ordering
+                </label>
+
+                {/* Options */}
+                <div>
+                  <p className="text-xs font-medium text-gray-600 mb-1.5">Options</p>
+                  <div className="space-y-1.5">
+                    {inlineOptionRows.map((opt, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_90px_auto] gap-1.5">
+                        <input
+                          type="text"
+                          placeholder={`Option ${idx + 1}`}
+                          className="input text-xs py-1.5"
+                          value={opt.name}
+                          onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
+                        />
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="+price"
+                          className="input text-xs py-1.5"
+                          value={opt.price}
+                          onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, price: e.target.value } : r))}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setInlineOptionRows((rows) => rows.filter((_, i) => i !== idx))}
+                          className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-sm"
+                          aria-label="Remove option"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInlineOptionRows((rows) => [...rows, { name: '', price: '0' }])}
+                    className="mt-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700"
+                  >
+                    + Add option
+                  </button>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleInlineGroupSave}
+                    disabled={inlineGroupSaving || !inlineGroup.name.trim()}
+                    className="flex-1 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold disabled:opacity-50 hover:bg-brand-600 transition-colors"
+                  >
+                    {inlineGroupSaving ? 'Saving…' : 'Create & Attach'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowInlineGroup(false); setInlineGroup({ name: '', selection_type: 'single', is_required: false }); setInlineOptionRows([{ name: '', price: '0' }]); }}
+                    className="px-4 py-2 rounded-xl border border-gray-200 text-xs text-gray-500 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>

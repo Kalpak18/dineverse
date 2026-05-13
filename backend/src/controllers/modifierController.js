@@ -160,7 +160,7 @@ exports.setItemGroups = asyncHandler(async (req, res) => {
   const { group_ids = [] } = req.body; // ordered array of group UUIDs
   if (!Array.isArray(group_ids)) return fail(res, 'group_ids must be an array', 400);
   const uniqueGroupIds = [...new Set(group_ids.filter(Boolean))];
-  const client = await db.getClient();
+  const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const itemCheck = await client.query(
@@ -234,7 +234,7 @@ exports.setCategoryGroups = asyncHandler(async (req, res) => {
   const { group_ids = [] } = req.body;
   if (!Array.isArray(group_ids)) return fail(res, 'group_ids must be an array', 400);
   const uniqueGroupIds = [...new Set(group_ids.filter(Boolean))];
-  const client = await db.getClient();
+  const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     const categoryCheck = await client.query(
@@ -293,7 +293,7 @@ exports.saveVariants = asyncHandler(async (req, res) => {
   const mRes = await db.query(`SELECT id FROM menu_items WHERE id = $1 AND cafe_id = $2`, [itemId, req.cafeId]);
   if (!mRes.rows.length) return fail(res, 'Item not found', 404);
 
-  const client = await db.getClient();
+  const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
     await client.query(`DELETE FROM item_variants WHERE item_id = $1`, [itemId]);
