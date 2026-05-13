@@ -60,7 +60,6 @@ export default function MenuPage() {
   const [foodFilter, setFoodFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState(null);
-  const [selectedSubCatId, setSelectedSubCatId] = useState(null); // null = show all (direct + all subs)
   const [modifierDialog, setModifierDialog] = useState({
     item: null,
     groups: [],
@@ -328,46 +327,36 @@ export default function MenuPage() {
     [menu]
   );
 
-  // Items to display — search searches across all categories (including subcategories)
+  // Flat list used only in search mode — searches across all categories including subcategories
   const displayItems = useMemo(() => {
     const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return menu.flatMap((cat) =>
+      allCatItems(cat)
+        .filter((item) => {
+          if (!item.is_available) return false;
+          if (foodFilter === 'veg' && !item.is_veg) return false;
+          if (foodFilter === 'nonveg' && item.is_veg) return false;
+          return (
+            item.name.toLowerCase().includes(q) ||
+            (item.description || '').toLowerCase().includes(q) ||
+            cat.name.toLowerCase().includes(q)
+          );
+        })
+        .map((item) => ({ ...item, _catName: cat.name }))
+    );
+  }, [menu, foodFilter, search]);
 
-    if (q) {
-      return menu.flatMap((cat) =>
-        allCatItems(cat)
-          .filter((item) => {
-            if (!item.is_available) return false;
-            if (foodFilter === 'veg' && !item.is_veg) return false;
-            if (foodFilter === 'nonveg' && item.is_veg) return false;
-            return (
-              item.name.toLowerCase().includes(q) ||
-              (item.description || '').toLowerCase().includes(q) ||
-              cat.name.toLowerCase().includes(q)
-            );
-          })
-          .map((item) => ({ ...item, _catName: cat.name }))
-      );
-    }
-
-    const cat = menu.find((c) => c.id === selectedCatId);
-    if (!cat) return [];
-
-    // If a subcategory is selected, show only its items; otherwise show all (direct + all subs)
-    const baseItems = selectedSubCatId
-      ? (cat.subcategories || []).find((s) => s.id === selectedSubCatId)?.items ?? []
-      : allCatItems(cat);
-
-    return baseItems.filter((item) => {
-      if (!item.is_available) return false;
-      if (foodFilter === 'veg' && !item.is_veg) return false;
-      if (foodFilter === 'nonveg' && item.is_veg) return false;
-      return true;
-    });
-  }, [menu, selectedCatId, selectedSubCatId, foodFilter, search]);
+  // Filter helper for tree-mode items
+  const filterItem = (item) => {
+    if (!item.is_available) return false;
+    if (foodFilter === 'veg' && !item.is_veg) return false;
+    if (foodFilter === 'nonveg' && item.is_veg) return false;
+    return true;
+  };
 
   const handleCategorySelect = (catId) => {
     setSelectedCatId(catId);
-    setSelectedSubCatId(null);
     setSearch('');
     contentRef.current?.scrollTo({ top: 0, behavior: 'instant' });
   };
@@ -693,96 +682,109 @@ export default function MenuPage() {
             </div>
             <div className="h-28" />
           </>
-        ) : (
+        ) : isSearching ? (
+          /* ── Search results — flat grid with category label ── */
           <>
-            {/* Section heading */}
             <div className="px-4 py-3">
-              {isSearching ? (
-                <p className="text-xs text-gray-500">
-                  <span className="font-semibold text-gray-800">{displayItems.length}</span>
-                  {' '}result{displayItems.length !== 1 ? 's' : ''} for "
-                  <span className="text-brand-600">{search}</span>"
-                </p>
-              ) : (
-                <p className="text-sm font-bold text-gray-800">
-                  {selectedCat?.name}
-                  <span className="text-gray-400 font-normal ml-1.5 text-xs">
-                    {displayItems.length} item{displayItems.length !== 1 ? 's' : ''}
-                  </span>
-                </p>
-              )}
+              <p className="text-xs text-gray-500">
+                <span className="font-semibold text-gray-800">{displayItems.length}</span>
+                {' '}result{displayItems.length !== 1 ? 's' : ''} for "
+                <span className="text-brand-600">{search}</span>"
+              </p>
             </div>
-
-            {/* Subcategory chips — only shown when the selected category has subcategories */}
-            {!isSearching && selectedCat?.subcategories?.length > 0 && (
-              <div className="px-3 pb-2 flex gap-2 overflow-x-auto scrollbar-none">
-                <button
-                  onClick={() => setSelectedSubCatId(null)}
-                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                    selectedSubCatId === null
-                      ? 'bg-brand-500 text-white border-brand-500'
-                      : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
-                  }`}
-                >
-                  All
-                </button>
-                {selectedCat.subcategories
-                  .filter((s) => s.items.some((i) => i.is_available))
-                  .map((sub) => (
-                    <button
-                      key={sub.id}
-                      onClick={() => setSelectedSubCatId(selectedSubCatId === sub.id ? null : sub.id)}
-                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                        selectedSubCatId === sub.id
-                          ? 'bg-brand-500 text-white border-brand-500'
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'
-                      }`}
-                    >
-                      {sub.name}
-                    </button>
-                  ))}
-              </div>
-            )}
-
-            {/* Items grid */}
             {displayItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-6">
-                <p className="text-sm text-center font-medium text-gray-400">
-                  {isSearching
-                    ? `No dishes found for "${search}"`
-                    : `No items available${foodFilter !== 'all' ? ' for selected filter' : ''}`}
-                </p>
-                {isSearching && (
-                  <button onClick={() => setSearch('')} className="mt-3 text-xs text-brand-600 font-semibold hover:underline">
-                    Clear search
-                  </button>
-                )}
+                <p className="text-sm text-center font-medium text-gray-400">No dishes found for "{search}"</p>
+                <button onClick={() => setSearch('')} className="mt-3 text-xs text-brand-600 font-semibold hover:underline">Clear search</button>
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 px-3 pb-3">
                 {displayItems.map((item) => (
-                  <MenuItemCard
-                    key={item.id}
-                    item={item}
-                    qty={getItemQty(item.id)}
-                    categoryLabel={isSearching ? item._catName : null}
-                    onAdd={() => handleAddItem(item)}
-                    fetching={fetchingItemId === item.id}
+                  <MenuItemCard key={item.id} item={item} qty={getItemQty(item.id)}
+                    categoryLabel={item._catName}
+                    onAdd={() => handleAddItem(item)} fetching={fetchingItemId === item.id}
                     onUpdateQty={(qty) => {
-                      // For items with modifier combinations, decrement the last-added one
                       const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
-                      if (combos.length > 0) {
-                        const last = combos[combos.length - 1];
-                        updateQty(last.id, last.quantity - 1);
-                      } else {
-                        updateQty(item.id, qty);
-                      }
-                    }}
-                    c={c}
-                  />
+                      if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
+                      else updateQty(item.id, qty);
+                    }} c={c} />
                 ))}
               </div>
             )}
+            <div className="h-28" />
+          </>
+        ) : (
+          /* ── Tree view — category → direct items → subcategories → their items ── */
+          <>
+            {/* Category header */}
+            <div className="px-4 py-3">
+              <p className="text-sm font-bold text-gray-800">
+                {selectedCat?.name}
+                <span className="text-gray-400 font-normal ml-1.5 text-xs">
+                  {selectedCat ? allCatItems(selectedCat).filter(filterItem).length : 0} item{allCatItems(selectedCat || { items: [], subcategories: [] }).filter(filterItem).length !== 1 ? 's' : ''}
+                </span>
+              </p>
+            </div>
+
+            {selectedCat && (() => {
+              const directItems = (selectedCat.items || []).filter(filterItem);
+              const subs = (selectedCat.subcategories || [])
+                .map((s) => ({ ...s, filteredItems: s.items.filter(filterItem) }))
+                .filter((s) => s.filteredItems.length > 0);
+              const totalVisible = directItems.length + subs.reduce((n, s) => n + s.filteredItems.length, 0);
+
+              if (totalVisible === 0) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-16 px-6">
+                    <p className="text-sm text-center font-medium text-gray-400">
+                      No items available{foodFilter !== 'all' ? ' for selected filter' : ''}
+                    </p>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="pb-3">
+                  {/* Direct items (not in any subcategory) */}
+                  {directItems.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3 px-3 pb-3">
+                      {directItems.map((item) => (
+                        <MenuItemCard key={item.id} item={item} qty={getItemQty(item.id)}
+                          onAdd={() => handleAddItem(item)} fetching={fetchingItemId === item.id}
+                          onUpdateQty={(qty) => {
+                            const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
+                            if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
+                            else updateQty(item.id, qty);
+                          }} c={c} />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Subcategories — each as a labeled section */}
+                  {subs.map((sub) => (
+                    <div key={sub.id} className="mt-1">
+                      <div className="px-4 py-2 flex items-center gap-2">
+                        <div className="h-px flex-1 bg-gray-100" />
+                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{sub.name}</span>
+                        <div className="h-px flex-1 bg-gray-100" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 px-3">
+                        {sub.filteredItems.map((item) => (
+                          <MenuItemCard key={item.id} item={item} qty={getItemQty(item.id)}
+                            onAdd={() => handleAddItem(item)} fetching={fetchingItemId === item.id}
+                            onUpdateQty={(qty) => {
+                              const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
+                              if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
+                              else updateQty(item.id, qty);
+                            }} c={c} />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             <div className="h-28" />
           </>
         )}
