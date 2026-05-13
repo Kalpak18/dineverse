@@ -20,28 +20,11 @@ export default function AdminAnalyticsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white">Platform Analytics</h1>
-        <p className="text-gray-400 text-sm mt-1">User growth, plan distribution & top cafes.</p>
+        <p className="text-gray-400 text-sm mt-1">User growth & top cafes.</p>
       </div>
 
-      {/* Plan distribution */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-white mb-4">Plan Distribution</h2>
-          <div className="space-y-3">
-            {data.plan_distribution.map((p) => (
-              <div key={p.plan_type} className="flex items-center justify-between text-sm">
-                <span className="text-gray-300 capitalize">{p.plan_type === 'free_trial' ? 'Free Trial' : 'Yearly'}</span>
-                <div className="flex items-center gap-3">
-                  <span className="text-gray-500">{p.active} active</span>
-                  <span className="font-bold text-white">{p.count} total</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Signups by month */}
-        <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
+      {/* Signups by month */}
+      <div className="bg-gray-900 border border-gray-800 rounded-2xl p-5">
           <h2 className="font-semibold text-white mb-4">New Signups (Last 12 Months)</h2>
           <div className="space-y-2">
             {data.signups_by_month.map((m) => (
@@ -59,28 +42,7 @@ export default function AdminAnalyticsPage() {
               </div>
             ))}
           </div>
-        </div>
       </div>
-
-      {/* Expiring soon */}
-      {data.expiring_soon.length > 0 && (
-        <div className="bg-red-900/20 border border-red-800 rounded-2xl p-5">
-          <h2 className="font-semibold text-red-400 mb-3">⚠️ Expiring in Next 7 Days ({data.expiring_soon.length})</h2>
-          <div className="space-y-2">
-            {data.expiring_soon.map((c) => (
-              <div key={c.id} className="flex items-center justify-between text-sm">
-                <div>
-                  <p className="text-white font-medium">{c.name}</p>
-                  <p className="text-xs text-gray-500">{c.email}</p>
-                </div>
-                <span className="text-red-400 text-xs font-semibold">
-                  {new Date(c.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Top cafes */}
       <div className="bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden">
@@ -90,7 +52,7 @@ export default function AdminAnalyticsPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-800">
-              {['#', 'Cafe', 'Plan', 'Orders', 'Revenue (GMV)'].map((h) => (
+              {['#', 'Cafe', 'Orders', 'Revenue (GMV)'].map((h) => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">{h}</th>
               ))}
             </tr>
@@ -102,13 +64,6 @@ export default function AdminAnalyticsPage() {
                 <td className="px-4 py-3">
                   <p className="text-white font-medium">{c.name}</p>
                   <p className="text-xs text-gray-500">{c.email}</p>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                    c.plan_type === 'yearly' ? 'bg-green-900/40 text-green-400' : 'bg-amber-900/40 text-amber-400'
-                  }`}>
-                    {c.plan_type === 'yearly' ? 'Yearly' : 'Trial'}
-                  </span>
                 </td>
                 <td className="px-4 py-3 text-gray-300">{c.total_orders}</td>
                 <td className="px-4 py-3 font-semibold text-gray-300">

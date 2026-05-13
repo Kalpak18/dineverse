@@ -54,7 +54,6 @@ async function sendDailyReports() {
     `SELECT c.id, c.name, c.email, c.slug
      FROM cafes c
      WHERE c.is_active = true
-       AND c.plan_expiry_date > NOW()
        AND EXISTS (
          SELECT 1 FROM orders o
          WHERE o.cafe_id = c.id

@@ -120,7 +120,7 @@ exports.getDashboard = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/cafes ─────────────────────────────────────
 exports.getCafes = asyncHandler(async (req, res) => {
-  const { search, plan, page = 1, limit = 20 } = req.query;
+  const { search, page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
   let where = 'WHERE 1=1';
@@ -131,10 +131,6 @@ exports.getCafes = asyncHandler(async (req, res) => {
     where += ` AND (c.name ILIKE $${idx} OR c.email ILIKE $${idx} OR c.slug ILIKE $${idx})`;
     params.push(`%${search}%`);
     idx++;
-  }
-  if (plan) {
-    where += ` AND c.plan_type = $${idx++}`;
-    params.push(plan);
   }
 
   // Base columns only — no migration-added columns (commission_rate etc.) to avoid
@@ -176,17 +172,7 @@ exports.getCafes = asyncHandler(async (req, res) => {
 // ─── PATCH /api/admin/cafes/:id ───────────────────────────────
 exports.updateCafe = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { is_active, extend_months, commission_rate } = req.body;
-
-  if (extend_months) {
-    await db.query(
-      `UPDATE cafes
-       SET plan_type         = 'yearly',
-           plan_expiry_date  = GREATEST(plan_expiry_date, NOW()) + ($1 || ' months')::INTERVAL
-       WHERE id = $2`,
-      [parseInt(extend_months), id]
-    );
-  }
+  const { is_active, commission_rate } = req.body;
 
   if (is_active !== undefined) {
     await db.query('UPDATE cafes SET is_active = $1 WHERE id = $2', [is_active, id]);
@@ -296,7 +282,7 @@ exports.replyTicket = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/analytics ─────────────────────────────────
 exports.getAnalytics = asyncHandler(async (req, res) => {
-  const [signupsByMonth, planDist, topCafes, expiringCafes] = await Promise.all([
+  const [signupsByMonth, topCafes] = await Promise.all([
     // New signups per month (last 12)
     db.query(`
       SELECT DATE_TRUNC('month', created_at) AS month, COUNT(*) AS count
@@ -304,38 +290,21 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
       GROUP BY DATE_TRUNC('month', created_at)
       ORDER BY month DESC LIMIT 12
     `),
-    // Plan distribution
+    // Top cafes by orders + GMV
     db.query(`
-      SELECT plan_type,
-             COUNT(*) AS count,
-             COUNT(*) FILTER (WHERE plan_expiry_date > NOW()) AS active
-      FROM cafes GROUP BY plan_type
-    `),
-    // Top cafes by orders
-    db.query(`
-      SELECT c.id, c.name, c.email, c.plan_type, c.plan_expiry_date,
+      SELECT c.id, c.name, c.email,
              COUNT(o.id) AS total_orders,
              COALESCE(SUM(o.final_amount) FILTER (WHERE o.status='paid'), 0) AS total_revenue
       FROM cafes c
       LEFT JOIN orders o ON o.cafe_id = c.id
-      GROUP BY c.id, c.name, c.email, c.plan_type, c.plan_expiry_date
+      GROUP BY c.id, c.name, c.email
       ORDER BY total_orders DESC LIMIT 10
-    `),
-    // Expiring soon (next 7 days)
-    db.query(`
-      SELECT id, name, email, plan_type, plan_expiry_date
-      FROM cafes
-      WHERE plan_expiry_date BETWEEN NOW() AND NOW() + INTERVAL '7 days'
-        AND is_active = true
-      ORDER BY plan_expiry_date ASC
     `),
   ]);
 
   ok(res, {
     signups_by_month: signupsByMonth.rows,
-    plan_distribution: planDist.rows,
     top_cafes: topCafes.rows,
-    expiring_soon: expiringCafes.rows,
   });
 });
 
@@ -469,7 +438,7 @@ exports.getCafeStats = asyncHandler(async (req, res) => {
   const [cafe, orders, revenue, menuStats, ratings] = await Promise.all([
     // Cafe details
     db.query(
-      `SELECT id, name, email, slug, phone, is_active, plan_type, plan_start_date, plan_expiry_date, created_at,
+      `SELECT id, name, email, slug, phone, is_active, created_at,
               address, city, country, description, logo_url, cover_image_url,
               gst_number, gst_rate, fssai_number, business_type, tax_inclusive, opening_hours, timezone
        FROM cafes WHERE id = $1`,
@@ -575,19 +544,7 @@ exports.broadcastEmail = asyncHandler(async (req, res) => {
     </div>
   `;
 
-  // Get list of cafes based on plan_filter
-  let cafesResult;
-  if (plan_filter === 'paid') {
-    cafesResult = await db.query(
-      `SELECT id, email FROM cafes WHERE is_active = true AND plan_type != 'free_trial' AND plan_expiry_date > NOW()`
-    );
-  } else if (plan_filter === 'trial') {
-    cafesResult = await db.query(
-      `SELECT id, email FROM cafes WHERE is_active = true AND plan_type = 'free_trial' AND plan_expiry_date > NOW()`
-    );
-  } else {
-    cafesResult = await db.query(`SELECT id, email FROM cafes WHERE is_active = true`);
-  }
+  const cafesResult = await db.query(`SELECT id, email FROM cafes WHERE is_active = true`);
 
   const cafes = cafesResult.rows;
   if (cafes.length === 0) {

@@ -28,7 +28,6 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
             -- Must be exposed so the cart shows the SAME rate the backend will
             -- charge — otherwise the displayed total ≠ the billed total.
             COALESCE(c.commission_rate, 2.00)         AS commission_rate,
-            c.plan_tier,
             ROUND(AVG(r.rating)::numeric, 1)          AS avg_rating,
             COUNT(r.id)::int                          AS rating_count
      FROM cafes c
@@ -45,7 +44,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
 // Public: explore cafés by city
 exports.exploreCafes = asyncHandler(async (req, res) => {
   const { city } = req.query;
-  let whereClause = `WHERE c.is_active = true AND c.setup_completed = true AND c.plan_expiry_date > NOW()`;
+  let whereClause = `WHERE c.is_active = true AND c.setup_completed = true`;
   const params = [];
   if (city && city.trim()) {
     params.push(`%${city.trim()}%`);
@@ -98,7 +97,7 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
                + sin(radians($1)) * sin(radians(c.latitude))
              )) AS distance_km
       FROM cafes c
-      WHERE c.is_active = true AND c.setup_completed = true AND c.plan_expiry_date > NOW()
+      WHERE c.is_active = true AND c.setup_completed = true
         AND c.latitude IS NOT NULL AND c.longitude IS NOT NULL
         ${qClause}
     ),

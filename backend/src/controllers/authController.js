@@ -177,17 +177,14 @@ exports.createAccount = asyncHandler(async (req, res) => {
   const password_hash = await bcrypt.hash(password, 12);
   const placeholderSlug = generateSetupSlug();
   const result = await db.query(
-    `INSERT INTO cafes (
-       name, slug, email, password_hash,
-       plan_type, plan_start_date, plan_expiry_date, setup_completed
-     )
-     VALUES ($1, $2, $3, $4, 'free_trial', NOW(), NOW() + INTERVAL '1 month', false)
+    `INSERT INTO cafes (name, slug, email, password_hash, setup_completed)
+     VALUES ($1, $2, $3, $4, false)
      RETURNING id, name, slug, email, description,
                address, address_line2, city, state, pincode, phone,
                gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
                pan_number, tax_inclusive, gst_verified, business_type, country,
                COALESCE(currency, 'INR') AS currency,
-               plan_type, plan_start_date, plan_expiry_date, created_at, setup_completed`,
+               created_at, setup_completed`,
     ['My Cafe', placeholderSlug, email, password_hash]
   );
 
@@ -274,7 +271,7 @@ exports.completeSetup = asyncHandler(async (req, res) => {
                gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
                pan_number, tax_inclusive, gst_verified, business_type, country,
                COALESCE(currency, 'INR') AS currency,
-               plan_type, plan_start_date, plan_expiry_date, created_at, setup_completed`,
+               created_at, setup_completed`,
     [
       name.trim(), slug.trim(), description || null, address || null, address_line2 || null,
       city || null, state || null, pincode || null, phone.trim(),
@@ -363,24 +360,21 @@ exports.register = asyncHandler(async (req, res) => {
   const result = hasMig016
     ? await db.query(
         `INSERT INTO cafes (name, slug, email, password_hash, description,
-                            address, address_line2, city, state, pincode, phone,
-                            currency, plan_type, plan_start_date, plan_expiry_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'free_trial',NOW(),NOW() + INTERVAL '1 month')
+                            address, address_line2, city, state, pincode, phone, currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
          RETURNING id, name, slug, email, description,
                    address, address_line2, city, state, pincode, phone,
-                   currency, plan_type, plan_start_date, plan_expiry_date, created_at`,
+                   currency, created_at`,
         [name, slug, email, password_hash, description || null,
          address || null, address_line2 || null, city || null, state || null, pincode || null,
          phone || null, currency || 'INR']
       )
     : await db.query(
         `INSERT INTO cafes (name, slug, email, password_hash, description,
-                            address, city, phone,
-                            currency, plan_type, plan_start_date, plan_expiry_date)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'free_trial',NOW(),NOW() + INTERVAL '1 month')
+                            address, city, phone, currency)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          RETURNING id, name, slug, email, description,
-                   address, city, phone,
-                   currency, plan_type, plan_start_date, plan_expiry_date, created_at`,
+                   address, city, phone, currency, created_at`,
         [name, slug, email, password_hash, description || null,
          address || null, city || null, phone || null, currency || 'INR']
       );
@@ -502,8 +496,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
               opening_hours, COALESCE(timezone, 'Asia/Kolkata') AS timezone,
-              plan_type, plan_tier, plan_start_date, plan_expiry_date, created_at,
-              parent_cafe_id,
+              created_at, parent_cafe_id,
               COALESCE(delivery_enabled, false)   AS delivery_enabled,
               COALESCE(delivery_radius_km, 5)     AS delivery_radius_km,
               COALESCE(delivery_fee_base, 0)      AS delivery_fee_base,
@@ -521,7 +514,7 @@ exports.getMe = asyncHandler(async (req, res) => {
               gst_number, gst_rate, fssai_number, upi_id, bill_prefix, bill_footer,
               COALESCE(setup_completed, true) AS setup_completed,
               COALESCE(currency, 'INR') AS currency,
-              plan_type, plan_tier, plan_start_date, plan_expiry_date, created_at
+              created_at
        FROM cafes WHERE id = $1`,
       [req.cafeId]
     );
@@ -719,15 +712,14 @@ exports.createOutlet = asyncHandler(async (req, res) => {
     `INSERT INTO cafes
        (name, slug, email, password_hash, description,
         address, address_line2, city, state, pincode, phone,
-        latitude, longitude, parent_cafe_id, plan_type, plan_start_date, plan_expiry_date)
-     SELECT $1,$2,c.email,c.password_hash,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,
-            c.plan_type,c.plan_start_date,c.plan_expiry_date
-     FROM cafes c WHERE c.id = $13
+        latitude, longitude, parent_cafe_id)
+     SELECT $1,$2,c.email,c.password_hash,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+     FROM cafes c WHERE c.id = $12
      RETURNING id, name, slug, description, address, address_line2, city, state, pincode, phone, latitude, longitude, parent_cafe_id`,
     [name.trim(), slug.trim(), description || null,
      address || null, address_line2 || null, city || null,
      state || null, pincode || null, phone || null,
-     geocoded?.latitude || null, geocoded?.longitude || null, parentId, parentId]
+     geocoded?.latitude || null, geocoded?.longitude || null, parentId]
   );
   logger.info('New outlet created: %s (%s) under %s', name, slug, parentId);
   ok(res, { outlet: result.rows[0] }, 'Outlet created successfully', 201);

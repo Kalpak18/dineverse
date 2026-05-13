@@ -100,29 +100,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Subscription warning */}
-        {cafe?.plan_expiry_date && (() => {
-          const daysLeft = Math.ceil(
-            (new Date(cafe.plan_expiry_date) - new Date()) / (1000 * 60 * 60 * 24)
-          );
-          if (daysLeft > 7) return null;
-          const expired = daysLeft <= 0;
-          return (
-            <div className={`rounded-xl px-4 py-3 flex items-center justify-between gap-3 text-sm font-medium ${
-              expired
-                ? 'bg-red-50 border border-red-200 text-red-800'
-                : 'bg-amber-50 border border-amber-200 text-amber-800'
-            }`}>
-              <span>
-                {expired
-                  ? '🔴 Your subscription has expired. Renew now to keep accepting orders.'
-                  : `⚠️ Your ${cafe.plan_type === 'free_trial' ? 'free trial' : 'plan'} expires in ${daysLeft} day${daysLeft !== 1 ? 's' : ''}. Renew to avoid any interruption.`
-                }
-              </span>
-              <Link to="/owner/billing" className="flex-shrink-0 underline font-semibold whitespace-nowrap">{expired ? 'Renew Now →' : 'Renew →'}</Link>
-            </div>
-          );
-        })()}
 
         {/* ── Onboarding checklist (new accounts only, dismissible) ── */}
         {!onboardingDismissed && stats && (() => {

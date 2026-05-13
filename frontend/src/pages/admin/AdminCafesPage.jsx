@@ -4,11 +4,6 @@ import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
 
-const PLAN_STYLES = {
-  free_trial: 'bg-amber-900/40 text-amber-400',
-  yearly:     'bg-green-900/40 text-green-400',
-};
-
 function StatBox({ label, value, sub }) {
   return (
     <div className="bg-gray-800 rounded-xl p-4">
@@ -45,7 +40,6 @@ function CafeDetailModal({ cafe, onClose }) {
       .finally(() => setLoading(false));
   }, [cafe.id]);
 
-  const expired = cafe.plan_expiry_date && new Date(cafe.plan_expiry_date) < new Date();
   const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
   const handleSendNotif = async () => {
@@ -89,15 +83,6 @@ function CafeDetailModal({ cafe, onClose }) {
               <p className="text-sm text-gray-400">{cafe.email}</p>
               <p className="text-xs text-gray-600 mt-0.5">/{cafe.slug}</p>
               <div className="flex items-center gap-2 mt-2 flex-wrap">
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${PLAN_STYLES[cafe.plan_type] || 'bg-gray-700 text-gray-300'}`}>
-                  {cafe.plan_type === 'free_trial' ? 'Free Trial' : 'Yearly'}
-                </span>
-                {cafe.plan_expiry_date && (
-                  <span className={`text-xs ${expired ? 'text-red-400' : 'text-gray-400'}`}>
-                    {expired ? '⚠️ Expired ' : 'Expires '}
-                    {new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                )}
                 <span className={`text-xs ${cafe.is_active ? 'text-green-400' : 'text-red-400'}`}>
                   {cafe.is_active ? '● Active' : '● Inactive'}
                 </span>
@@ -300,13 +285,12 @@ export default function AdminCafesPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [plan, setPlan] = useState('');
   const [selectedCafe, setSelectedCafe] = useState(null);
   const searchTimer = useRef(null);
 
-  const load = (q = search, p = plan) => {
+  const load = (q = search) => {
     setLoading(true);
-    adminGetCafes({ search: q, plan: p })
+    adminGetCafes({ search: q })
       .then((res) => { setCafes(res.data.cafes); setTotal(res.data.total); })
       .catch(() => toast.error('Failed to load cafes'))
       .finally(() => setLoading(false));
@@ -317,19 +301,7 @@ export default function AdminCafesPage() {
   const handleSearch = (val) => {
     setSearch(val);
     clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => load(val, plan), 400);
-  };
-
-  const handleExtend = async (cafe) => {
-    const months = prompt(`Extend subscription for "${cafe.name}" by how many months?`, '12');
-    if (!months || isNaN(parseInt(months))) return;
-    try {
-      const { data } = await adminUpdateCafe(cafe.id, { extend_months: parseInt(months) });
-      setCafes(cafes.map((c) => c.id === cafe.id ? { ...c, ...data.cafe } : c));
-      toast.success(`Subscription extended by ${months} months`);
-    } catch (err) {
-      toast.error(getApiError(err));
-    }
+    searchTimer.current = setTimeout(() => load(val), 400);
   };
 
   const handleToggleActive = async (cafe) => {
@@ -360,15 +332,6 @@ export default function AdminCafesPage() {
             value={search}
             onChange={(e) => handleSearch(e.target.value)}
           />
-          <select
-            className="bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-brand-500"
-            value={plan}
-            onChange={(e) => { setPlan(e.target.value); load(search, e.target.value); }}
-          >
-            <option value="">All plans</option>
-            <option value="free_trial">Free Trial</option>
-            <option value="yearly">Yearly</option>
-          </select>
         </div>
       </div>
 
@@ -377,7 +340,7 @@ export default function AdminCafesPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-800">
-                {['Cafe', 'Plan', 'Expiry', 'Orders', 'Actions'].map((h) => (
+                {['Cafe', 'Orders', 'Actions'].map((h) => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide">
                     {h}
                   </th>
@@ -385,26 +348,15 @@ export default function AdminCafesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50">
-              {cafes.map((cafe) => {
-                const expired = cafe.plan_expiry_date && new Date(cafe.plan_expiry_date) < new Date();
-                return (
+              {cafes.map((cafe) => (
                   <tr key={cafe.id} className="hover:bg-gray-800/40">
                     <td className="px-4 py-3">
                       <p className="font-medium text-white">{cafe.name}</p>
                       <p className="text-xs text-gray-500">{cafe.email}</p>
                       <p className="text-xs text-gray-600">/{cafe.slug}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${PLAN_STYLES[cafe.plan_type] || 'bg-gray-700 text-gray-300'}`}>
-                        {cafe.plan_type === 'free_trial' ? 'Trial' : 'Yearly'}
+                      <span className={`text-xs ${cafe.is_active ? 'text-green-400' : 'text-red-400'}`}>
+                        {cafe.is_active ? '● Active' : '● Inactive'}
                       </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {cafe.plan_expiry_date ? (
-                        <span className={`text-xs ${expired ? 'text-red-400 font-semibold' : 'text-gray-400'}`}>
-                          {expired ? '⚠️ ' : ''}{new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                        </span>
-                      ) : <span className="text-gray-600 text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3 text-gray-400">{cafe.total_orders}</td>
                     <td className="px-4 py-3">
@@ -414,12 +366,6 @@ export default function AdminCafesPage() {
                           className="text-xs bg-gray-700 hover:bg-gray-600 text-white px-2.5 py-1 rounded-lg transition-colors"
                         >
                           View Details
-                        </button>
-                        <button
-                          onClick={() => handleExtend(cafe)}
-                          className="text-xs bg-brand-700 hover:bg-brand-600 text-white px-2.5 py-1 rounded-lg transition-colors"
-                        >
-                          Extend
                         </button>
                         <button
                           onClick={() => handleToggleActive(cafe)}
