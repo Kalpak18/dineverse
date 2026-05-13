@@ -75,15 +75,13 @@ exports.getMe = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/dashboard ────────────────────────────────
 exports.getDashboard = asyncHandler(async (req, res) => {
-  const [cafeStats, ticketStats, recentSignups, commissionStats] = await Promise.all([
-    // Cafe counts
+  const [cafeStats, ticketStats, recentSignups] = await Promise.all([
     db.query(`
       SELECT
         COUNT(*) AS total,
         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS new_this_month
       FROM cafes WHERE is_active = true
     `),
-    // Tickets
     db.query(`
       SELECT
         COUNT(*) FILTER (WHERE status = 'open')        AS open,
@@ -91,30 +89,31 @@ exports.getDashboard = asyncHandler(async (req, res) => {
         COUNT(*) FILTER (WHERE status = 'resolved')    AS resolved
       FROM support_tickets
     `),
-    // Recent signups
-    db.query(`
-      SELECT id, name, email, created_at
-      FROM cafes ORDER BY created_at DESC LIMIT 5
-    `),
-    // Commission totals
-    db.query(`
+    db.query(`SELECT id, name, email, created_at FROM cafes ORDER BY created_at DESC LIMIT 5`),
+  ]);
+
+  // commission_amount column added in migration 059 — may not exist in all deployments.
+  // Try the real query; fall back to zeros so the dashboard never 500s.
+  let commissionData = { total_commission: 0, this_month_commission: 0, paid_orders: 0 };
+  try {
+    const r = await db.query(`
       SELECT
         COALESCE(SUM(commission_amount), 0)                                                         AS total_commission,
         COALESCE(SUM(commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS this_month_commission,
         COUNT(*) FILTER (WHERE status = 'paid')                                                     AS paid_orders
       FROM orders
-    `),
-  ]);
+    `);
+    commissionData = r.rows[0];
+  } catch (_) { /* column not yet migrated — return zeros */ }
 
-  const com = commissionStats.rows[0];
   ok(res, {
-    cafes: cafeStats.rows[0],
+    cafes:          cafeStats.rows[0],
     commission: {
-      total: parseFloat(com.total_commission),
-      this_month: parseFloat(com.this_month_commission),
-      paid_orders: parseInt(com.paid_orders),
+      total:       parseFloat(commissionData.total_commission),
+      this_month:  parseFloat(commissionData.this_month_commission),
+      paid_orders: parseInt(commissionData.paid_orders),
     },
-    tickets: ticketStats.rows[0],
+    tickets:        ticketStats.rows[0],
     recent_signups: recentSignups.rows,
   });
 });
@@ -141,17 +140,13 @@ exports.getCafes = asyncHandler(async (req, res) => {
   const [countRes, rowsRes] = await Promise.all([
     db.query(`SELECT COUNT(*) FROM cafes c ${where}`, params),
     db.query(
-      `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active,
-              c.plan_type, c.plan_start_date, c.plan_expiry_date, c.created_at,
-              c.commission_rate,
-              COALESCE(ord.total_orders,      0) AS total_orders,
-              COALESCE(ord.commission_earned, 0) AS commission_earned,
-              COALESCE(mi.menu_items,         0) AS menu_items
+      `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active, c.created_at,
+              c.plan_type, c.plan_start_date, c.plan_expiry_date,
+              COALESCE(ord.total_orders, 0) AS total_orders,
+              COALESCE(mi.menu_items,    0) AS menu_items
        FROM cafes c ${where}
        LEFT JOIN LATERAL (
-         SELECT COUNT(*)                                              AS total_orders,
-                SUM(commission_amount) FILTER (WHERE status = 'paid') AS commission_earned
-         FROM orders WHERE cafe_id = c.id
+         SELECT COUNT(*) AS total_orders FROM orders WHERE cafe_id = c.id
        ) ord ON true
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS menu_items FROM menu_items WHERE cafe_id = c.id
@@ -196,9 +191,7 @@ exports.updateCafe = asyncHandler(async (req, res) => {
   }
 
   const result = await db.query(
-    `SELECT id, name, email, is_active, plan_type, plan_expiry_date, commission_rate,
-            COALESCE((SELECT SUM(o.commission_amount) FROM orders o WHERE o.cafe_id = cafes.id AND o.status = 'paid'), 0) AS commission_earned
-     FROM cafes WHERE id = $1`,
+    `SELECT id, name, email, is_active, plan_type, plan_expiry_date FROM cafes WHERE id = $1`,
     [id]
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);

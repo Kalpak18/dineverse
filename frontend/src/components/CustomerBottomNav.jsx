@@ -100,18 +100,42 @@ export default function CustomerBottomNav() {
     };
   }, [slug, alertsOpen]);
 
+  // Push a dummy history entry so device back button closes the panel
   const openAlerts = () => {
     setNotifications(getNotifications(slug));
     setAlertsOpen(true);
     setBellFlash(false);
     markAllRead(slug);
     setUnreadCount(0);
+    window.history.pushState({ panel: 'alerts' }, '');
+  };
+
+  const closeAlerts = () => {
+    setAlertsOpen(false);
+    if (window.history.state?.panel === 'alerts') window.history.back();
   };
 
   const openVisited = () => {
     setVisited(loadVisited());
     setVisitedOpen(true);
+    window.history.pushState({ panel: 'visited' }, '');
   };
+
+  const closeVisited = () => {
+    setVisitedOpen(false);
+    if (window.history.state?.panel === 'visited') window.history.back();
+  };
+
+  // Intercept device hardware back when a panel is open
+  useEffect(() => {
+    if (!alertsOpen && !visitedOpen) return;
+    const handler = (e) => {
+      if (alertsOpen) { setAlertsOpen(false); }
+      else if (visitedOpen) { setVisitedOpen(false); }
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, [alertsOpen, visitedOpen]);
 
   const path = location.pathname;
   const isHome     = path === `/cafe/${slug}` || path === `/cafe/${slug}/menu` || path === `/cafe/${slug}/cart`;
@@ -155,7 +179,7 @@ export default function CustomerBottomNav() {
       {/* ── Instagram-style top bell bubble ── */}
       {unreadCount > 0 && !alertsOpen && (
         <button
-          onClick={openAlerts}
+          onClick={alertsOpen ? closeAlerts : openAlerts}
           className={`fixed top-3 right-3 z-40 flex items-center gap-1.5 bg-white border shadow-lg rounded-full px-3 py-1.5 transition-all ${
             bellFlash ? 'scale-110 border-brand-400 shadow-brand-100' : 'border-gray-200'
           }`}
@@ -174,8 +198,8 @@ export default function CustomerBottomNav() {
         <Tab active={isHome}     onClick={() => navigate(`/cafe/${slug}`)}           icon={<HomeIcon />}    label="Café"     />
         <Tab active={isOrders}   onClick={() => navigate(`/cafe/${slug}/my-orders`)} icon={<OrdersIcon />}  label="Orders"   badge={activeOrderCount} />
         <Tab active={isBookings} onClick={() => navigate(`/cafe/${slug}/my-orders?tab=reservations`)} icon={<BookingsIcon />} label="Bookings" badge={activeBkCount} />
-        <Tab active={isAlerts}   onClick={openAlerts}  icon={<BellIcon />} label="Alerts"  badge={unreadCount} />
-        <Tab active={visitedOpen} onClick={openVisited} icon={<VisitedIcon />} label="Visited" />
+        <Tab active={isAlerts}   onClick={alertsOpen ? closeAlerts : openAlerts}  icon={<BellIcon />} label="Alerts"  badge={unreadCount} />
+        <Tab active={visitedOpen} onClick={visitedOpen ? closeVisited : openVisited} icon={<VisitedIcon />} label="Visited" />
       </nav>
 
       {/* ── Alerts — full screen page ── */}
@@ -183,7 +207,7 @@ export default function CustomerBottomNav() {
         <div className="fixed inset-0 z-50 bg-white flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
           <PageHeader
             title="Alerts"
-            onBack={() => setAlertsOpen(false)}
+            onBack={closeAlerts}
             actions={
               notifications.length > 0 ? (
                 <button
@@ -231,7 +255,7 @@ export default function CustomerBottomNav() {
       {/* ── Visited Cafés — full screen page ── */}
       {visitedOpen && (
         <div className="fixed inset-0 z-50 bg-white flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          <PageHeader title="Visited Cafés" onBack={() => setVisitedOpen(false)} />
+          <PageHeader title="Visited Cafés" onBack={closeVisited} />
           <div className="overflow-y-auto flex-1">
             {visited.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-gray-400 px-6 text-center">

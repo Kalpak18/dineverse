@@ -24,6 +24,11 @@ const FOLDERS = {
  * Returns: { uploadUrl, objectUrl, key }
  */
 exports.getPresignedUrl = asyncHandler(async (req, res) => {
+  // Fail fast if S3 is not configured — avoids a cryptic AWS SDK crash
+  if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY || !process.env.S3_BUCKET_NAME) {
+    return fail(res, 'Image uploads are not configured on this server. Please set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and S3_BUCKET_NAME.', 503);
+  }
+
   const { contentType, size, uploadType = 'menu_item' } = req.body;
 
   if (!contentType || !ALLOWED_TYPES.includes(contentType)) {

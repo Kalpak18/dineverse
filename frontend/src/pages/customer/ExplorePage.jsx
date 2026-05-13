@@ -62,7 +62,7 @@ export default function ExplorePage() {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!query.trim()) return;
-    setSearchParams({ city: query.trim() });
+    setSearchParams({ city: query.trim() }, { replace: true });
     doSearch(query.trim());
   };
 
@@ -72,7 +72,7 @@ export default function ExplorePage() {
       <div className="bg-white border-b border-gray-100 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
           <button
-            onClick={() => navigate('/')}
+            onClick={() => navigate(-1)}
             className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 flex-shrink-0"
           >
             ←
