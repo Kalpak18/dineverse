@@ -508,6 +508,9 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
   const [newCatName, setNewCatName] = useState('');
   const [showNewCat, setShowNewCat] = useState(false);
   const [creatingCat, setCreatingCat] = useState(false);
+  const [newSubName, setNewSubName] = useState('');
+  const [showNewSub, setShowNewSub] = useState(false);
+  const [creatingSub, setCreatingSub] = useState(false);
   const [saving, setSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(Boolean(item));
   const [allModifierGroups, setAllModifierGroups] = useState([]);
@@ -614,6 +617,25 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     }
   };
 
+  const handleCreateSubcategory = async (parentId) => {
+    if (!newSubName.trim()) return;
+    setCreatingSub(true);
+    try {
+      const { data } = await createCategory({ name: newSubName.trim(), parent_id: parentId });
+      const created = data.category;
+      setLocalCategories((prev) => [...prev, created]);
+      setForm((f) => ({ ...f, category_id: created.id }));
+      onCategoryCreated(created);
+      setNewSubName('');
+      setShowNewSub(false);
+      toast.success(`Subcategory "${created.name}" created`);
+    } catch {
+      toast.error('Failed to create subcategory');
+    } finally {
+      setCreatingSub(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (saving) return; // guard against double-submit
@@ -710,11 +732,11 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
           const subsOfActive = localCategories.filter((c) => c.parent_id === activeTopId);
 
           const selectTop = (id) => {
-            // If re-clicking the same top, deselect
+            setShowNewSub(false);
+            setNewSubName('');
             if (activeTopId === id && !selectedCat?.parent_id) {
               setForm({ ...form, category_id: '' });
             } else {
-              // Select the top category (clear any sub selection)
               setForm({ ...form, category_id: id });
             }
           };
@@ -763,22 +785,52 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
                 </div>
               </div>
 
-              {/* Subcategory chips — appear only when a top category with subs is selected */}
-              {activeTopId && subsOfActive.length > 0 && (
-                <div className="pl-3 border-l-2 border-brand-100">
-                  <p className="text-xs text-gray-400 mb-1.5">Subcategory <span className="text-gray-300">(optional)</span></p>
+              {/* Subcategory row — always shown when a top category is selected */}
+              {activeTopId && (
+                <div className="pl-3 border-l-2 border-brand-100 space-y-1.5">
+                  <p className="text-xs text-gray-500 font-medium">
+                    Subcategory <span className="text-gray-300 font-normal">(optional)</span>
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
                     {subsOfActive.map((sub) => (
                       <button key={sub.id} type="button"
                         onClick={() => selectSub(sub.id)}
                         className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
                           form.category_id === sub.id
-                            ? 'bg-brand-400 text-white border-brand-400'
+                            ? 'bg-brand-500 text-white border-brand-500'
                             : 'bg-white text-gray-500 border-gray-200 hover:border-brand-300'
                         }`}>
                         {sub.name}
                       </button>
                     ))}
+                    {showNewSub ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          autoFocus type="text" placeholder="Subcategory name"
+                          className="input py-1 text-xs w-32" value={newSubName}
+                          onChange={(e) => setNewSubName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleCreateSubcategory(activeTopId); }
+                            if (e.key === 'Escape') { setShowNewSub(false); setNewSubName(''); }
+                          }}
+                        />
+                        <button type="button"
+                          onClick={() => handleCreateSubcategory(activeTopId)}
+                          disabled={creatingSub || !newSubName.trim()}
+                          className="text-xs bg-brand-500 text-white px-2 py-1 rounded-lg disabled:opacity-50">
+                          {creatingSub ? '...' : 'Add'}
+                        </button>
+                        <button type="button"
+                          onClick={() => { setShowNewSub(false); setNewSubName(''); }}
+                          className="text-xs text-gray-400 hover:text-gray-600">✕</button>
+                      </div>
+                    ) : (
+                      <button type="button"
+                        onClick={() => setShowNewSub(true)}
+                        className="px-2.5 py-1 rounded-full text-xs font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
+                        + New Sub
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
