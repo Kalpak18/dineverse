@@ -22,6 +22,10 @@
 
     <!-- Performance -->
     <link rel="dns-prefetch" href="//checkout.razorpay.com" />
+    <link rel="dns-prefetch" href="//fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="//fonts.gstatic.com" />
+    <!-- Preload LCP assets -->
+    <link rel="preload" as="image" href="/icons/header_logo_round_192x192.png" />
 
     <!-- PWA / Mobile -->
     <meta name="mobile-web-app-capable" content="yes" />
@@ -60,15 +64,19 @@
     <!-- Manifest -->
     <link rel="manifest" href="/site.webmanifest" />
 
-    <!-- Fonts -->
+    <!-- Fonts: preconnect so the handshake is done before the CSS fires -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Only load Poppins for logo wordmark — tiny subset, non-render-blocking with display=swap -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@800;900&display=swap"
-      rel="stylesheet"
-      media="print"
-      onload="this.media='all'"
+      rel="preload"
+      as="style"
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap"
+      onload="this.rel='stylesheet'"
     />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap" rel="stylesheet" />
+    </noscript>
 
     <!-- Misc -->
     <meta name="format-detection" content="telephone=no" />

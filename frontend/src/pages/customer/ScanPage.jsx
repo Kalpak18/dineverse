@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import QRScanner from '../../components/QRScanner';
 import toast from 'react-hot-toast';
+
+const QRScanner = lazy(() => import('../../components/QRScanner'));
 
 const DINEVERSE_HOSTS = ['dine-verse.com', 'www.dine-verse.com', 'dineverse.vercel.app'];
 
@@ -53,7 +54,11 @@ export default function ScanPage() {
   const handleClose = useCallback(() => setActive(false), []);
 
   if (active) {
-    return <QRScanner onScan={handleScan} onClose={handleClose} />;
+    return (
+      <Suspense fallback={<div className="fixed inset-0 bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>}>
+        <QRScanner onScan={handleScan} onClose={handleClose} />
+      </Suspense>
+    );
   }
 
   if (scanned) {

@@ -38,6 +38,8 @@ export default function DineLogo({ size = 'md', white = false, icon = false }) {
         alt="DineVerse"
         className={`${dims[size]} w-auto object-contain flex-shrink-0`}
         onError={(e) => { e.currentTarget.src = ICON_FALLBACK; }}
+        fetchpriority="high"
+        decoding="async"
       />
       {!icon && (
         <span
