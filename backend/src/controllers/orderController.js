@@ -1175,7 +1175,7 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   // Fetch the order, verify it belongs to this slug and is payable
   const result = await db.query(
     `SELECT o.id, o.status, o.final_amount, o.total_amount, o.payment_verified,
-            o.platform_fee, o.platform_discount_amount,
+            o.payment_order_id, o.platform_fee, o.platform_discount_amount,
             o.customer_name, o.order_number,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
             c.name AS cafe_name, c.email AS cafe_email,
@@ -1197,6 +1197,34 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
 
   const amountPaise = Math.round(parseFloat(order.final_amount || order.total_amount) * 100);
   if (amountPaise <= 0) return fail(res, 'Invalid order amount', 400);
+
+  // Idempotency: if a Razorpay order already exists for this order (e.g. customer retrying
+  // after a network drop during verify), reuse it rather than creating a duplicate.
+  // Razorpay orders are single-use — a captured order can't be paid again anyway, so
+  // returning the existing order_id is safe and prevents double-charge scenarios.
+  if (order.payment_order_id) {
+    try {
+      const existingRpOrder = await razorpay.orders.fetch(order.payment_order_id);
+      if (existingRpOrder.status === 'created') {
+        // Still open — give the same order back so the customer completes it
+        return ok(res, {
+          razorpay_order_id:   existingRpOrder.id,
+          amount:              amountPaise,
+          currency:            order.cafe_currency || 'INR',
+          cafe_name:           order.cafe_name,
+          cafe_logo_url:       order.cafe_logo_url || null,
+          customer_name:       order.customer_name,
+          daily_order_number:  order.daily_order_number,
+          route_enabled:       false,
+          key_id: process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID,
+        });
+      }
+      // Paid/expired on Razorpay but not verified here — let a new order be created below
+    } catch (fetchErr) {
+      logger.warn('Could not fetch existing Razorpay order %s for reuse: %s', order.payment_order_id, fetchErr.message);
+      // Fall through and create a fresh order
+    }
+  }
 
   // Build Razorpay Route transfer using the actual stored commission, not a
   // hardcoded percentage. Café gets (final_amount − platform_fee + platform_discount_amount):
@@ -1335,11 +1363,12 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
       return fail(res, 'Payment verification temporarily unavailable. Please try again in a moment.', 503);
     }
 
-    // Mark payment received but keep order in the active queue so kitchen can fulfil it.
-    // status stays 'confirmed' — staff marks it 'served'/'paid' once food is delivered.
+    // Mark payment received. Set payment_mode='online' in same transaction so commission
+    // tracking always sees this as an auto-deducted online order — never falls to cash_due.
     const updated = await payClient.query(
       `UPDATE orders
-       SET status = 'confirmed', payment_id = $1, payment_verified = true, updated_at = NOW()
+       SET status = 'confirmed', payment_id = $1, payment_verified = true,
+           payment_mode = 'online', updated_at = NOW()
        WHERE id = $2
        RETURNING id, order_number,
                  COALESCE(daily_order_number, order_number) AS daily_order_number,
@@ -1356,12 +1385,6 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   } finally {
     payClient.release();
   }
-
-  // Mark order as online payment so updateOrderStatus knows commission was auto-deducted
-  db.query(
-    `UPDATE orders SET payment_mode = 'online' WHERE id = $1`,
-    [id]
-  ).catch((e) => logger.warn('payment_mode update failed for order %s: %s', id, e.message));
 
   // Audit: log the prepaid event
   db.query(

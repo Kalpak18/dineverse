@@ -254,15 +254,41 @@ exports.webhookHandler = asyncHandler(async (req, res) => {
   const payment = event.payload?.payment?.entity;
   if (!payment) return res.status(200).json({ ok: true });
 
-  const razorpay_order_id  = payment.order_id;
+  const razorpay_order_id   = payment.order_id;
   const razorpay_payment_id = payment.id;
+  const notes               = payment.notes || {};
 
   if (!razorpay_order_id) {
     logger.warn('Webhook payment.captured missing order_id');
     return res.status(200).json({ ok: true });
   }
 
-  // Look up the pending payment record
+  // ── Commission payment safety net ────────────────────────────
+  // If the owner dismissed the Razorpay modal before calling /commission/verify
+  // (or the verify API call failed due to network), the webhook auto-settles.
+  if (notes.type === 'commission_payment' && notes.cafe_id) {
+    const cafeId = notes.cafe_id;
+    try {
+      const updated = await db.query(
+        `UPDATE orders
+         SET commission_status       = 'collected',
+             commission_collected_at = NOW()
+         WHERE cafe_id = $1
+           AND commission_status = 'cash_due'
+           AND status = 'paid'
+         RETURNING id`,
+        [cafeId]
+      );
+      logger.info('Webhook commission settled: cafe %s payment %s, %d orders',
+        cafeId, razorpay_payment_id, updated.rows.length);
+    } catch (err) {
+      logger.error('Webhook commission settlement failed: cafe %s: %s', cafeId, err.message);
+      return res.status(500).json({ success: false, message: 'DB error' });
+    }
+    return res.status(200).json({ ok: true });
+  }
+
+  // ── Subscription / legacy payment record ─────────────────────
   const paymentRes = await db.query(
     'SELECT * FROM payments WHERE razorpay_order_id = $1',
     [razorpay_order_id]
