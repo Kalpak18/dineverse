@@ -443,9 +443,6 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     { key: 'sugar-free',  label: 'Sugar-Free',    emoji: '🍬' },
   ];
 
-  // When editing an existing item start at step 3 (all fields already set); new items start at step 1
-  const [step, setStep] = useState(item ? 3 : 1);
-
   const [form, setForm] = useState({
     name: item?.name || '',
     description: item?.description || '',
@@ -616,401 +613,239 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     }
   };
 
-  // Step labels for progress indicator (new items only)
-  const STEP_LABELS = ['Type', 'Category', 'Details'];
+  // Progressive unlock: for new items, category must be selected before details are enabled
+  const hasCat = !!form.category_id;
+  const detailsLocked = !item && !hasCat;
 
   return (
     <Modal title={item ? 'Edit Item' : 'Add Menu Item'} onClose={onClose}>
-      {/* Step progress bar — only shown when adding a new item */}
-      {!item && (
-        <div className="flex items-center gap-1 mb-5">
-          {STEP_LABELS.map((label, i) => {
-            const s = i + 1;
-            const done = step > s;
-            const active = step === s;
-            return (
-              <div key={s} className="flex items-center gap-1 flex-1 min-w-0">
-                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-colors flex-shrink-0 ${
-                  done    ? 'bg-green-100 text-green-700' :
-                  active  ? 'bg-brand-500 text-white' :
-                            'bg-gray-100 text-gray-400'
-                }`}>
-                  <span>{done ? '✓' : s}</span>
-                  <span>{label}</span>
-                </div>
-                {i < STEP_LABELS.length - 1 && (
-                  <div className={`flex-1 h-0.5 rounded ${done ? 'bg-green-300' : 'bg-gray-200'}`} />
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-4">
 
-        {/* ── STEP 1: Veg / Non-Veg ── */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div>
-              <p className="text-sm font-semibold text-gray-700 mb-1">What type of item is this?</p>
-              <p className="text-xs text-gray-400 mb-4">This shows a green or red dot to customers on the menu.</p>
-              <div className="flex rounded-xl overflow-hidden border border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, is_veg: true }))}
-                  className={`flex-1 py-4 text-base font-bold flex items-center justify-center gap-2 transition-colors ${
-                    form.is_veg ? 'bg-green-500 text-white' : 'bg-white text-gray-400 hover:bg-gray-50'
-                  }`}
-                >
-                  🟢 Vegetarian
+        {/* Veg / Non-Veg toggle */}
+        <div className="flex rounded-xl overflow-hidden border border-gray-200">
+          <button type="button" onClick={() => setForm({ ...form, is_veg: true })}
+            className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${form.is_veg ? 'bg-green-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+            🟢 Veg
+          </button>
+          <button type="button" onClick={() => setForm({ ...form, is_veg: false })}
+            className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${!form.is_veg ? 'bg-red-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+            🔴 Non-Veg
+          </button>
+        </div>
+
+        {/* Category — required, inline chips + create */}
+        <div>
+          <label className="label">
+            Category <span className="text-red-500">*</span>
+            {!hasCat && <span className="ml-1 text-xs text-amber-500 font-normal">— select one to unlock the rest</span>}
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {localCategories.map((c) => (
+              <button key={c.id} type="button"
+                onClick={() => setForm({ ...form, category_id: form.category_id === c.id ? '' : c.id })}
+                className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+                  form.category_id === c.id
+                    ? 'bg-brand-500 text-white border-brand-500'
+                    : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                }`}>
+                {c.name}
+              </button>
+            ))}
+            {showNewCat ? (
+              <div className="flex items-center gap-1.5">
+                <input autoFocus type="text" placeholder="Category name"
+                  className="input py-1.5 text-sm w-36" value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); } if (e.key === 'Escape') setShowNewCat(false); }} />
+                <button type="button" onClick={handleCreateCategory} disabled={creatingCat || !newCatName.trim()}
+                  className="text-xs bg-brand-500 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50">
+                  {creatingCat ? '...' : 'Add'}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setForm((f) => ({ ...f, is_veg: false }))}
-                  className={`flex-1 py-4 text-base font-bold flex items-center justify-center gap-2 transition-colors ${
-                    !form.is_veg ? 'bg-red-500 text-white' : 'bg-white text-gray-400 hover:bg-gray-50'
-                  }`}
-                >
-                  🔴 Non-Vegetarian
-                </button>
+                <button type="button" onClick={() => setShowNewCat(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
               </div>
-            </div>
-            <div className="flex gap-3 pt-1">
-              <button
-                type="button"
-                onClick={() => setStep(2)}
-                className="btn-primary flex-1"
-              >
-                Next — Choose Category →
+            ) : (
+              <button type="button" onClick={() => setShowNewCat(true)}
+                className="px-3 py-1.5 rounded-full text-sm font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
+                + New
               </button>
-              <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
-            </div>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* ── STEP 2: Category (required) ── */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <div>
-              <p className="text-sm font-semibold text-gray-700 mb-0.5">
-                Which category does this belong to? <span className="text-red-500">*</span>
-              </p>
-              <p className="text-xs text-gray-400 mb-3">Every item must have a category so your menu stays organised.</p>
+        {/* Everything below is locked until a category is chosen */}
+        <fieldset disabled={detailsLocked} className={`space-y-4 transition-opacity ${detailsLocked ? 'opacity-40 pointer-events-none select-none' : ''}`}>
 
-              {localCategories.length === 0 && !showNewCat ? (
-                <div className="text-center py-6 rounded-xl bg-gray-50 border border-dashed border-gray-200">
-                  <p className="text-sm text-gray-500 mb-3">No categories yet — create your first one</p>
-                  <button
-                    type="button"
-                    onClick={() => setShowNewCat(true)}
-                    className="btn-primary text-sm"
-                  >
-                    + Create Category
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {localCategories.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, category_id: c.id }))}
-                      className={`px-3 py-2 rounded-full text-sm font-medium border transition-colors ${
-                        form.category_id === c.id
-                          ? 'bg-brand-500 text-white border-brand-500'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                      }`}
-                    >
-                      {c.name}
-                    </button>
-                  ))}
-                  {!showNewCat && (
-                    <button
-                      type="button"
-                      onClick={() => setShowNewCat(true)}
-                      className="px-3 py-2 rounded-full text-sm font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors"
-                    >
-                      + New Category
-                    </button>
-                  )}
-                </div>
-              )}
-
-              {showNewCat && (
-                <div className="mt-3 flex items-center gap-1.5">
-                  <input
-                    autoFocus
-                    type="text"
-                    placeholder="Category name"
-                    className="input py-1.5 text-sm flex-1"
-                    value={newCatName}
-                    onChange={(e) => setNewCatName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); }
-                      if (e.key === 'Escape') setShowNewCat(false);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleCreateCategory}
-                    disabled={creatingCat || !newCatName.trim()}
-                    className="text-xs bg-brand-500 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50"
-                  >
-                    {creatingCat ? '...' : 'Add'}
-                  </button>
-                  <button type="button" onClick={() => setShowNewCat(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
-                </div>
-              )}
-            </div>
-
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={() => setStep(1)} className="btn-secondary">← Back</button>
-              <button
-                type="button"
-                disabled={!form.category_id}
-                onClick={() => setStep(3)}
-                className="btn-primary flex-1 disabled:opacity-40"
-              >
-                Next — Item Details →
-              </button>
-            </div>
+          <div>
+            <label className="label">Item Name *</label>
+            <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           </div>
-        )}
 
-        {/* ── STEP 3: Item details ── */}
-        {step === 3 && (
-          <>
-            {/* For editing: veg/non-veg toggle stays accessible */}
-            {item && (
-              <div className="flex rounded-xl overflow-hidden border border-gray-200">
-                <button type="button" onClick={() => setForm((f) => ({ ...f, is_veg: true }))}
-                  className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${form.is_veg ? 'bg-green-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  🟢 Veg
-                </button>
-                <button type="button" onClick={() => setForm((f) => ({ ...f, is_veg: false }))}
-                  className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${!form.is_veg ? 'bg-red-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                  🔴 Non-Veg
-                </button>
+          <div>
+            <label className="label">Description</label>
+            <textarea className="input resize-none" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+
+          <div>
+            <label className="label">Price ({cafe?.currency || 'INR'}) *</label>
+            <input type="number" min="0" step="0.01" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" className="rounded" checked={form.is_available} onChange={(e) => setForm({ ...form, is_available: e.target.checked })} />
+            <span>Available for order</span>
+          </label>
+
+          {/* Stock tracking */}
+          <div className="border border-gray-200 rounded-xl p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700">
+              <input type="checkbox" className="rounded" checked={form.track_stock}
+                onChange={(e) => setForm({ ...form, track_stock: e.target.checked, stock_quantity: e.target.checked ? (form.stock_quantity || '') : '' })} />
+              Track stock / inventory
+            </label>
+            {form.track_stock && (
+              <div>
+                <label className="label text-xs">Current stock quantity</label>
+                <input type="number" min="0" className="input" placeholder="e.g. 20"
+                  value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} />
+                <p className="text-xs text-gray-400 mt-1">Item auto-disables on menu when stock reaches 0</p>
               </div>
             )}
+          </div>
 
-            {/* Category chips (always editable on step 3) */}
+          {/* Variants and add-on groups */}
+          <div className="border border-gray-200 rounded-xl p-3 space-y-3">
             <div>
-              <label className="label">
-                Category {!item && <span className="text-green-600 text-xs font-normal ml-1">✓ {localCategories.find((c) => c.id === form.category_id)?.name}</span>}
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {localCategories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, category_id: c.id }))}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                      form.category_id === c.id
-                        ? 'bg-brand-500 text-white border-brand-500'
-                        : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                    }`}
-                  >
-                    {c.name}
-                  </button>
-                ))}
-                {showNewCat ? (
-                  <div className="flex items-center gap-1.5">
-                    <input autoFocus type="text" placeholder="Category name"
-                      className="input py-1.5 text-sm w-36" value={newCatName}
-                      onChange={(e) => setNewCatName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCreateCategory(); } if (e.key === 'Escape') setShowNewCat(false); }} />
-                    <button type="button" onClick={handleCreateCategory} disabled={creatingCat || !newCatName.trim()}
-                      className="text-xs bg-brand-500 text-white px-2.5 py-1.5 rounded-lg disabled:opacity-50">
-                      {creatingCat ? '...' : 'Add'}
-                    </button>
-                    <button type="button" onClick={() => setShowNewCat(false)} className="text-xs text-gray-400 hover:text-gray-600">✕</button>
-                  </div>
-                ) : (
-                  <button type="button" onClick={() => setShowNewCat(true)}
-                    className="px-3 py-1.5 rounded-full text-sm font-medium border border-dashed border-gray-300 text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
-                    + New
-                  </button>
-                )}
-              </div>
+              <p className="text-sm font-semibold text-gray-800">Variants</p>
+              <p className="text-xs text-gray-400 mt-0.5">Use for required choices like Half / Full or Small / Large. If variants exist, customers must pick one.</p>
+            </div>
+            <div className="space-y-2">
+              {variantRows.map((row, index) => (
+                <div key={index} className="grid grid-cols-[1fr_110px_auto] gap-2">
+                  <input type="text" className="input text-sm" placeholder="Variant name"
+                    value={row.name} onChange={(e) => updateVariantRow(index, { name: e.target.value })} />
+                  <input type="number" min="0" step="0.01" className="input text-sm" placeholder="Price"
+                    value={row.price} onChange={(e) => updateVariantRow(index, { price: e.target.value })} />
+                  <button type="button" onClick={() => removeVariantRow(index)}
+                    className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:bg-red-50" aria-label="Remove variant">×</button>
+                </div>
+              ))}
+              <button type="button" onClick={addVariantRow} className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+                + Add variant
+              </button>
             </div>
 
-            <div>
-              <label className="label">Item Name *</label>
-              <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-            </div>
-
-            <div>
-              <label className="label">Description</label>
-              <textarea className="input resize-none" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-
-            <div>
-              <label className="label">Price ({cafe?.currency || 'INR'}) *</label>
-              <input type="number" min="0" step="0.01" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
-            </div>
-
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" className="rounded" checked={form.is_available} onChange={(e) => setForm({ ...form, is_available: e.target.checked })} />
-              <span>Available for order</span>
-            </label>
-
-            {/* Stock tracking */}
-            <div className="border border-gray-200 rounded-xl p-3 space-y-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer font-medium text-gray-700">
-                <input type="checkbox" className="rounded" checked={form.track_stock}
-                  onChange={(e) => setForm({ ...form, track_stock: e.target.checked, stock_quantity: e.target.checked ? (form.stock_quantity || '') : '' })} />
-                Track stock / inventory
-              </label>
-              {form.track_stock && (
+            <div className="border-t border-gray-100 pt-3">
+              <div className="flex items-center justify-between gap-3">
                 <div>
-                  <label className="label text-xs">Current stock quantity</label>
-                  <input type="number" min="0" className="input" placeholder="e.g. 20"
-                    value={form.stock_quantity}
-                    onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} />
-                  <p className="text-xs text-gray-400 mt-1">Item auto-disables on menu when stock reaches 0</p>
+                  <p className="text-sm font-semibold text-gray-800">Add-on groups</p>
+                  <p className="text-xs text-gray-400 mt-0.5">Attach item-specific groups. Category groups are included automatically and duplicates are merged.</p>
                 </div>
-              )}
-            </div>
-
-            {/* Variants and add-on groups */}
-            <div className="border border-gray-200 rounded-xl p-3 space-y-3">
-              <div>
-                <p className="text-sm font-semibold text-gray-800">Variants</p>
-                <p className="text-xs text-gray-400 mt-0.5">Use for required choices like Half / Full or Small / Large. If variants exist, customers must pick one.</p>
+                {configLoading && <span className="text-xs text-gray-400">Loading...</span>}
               </div>
-              <div className="space-y-2">
-                {variantRows.map((row, index) => (
-                  <div key={index} className="grid grid-cols-[1fr_110px_auto] gap-2">
-                    <input type="text" className="input text-sm" placeholder="Variant name"
-                      value={row.name} onChange={(e) => updateVariantRow(index, { name: e.target.value })} />
-                    <input type="number" min="0" step="0.01" className="input text-sm" placeholder="Price"
-                      value={row.price} onChange={(e) => updateVariantRow(index, { price: e.target.value })} />
-                    <button type="button" onClick={() => removeVariantRow(index)}
-                      className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:bg-red-50" aria-label="Remove variant">×</button>
-                  </div>
-                ))}
-                <button type="button" onClick={addVariantRow} className="text-xs font-semibold text-brand-600 hover:text-brand-700">
-                  + Add variant
-                </button>
-              </div>
-
-              <div className="border-t border-gray-100 pt-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-800">Add-on groups</p>
-                    <p className="text-xs text-gray-400 mt-0.5">Attach item-specific groups. Category groups are included automatically and duplicates are merged.</p>
-                  </div>
-                  {configLoading && <span className="text-xs text-gray-400">Loading...</span>}
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {allModifierGroups.map((group) => (
-                    <button key={group.id} type="button" onClick={() => toggleAttachedGroup(group.id)}
-                      className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
-                        attachedGroupIds.includes(group.id)
-                          ? 'bg-brand-500 text-white border-brand-500'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
-                      }`}>
-                      {group.name}{group.is_required ? ' · Required' : ''}
-                    </button>
-                  ))}
-                  {!showInlineGroup && (
-                    <button type="button" onClick={() => setShowInlineGroup(true)}
-                      className="px-2.5 py-1.5 rounded-full border border-dashed border-gray-300 text-xs font-medium text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
-                      + New Group
-                    </button>
-                  )}
-                </div>
-
-                {showInlineGroup && (
-                  <div className="mt-3 border border-brand-200 rounded-xl p-3 space-y-3 bg-orange-50/40">
-                    <p className="text-xs font-semibold text-gray-700">New add-on group</p>
-                    <input autoFocus type="text" placeholder="Group name (e.g. Spice Level, Add-ons)"
-                      className="input text-sm" value={inlineGroup.name}
-                      onChange={(e) => setInlineGroup((g) => ({ ...g, name: e.target.value }))}
-                      onKeyDown={(e) => { if (e.key === 'Escape') setShowInlineGroup(false); }} />
-                    <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs">
-                      <button type="button" onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'single' }))}
-                        className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'single' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                        Single choice
-                      </button>
-                      <button type="button" onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'multiple' }))}
-                        className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'multiple' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-                        Multiple choice
-                      </button>
-                    </div>
-                    <label className="flex items-center gap-2 text-xs cursor-pointer text-gray-600">
-                      <input type="checkbox" className="rounded" checked={inlineGroup.is_required}
-                        onChange={(e) => setInlineGroup((g) => ({ ...g, is_required: e.target.checked }))} />
-                      Required — customer must pick before ordering
-                    </label>
-                    <div>
-                      <p className="text-xs font-medium text-gray-600 mb-1.5">Options</p>
-                      <div className="space-y-1.5">
-                        {inlineOptionRows.map((opt, idx) => (
-                          <div key={idx} className="grid grid-cols-[1fr_90px_auto] gap-1.5">
-                            <input type="text" placeholder={`Option ${idx + 1}`} className="input text-xs py-1.5"
-                              value={opt.name} onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))} />
-                            <input type="number" min="0" step="0.01" placeholder="+price" className="input text-xs py-1.5"
-                              value={opt.price} onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, price: e.target.value } : r))} />
-                            <button type="button" onClick={() => setInlineOptionRows((rows) => rows.filter((_, i) => i !== idx))}
-                              className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-sm" aria-label="Remove option">×</button>
-                          </div>
-                        ))}
-                      </div>
-                      <button type="button" onClick={() => setInlineOptionRows((rows) => [...rows, { name: '', price: '0' }])}
-                        className="mt-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700">+ Add option</button>
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button type="button" onClick={handleInlineGroupSave} disabled={inlineGroupSaving || !inlineGroup.name.trim()}
-                        className="flex-1 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold disabled:opacity-50 hover:bg-brand-600 transition-colors">
-                        {inlineGroupSaving ? 'Saving…' : 'Create & Attach'}
-                      </button>
-                      <button type="button"
-                        onClick={() => { setShowInlineGroup(false); setInlineGroup({ name: '', selection_type: 'single', is_required: false }); setInlineOptionRows([{ name: '', price: '0' }]); }}
-                        className="px-4 py-2 rounded-xl border border-gray-200 text-xs text-gray-500 hover:bg-gray-50">Cancel</button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Dietary / allergen tags */}
-            <div>
-              <label className="label">Dietary & Allergen Tags</label>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {ALLERGEN_TAGS.map(({ key, label, emoji }) => (
-                  <button key={key} type="button" onClick={() => toggleTag(key)}
-                    className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
-                      form.tags.includes(key)
+              <div className="mt-2 flex flex-wrap gap-2">
+                {allModifierGroups.map((group) => (
+                  <button key={group.id} type="button" onClick={() => toggleAttachedGroup(group.id)}
+                    className={`px-2.5 py-1.5 rounded-full border text-xs font-medium transition-colors ${
+                      attachedGroupIds.includes(group.id)
                         ? 'bg-brand-500 text-white border-brand-500'
                         : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
                     }`}>
-                    {emoji} {label}
+                    {group.name}{group.is_required ? ' · Required' : ''}
                   </button>
                 ))}
+                {!showInlineGroup && (
+                  <button type="button" onClick={() => setShowInlineGroup(true)}
+                    className="px-2.5 py-1.5 rounded-full border border-dashed border-gray-300 text-xs font-medium text-gray-400 hover:border-brand-400 hover:text-brand-500 transition-colors">
+                    + New Group
+                  </button>
+                )}
               </div>
+              {showInlineGroup && (
+                <div className="mt-3 border border-brand-200 rounded-xl p-3 space-y-3 bg-orange-50/40">
+                  <p className="text-xs font-semibold text-gray-700">New add-on group</p>
+                  <input autoFocus type="text" placeholder="Group name (e.g. Spice Level, Add-ons)"
+                    className="input text-sm" value={inlineGroup.name}
+                    onChange={(e) => setInlineGroup((g) => ({ ...g, name: e.target.value }))}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setShowInlineGroup(false); }} />
+                  <div className="flex rounded-lg overflow-hidden border border-gray-200 text-xs">
+                    <button type="button" onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'single' }))}
+                      className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'single' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                      Single choice
+                    </button>
+                    <button type="button" onClick={() => setInlineGroup((g) => ({ ...g, selection_type: 'multiple' }))}
+                      className={`flex-1 py-1.5 font-semibold transition-colors ${inlineGroup.selection_type === 'multiple' ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                      Multiple choice
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-2 text-xs cursor-pointer text-gray-600">
+                    <input type="checkbox" className="rounded" checked={inlineGroup.is_required}
+                      onChange={(e) => setInlineGroup((g) => ({ ...g, is_required: e.target.checked }))} />
+                    Required — customer must pick before ordering
+                  </label>
+                  <div>
+                    <p className="text-xs font-medium text-gray-600 mb-1.5">Options</p>
+                    <div className="space-y-1.5">
+                      {inlineOptionRows.map((opt, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_90px_auto] gap-1.5">
+                          <input type="text" placeholder={`Option ${idx + 1}`} className="input text-xs py-1.5"
+                            value={opt.name} onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))} />
+                          <input type="number" min="0" step="0.01" placeholder="+price" className="input text-xs py-1.5"
+                            value={opt.price} onChange={(e) => setInlineOptionRows((rows) => rows.map((r, i) => i === idx ? { ...r, price: e.target.value } : r))} />
+                          <button type="button" onClick={() => setInlineOptionRows((rows) => rows.filter((_, i) => i !== idx))}
+                            className="px-2 rounded-lg border border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50 text-sm" aria-label="Remove option">×</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button type="button" onClick={() => setInlineOptionRows((rows) => [...rows, { name: '', price: '0' }])}
+                      className="mt-1.5 text-xs font-semibold text-brand-600 hover:text-brand-700">+ Add option</button>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button type="button" onClick={handleInlineGroupSave} disabled={inlineGroupSaving || !inlineGroup.name.trim()}
+                      className="flex-1 py-2 rounded-xl bg-brand-500 text-white text-xs font-bold disabled:opacity-50 hover:bg-brand-600 transition-colors">
+                      {inlineGroupSaving ? 'Saving…' : 'Create & Attach'}
+                    </button>
+                    <button type="button"
+                      onClick={() => { setShowInlineGroup(false); setInlineGroup({ name: '', selection_type: 'single', is_required: false }); setInlineOptionRows([{ name: '', price: '0' }]); }}
+                      className="px-4 py-2 rounded-xl border border-gray-200 text-xs text-gray-500 hover:bg-gray-50">Cancel</button>
+                  </div>
+                </div>
+              )}
             </div>
+          </div>
 
-            <ImageUpload
-              value={form.image_url}
-              onChange={(url) => setForm({ ...form, image_url: url })}
-              uploadType="menu_item"
-              label="Item Image"
-              aspectClass="aspect-square"
-            />
-
-            <div className="flex gap-3 pt-1">
-              {!item && <button type="button" onClick={() => setStep(2)} className="btn-secondary">← Back</button>}
-              <button type="submit" disabled={saving} className="btn-primary flex-1">
-                {saving ? 'Saving...' : item ? 'Save Changes' : 'Add Item'}
-              </button>
-              {item && <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>}
+          {/* Dietary / allergen tags */}
+          <div>
+            <label className="label">Dietary & Allergen Tags</label>
+            <div className="flex flex-wrap gap-2 mt-1">
+              {ALLERGEN_TAGS.map(({ key, label, emoji }) => (
+                <button key={key} type="button" onClick={() => toggleTag(key)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${
+                    form.tags.includes(key)
+                      ? 'bg-brand-500 text-white border-brand-500'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-brand-400'
+                  }`}>
+                  {emoji} {label}
+                </button>
+              ))}
             </div>
-          </>
-        )}
+          </div>
+
+          <ImageUpload
+            value={form.image_url}
+            onChange={(url) => setForm({ ...form, image_url: url })}
+            uploadType="menu_item"
+            label="Item Image"
+            aspectClass="aspect-square"
+          />
+
+        </fieldset>
+
+        <div className="flex gap-3 pt-1">
+          <button type="submit" disabled={saving || detailsLocked} className="btn-primary flex-1">
+            {saving ? 'Saving...' : 'Save Item'}
+          </button>
+          <button type="button" onClick={onClose} className="btn-secondary flex-1">Cancel</button>
+        </div>
       </form>
     </Modal>
   );
