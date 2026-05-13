@@ -138,7 +138,7 @@ export const toggleCafeOpen     = () => api.post('/cafes/toggle-open');
 export const getCafeBySlug      = (slug) => api.get(`/cafes/${slug}`);
 export const getCafeTables      = (slug, params) => api.get(`/cafes/${slug}/tables`, { params });
 export const exploreCafes       = (city) => api.get('/cafes/explore', { params: city ? { city } : {} });
-export const getNearbyCafes     = (lat, lng, radius = 30) => api.get('/cafes/nearby', { params: { lat, lng, radius } });
+export const getNearbyCafes     = (lat, lng, params = {}) => api.get('/cafes/nearby', { params: { lat, lng, ...params } });
 export const getAvailableTables = (slug) => api.get(`/cafes/${slug}/available-tables`);
 
 // Owner: areas + tables management
