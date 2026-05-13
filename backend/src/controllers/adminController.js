@@ -133,31 +133,32 @@ exports.getCafes = asyncHandler(async (req, res) => {
     idx++;
   }
 
-  // Base columns only — no migration-added columns (commission_rate etc.) to avoid
-  // 500s on deployments where newer migrations haven't run yet.
   let countRes, rowsRes;
   try {
-    [countRes, rowsRes] = await Promise.all([
-      db.query(`SELECT COUNT(*) FROM cafes c ${where}`, params),
-      db.query(
-        `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active, c.created_at,
-                COALESCE(ord.total_orders, 0) AS total_orders,
-                COALESCE(mi.menu_items,    0) AS menu_items
-         FROM cafes c ${where}
-         LEFT JOIN LATERAL (
-           SELECT COUNT(*) AS total_orders FROM orders WHERE cafe_id = c.id
-         ) ord ON true
-         LEFT JOIN LATERAL (
-           SELECT COUNT(*) AS menu_items FROM menu_items WHERE cafe_id = c.id
-         ) mi ON true
-         ORDER BY c.created_at DESC
-         LIMIT $${idx} OFFSET $${idx + 1}`,
-        [...params, parseInt(limit), offset]
-      ),
-    ]);
+    countRes = await db.query(`SELECT COUNT(*) FROM cafes c ${where}`, params);
   } catch (err) {
-    logger.error('getCafes DB error: %s', err.message);
-    return fail(res, `Database error: ${err.message}`, 500);
+    logger.error('getCafes COUNT error: %s', err.message);
+    return fail(res, `Count query failed: ${err.message}`, 500);
+  }
+  try {
+    rowsRes = await db.query(
+      `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active, c.created_at,
+              COALESCE(ord.total_orders, 0) AS total_orders,
+              COALESCE(mi.menu_items,    0) AS menu_items
+       FROM cafes c ${where}
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS total_orders FROM orders WHERE cafe_id = c.id
+       ) ord ON true
+       LEFT JOIN LATERAL (
+         SELECT COUNT(*) AS menu_items FROM menu_items WHERE cafe_id = c.id
+       ) mi ON true
+       ORDER BY c.created_at DESC
+       LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, parseInt(limit), offset]
+    );
+  } catch (err) {
+    logger.error('getCafes ROWS error: %s', err.message);
+    return fail(res, `Rows query failed: ${err.message}`, 500);
   }
 
   ok(res, {
