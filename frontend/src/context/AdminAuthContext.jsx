@@ -12,7 +12,14 @@ export function AdminAuthProvider({ children }) {
     if (!token) { setLoading(false); return; }
     adminGetMe()
       .then(({ data }) => setAdmin(data.admin))
-      .catch(() => localStorage.removeItem('dineverse_admin_token'))
+      .catch((err) => {
+        // Only invalidate token on 401 — a 500/network error means the server
+        // is having trouble, not that the token is bad. Wiping on 500 logs the
+        // admin out silently on every backend hiccup.
+        if (err.response?.status === 401) {
+          localStorage.removeItem('dineverse_admin_token');
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
