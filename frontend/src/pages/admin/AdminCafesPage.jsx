@@ -380,8 +380,7 @@ export default function AdminCafesPage() {
                       </div>
                     </td>
                   </tr>
-                );
-              })}
+              ))}
             </tbody>
           </table>
           {cafes.length === 0 && (
