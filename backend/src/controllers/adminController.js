@@ -123,42 +123,38 @@ exports.getCafes = asyncHandler(async (req, res) => {
   const { search, page = 1, limit = 20 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
-  let where = 'WHERE 1=1';
+  let filter = '';
   const params = [];
   let idx = 1;
 
   if (search) {
-    where += ` AND (c.name ILIKE $${idx} OR c.email ILIKE $${idx} OR c.slug ILIKE $${idx})`;
+    filter = `WHERE (c.name ILIKE $${idx} OR c.email ILIKE $${idx} OR c.slug ILIKE $${idx})`;
     params.push(`%${search}%`);
     idx++;
   }
 
   let countRes, rowsRes;
   try {
-    countRes = await db.query(`SELECT COUNT(*) FROM cafes c ${where}`, params);
-  } catch (err) {
-    logger.error('getCafes COUNT error: %s', err.message);
-    return fail(res, `Count query failed: ${err.message}`, 500);
-  }
-  try {
+    countRes = await db.query(`SELECT COUNT(*) FROM cafes c ${filter}`, params);
     rowsRes = await db.query(
       `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active, c.created_at,
               COALESCE(ord.total_orders, 0) AS total_orders,
               COALESCE(mi.menu_items,    0) AS menu_items
-       FROM cafes c ${where}
+       FROM cafes c
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS total_orders FROM orders WHERE cafe_id = c.id
        ) ord ON true
        LEFT JOIN LATERAL (
          SELECT COUNT(*) AS menu_items FROM menu_items WHERE cafe_id = c.id
        ) mi ON true
+       ${filter}
        ORDER BY c.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, parseInt(limit), offset]
     );
   } catch (err) {
-    logger.error('getCafes ROWS error: %s', err.message);
-    return fail(res, `Rows query failed: ${err.message}`, 500);
+    logger.error('getCafes DB error: %s', err.message);
+    return fail(res, `Database error: ${err.message}`, 500);
   }
 
   ok(res, {
