@@ -1,534 +1,433 @@
 /**
  * MapPage — full-screen DineVerse café finder.
  *
- * Tile layer  : OpenStreetMap standard — free, no key, richest building/road detail
- * Markers     : Custom SVG pins with café logo/initial + pulsing ring on select
- * Data source : /cafes/nearby → only active, subscribed DineVerse cafés with lat/lng
+ * Map engine : Google Maps JS API (via useGoogleMaps hook)
+ * Fallback   : If VITE_GOOGLE_MAPS_API_KEY is absent or load fails,
+ *              the map canvas is hidden and a banner is shown.
+ *              The sidebar list still works fully via getNearbyCafes.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import { getNearbyCafes } from '../../services/api';
+import { useGoogleMaps } from '../../hooks/useGoogleMaps';
 import toast from 'react-hot-toast';
 
 const RADIUS_OPTIONS = [3, 5, 10, 20, 50];
-const INDIA_CENTER   = [20.5937, 78.9629];
-const USER_ZOOM      = 16;   // buildings clearly visible at 16+
+const INDIA_CENTER   = { lat: 20.5937, lng: 78.9629 };
 
-// ── Modern pin icon ───────────────────────────────────────────────────────────
-function makePinIcon(cafe, selected) {
-  const initial = (cafe.name || '?').charAt(0).toUpperCase();
-  const hasLogo = !!cafe.logo_url;
-  const size    = selected ? 52 : 44;
-  const ring    = selected
-    ? `<circle cx="26" cy="26" r="24" fill="none" stroke="#f97316" stroke-width="3" stroke-dasharray="5 3" opacity="0.5">
-         <animateTransform attributeName="transform" type="rotate" from="0 26 26" to="360 26 26" dur="8s" repeatCount="indefinite"/>
-       </circle>`
-    : '';
-
-  const inner = hasLogo
-    ? `<image href="${cafe.logo_url}" x="6" y="6" width="40" height="40" clip-path="url(#clip-${cafe.id})" preserveAspectRatio="xMidYMid slice"/>`
-    : `<text x="26" y="31" text-anchor="middle" font-size="18" font-weight="700" font-family="system-ui,sans-serif" fill="${selected ? '#fff' : '#fff'}">${initial}</text>`;
-
-  const bg = selected ? '#ea580c' : '#f97316';
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="60" viewBox="0 0 52 60">
-    <defs>
-      <clipPath id="clip-${cafe.id}"><circle cx="26" cy="26" r="20"/></clipPath>
-      <filter id="shadow-${cafe.id}" x="-30%" y="-20%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(0,0,0,0.25)"/>
-      </filter>
-    </defs>
-    ${ring}
-    <circle cx="26" cy="26" r="22" fill="${bg}" filter="url(#shadow-${cafe.id})"/>
-    <circle cx="26" cy="26" r="21" fill="${bg}" stroke="white" stroke-width="2.5"/>
-    ${inner}
-    <polygon points="20,44 26,54 32,44" fill="${bg}"/>
-    <polygon points="21,44 26,52 31,44" fill="${bg}"/>
-  </svg>`;
-
-  return L.divIcon({
-    className:   '',
-    html:        svg,
-    iconSize:    [52, 60],
-    iconAnchor:  [26, 58],
-    popupAnchor: [0, -60],
-  });
-}
-
-function userPinIcon() {
-  return L.divIcon({
-    className: '',
-    html: `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">
-      <circle cx="11" cy="11" r="10" fill="#3b82f6" stroke="white" stroke-width="2.5" opacity="0.9"/>
-      <circle cx="11" cy="11" r="4" fill="white"/>
-      <circle cx="11" cy="11" r="11" fill="none" stroke="#3b82f6" stroke-width="2" opacity="0.3">
-        <animate attributeName="r" from="11" to="18" dur="1.6s" repeatCount="indefinite"/>
-        <animate attributeName="opacity" from="0.3" to="0" dur="1.6s" repeatCount="indefinite"/>
-      </circle>
-    </svg>`,
-    iconSize:   [22, 22],
-    iconAnchor: [11, 11],
-  });
-}
-
-// ── Popup HTML ─────────────────────────────────────────────────────────────────
-function esc(s) { return String(s || '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-function popupHtml(cafe) {
-  const dist = cafe.distance_km != null
-    ? parseFloat(cafe.distance_km) < 1
-      ? `${Math.round(parseFloat(cafe.distance_km) * 1000)} m`
-      : `${parseFloat(cafe.distance_km).toFixed(1)} km`
-    : null;
-
-  const logoHtml = cafe.logo_url
-    ? `<img src="${esc(cafe.logo_url)}" alt="" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0;border:1.5px solid #f3f4f6"/>`
-    : `<div style="width:40px;height:40px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#f97316;flex-shrink:0;border:1.5px solid #f3f4f6">${esc(cafe.name.charAt(0).toUpperCase())}</div>`;
-
-  const ratingHtml = cafe.avg_rating != null
-    ? `<div style="display:inline-flex;align-items:center;gap:4px;background:#fef3c7;border:1px solid #fde68a;border-radius:99px;padding:3px 10px;margin-bottom:8px;margin-left:6px;font-size:11px;font-weight:700;color:#a16207;">★ ${parseFloat(cafe.avg_rating).toFixed(1)} <span style="color:#a16207;opacity:0.7;font-weight:500">(${cafe.rating_count || 0})</span></div>`
-    : '';
-
-  return `<div style="font-family:system-ui,-apple-system,sans-serif;min-width:200px;max-width:240px;">
-    <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
-      ${logoHtml}
-      <div style="flex:1;min-width:0;">
-        <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(cafe.name)}</p>
-        ${cafe.address ? `<p style="margin:0;font-size:11px;color:#9ca3af;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;">${esc(cafe.address)}</p>` : ''}
-      </div>
-    </div>
-    <div style="display:flex;flex-wrap:wrap;align-items:center;">
-      ${dist ? `<div style="display:inline-flex;align-items:center;gap:4px;background:#fff7ed;border:1px solid #fed7aa;border-radius:99px;padding:3px 10px;margin-bottom:8px;font-size:11px;font-weight:700;color:#ea580c;">📍 ${esc(dist)} away</div>` : ''}
-      ${ratingHtml}
-    </div>
-    <a href="/cafe/${esc(cafe.slug)}" style="display:block;text-align:center;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;padding:8px 14px;border-radius:10px;text-decoration:none;font-size:12px;font-weight:700;letter-spacing:0.01em;box-shadow:0 2px 8px rgba(249,115,22,.35);">
-      View Menu →
-    </a>
-  </div>`;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
 export default function MapPage() {
-  const navigate = useNavigate();
+  const navigate       = useNavigate();
+  const { ready: mapsReady, unavailable: mapsUnavailable } = useGoogleMaps();
 
   const mapDivRef       = useRef(null);
   const mapRef          = useRef(null);
-  const initDoneRef     = useRef(false);
-  const cafeMarkersRef  = useRef(new Map());
+  const markersRef      = useRef(new Map()); // cafeId → google.maps.Marker
   const userMarkerRef   = useRef(null);
+  const infoWindowRef   = useRef(null);
+  const initDoneRef     = useRef(false);
 
-  const [cafes,        setCafes]        = useState([]);    // ALL DineVerse cafes (for map markers)
+  const [cafes,        setCafes]        = useState([]);
   const [loading,      setLoading]      = useState(false);
-  const [locating,     setLocating]     = useState(true);  // true while waiting for GPS
+  const [locating,     setLocating]     = useState(true);
   const [geoError,     setGeoError]     = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [selectedId,   setSelectedId]   = useState(null);
   const [radius,       setRadius]       = useState(10);
-  const [searchQuery,  setSearchQuery]  = useState('');    // case-insensitive name/city filter for sidebar list
+  const [searchQuery,  setSearchQuery]  = useState('');
   const [mobileTab,    setMobileTab]    = useState('map');
 
-  // ── 1. Init map ─────────────────────────────────────────────────────────────
-  useEffect(() => {
-    if (initDoneRef.current || !mapDivRef.current) return;
-    initDoneRef.current = true;
-
-    const map = L.map(mapDivRef.current, {
-      zoomControl:        false,
-      attributionControl: true,
-    }).setView(INDIA_CENTER, 5);
-
-    // CartoDB Voyager — modern, clean labels, building outlines visible from
-    // mid-zoom, retina @2x tiles for sharp displays. Free, no API key.
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
-      subdomains:  'abcd',
-      maxZoom:     20,
-    }).addTo(map);
-
-    // Zoom controls — bottom right
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    mapRef.current = map;
-
-    return () => {
-      map.remove();
-      mapRef.current      = null;
-      initDoneRef.current = false;
-    };
-  }, []);
-
-  // ── 2. Fetch ALL DineVerse cafés (distance-sorted from given lat/lng) ──────
-  // No radius filter — we want every café to show on the map regardless of zoom.
-  // The sidebar list filters by radius client-side using the returned distance_km.
-  const fetchAllCafes = useCallback(async (lat, lng) => {
+  // ── Fetch cafes ──────────────────────────────────────────────────────────────
+  const fetchCafes = useCallback(async (lat, lng) => {
     setLoading(true);
     try {
-      // Pass a huge radius (effectively all cafés worldwide) — backend caps at 500.
-      const { data } = await getNearbyCafes(lat, lng, 20000);
+      const { data } = await getNearbyCafes(lat, lng, { radius: 20000 });
       setCafes(data.cafes || []);
     } catch {
       toast.error('Failed to load cafés');
-      setCafes([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // ── 3. Geolocation ──────────────────────────────────────────────────────────
-  const requestGeo = useCallback((onSuccess) => {
-    if (!navigator.geolocation) { setGeoError('unavailable'); setLocating(false); return; }
+  // ── Geolocation ──────────────────────────────────────────────────────────────
+  const geoLocate = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoError('unavailable');
+      setLocating(false);
+      fetchCafes(INDIA_CENTER.lat, INDIA_CENTER.lng);
+      return;
+    }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         const loc = { lat: coords.latitude, lng: coords.longitude };
         setUserLocation(loc);
         setGeoError(null);
         setLocating(false);
-        mapRef.current?.setView([loc.lat, loc.lng], USER_ZOOM);
-        onSuccess?.(loc);
+        mapRef.current?.panTo(loc);
+        mapRef.current?.setZoom(14);
+        fetchCafes(loc.lat, loc.lng);
       },
       (err) => {
         setGeoError(err.code === 1 ? 'denied' : 'unavailable');
         setLocating(false);
-        // Fall back to India overview on error AND still fetch all cafés
-        // (using India center as the distance origin so the list isn't empty)
-        mapRef.current?.setView(INDIA_CENTER, 5);
-        fetchAllCafes(INDIA_CENTER[0], INDIA_CENTER[1]);
+        fetchCafes(INDIA_CENTER.lat, INDIA_CENTER.lng);
       },
       { timeout: 10000, enableHighAccuracy: false, maximumAge: 60000 }
     );
-  }, []);
+  }, [fetchCafes]);
 
-  // On mount: check if permission already granted → skip India view, go straight to user location
+  useEffect(() => { geoLocate(); }, [geoLocate]);
+
+  // ── Init Google Map ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const run = async () => {
-      if (navigator.permissions) {
-        try {
-          const status = await navigator.permissions.query({ name: 'geolocation' });
-          if (status.state !== 'granted') {
-            // Permission not yet granted — show India overview, let user decide
-            setLocating(false);
-          }
-          // If granted, keep locating=true (hides India flash) and let getCurrentPosition run
-        } catch {
-          setLocating(false);
-        }
-      } else {
-        setLocating(false);
-      }
-      requestGeo((loc) => fetchAllCafes(loc.lat, loc.lng));
-    };
-    run();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!mapsReady || initDoneRef.current || !mapDivRef.current) return;
+    initDoneRef.current = true;
 
-  // Note: changing the radius slider only filters the sidebar list (client-side).
-  // Map markers always show every café — no refetch needed.
+    const map = new window.google.maps.Map(mapDivRef.current, {
+      center:            INDIA_CENTER,
+      zoom:              5,
+      mapTypeControl:    true,
+      mapTypeControlOptions: {
+        style:    window.google.maps.MapTypeControlStyle.DROPDOWN_MENU,
+        position: window.google.maps.ControlPosition.TOP_RIGHT,
+        mapTypeIds: ['roadmap', 'satellite', 'hybrid'],
+      },
+      streetViewControl: false,
+      fullscreenControl: false,
+      zoomControl:       true,
+      zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_BOTTOM },
+      gestureHandling:   'greedy',
+    });
 
-  // ── 5. Sync markers ─────────────────────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    infoWindowRef.current = new window.google.maps.InfoWindow();
+    mapRef.current = map;
 
-    if (userMarkerRef.current) { userMarkerRef.current.remove(); userMarkerRef.current = null; }
+    // If user location already resolved before map was ready, fly there now
     if (userLocation) {
-      userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
-        icon:         userPinIcon(),
-        zIndexOffset: 2000,
-        interactive:  false,
-      }).addTo(map).bindTooltip('You', { permanent: false, direction: 'top', offset: [0, -14], className: 'leaflet-tooltip-user' });
+      map.panTo(userLocation);
+      map.setZoom(14);
     }
 
-    cafeMarkersRef.current.forEach(({ marker }) => marker.remove());
-    cafeMarkersRef.current.clear();
+    return () => {
+      initDoneRef.current = false;
+      mapRef.current = null;
+    };
+  }, [mapsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── User location marker ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current || !userLocation) return;
+    if (userMarkerRef.current) userMarkerRef.current.setMap(null);
+    userMarkerRef.current = new window.google.maps.Marker({
+      position:    userLocation,
+      map:         mapRef.current,
+      title:       'You are here',
+      zIndex:      999,
+      icon: {
+        path:        window.google.maps.SymbolPath.CIRCLE,
+        scale:       10,
+        fillColor:   '#3b82f6',
+        fillOpacity: 1,
+        strokeColor: '#ffffff',
+        strokeWeight: 3,
+      },
+    });
+    mapRef.current.panTo(userLocation);
+    mapRef.current.setZoom(14);
+  }, [mapsReady, userLocation]);
+
+  // ── Cafe markers ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapsReady || !mapRef.current) return;
+
+    // Remove old markers
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current.clear();
 
     cafes.forEach((cafe) => {
       if (!cafe.latitude || !cafe.longitude) return;
-      const lat        = parseFloat(cafe.latitude);
-      const lng        = parseFloat(cafe.longitude);
-      const isSelected = cafe.id === selectedId;
+      const pos = { lat: parseFloat(cafe.latitude), lng: parseFloat(cafe.longitude) };
 
-      const popupNode = document.createElement('div');
-      popupNode.innerHTML = popupHtml(cafe);
+      const marker = new window.google.maps.Marker({
+        position: pos,
+        map:      mapRef.current,
+        title:    cafe.name,
+        icon: {
+          url: cafe.logo_url || '',
+          // Fallback to label if no logo
+          ...(cafe.logo_url ? {
+            scaledSize: new window.google.maps.Size(40, 40),
+            anchor:     new window.google.maps.Point(20, 40),
+          } : {}),
+        },
+        label: cafe.logo_url ? undefined : {
+          text:      cafe.name.charAt(0).toUpperCase(),
+          color:     '#fff',
+          fontWeight:'bold',
+          fontSize:  '13px',
+        },
+        ...(cafe.logo_url ? {} : {
+          icon: {
+            path:         window.google.maps.SymbolPath.CIRCLE,
+            scale:        20,
+            fillColor:    cafe.id === selectedId ? '#ea580c' : '#f97316',
+            fillOpacity:  1,
+            strokeColor:  '#fff',
+            strokeWeight: 2.5,
+          },
+        }),
+      });
 
-      const marker = L.marker([lat, lng], {
-        icon:        makePinIcon(cafe, isSelected),
-        zIndexOffset: isSelected ? 1000 : 0,
-      })
-        .addTo(map)
-        .bindPopup(popupNode, {
-          maxWidth:    260,
-          closeButton: true,
-          className:   'dv-popup',
-        });
-
-      marker.on('click', () => {
+      marker.addListener('click', () => {
         setSelectedId(cafe.id);
         setMobileTab('map');
+        showInfoWindow(cafe, marker);
         document.getElementById(`mc-${cafe.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       });
 
-      cafeMarkersRef.current.set(cafe.id, { marker, lat, lng });
+      markersRef.current.set(cafe.id, marker);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cafes, userLocation]);
+  }, [mapsReady, cafes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── 6. Swap icon on select ──────────────────────────────────────────────────
+  const showInfoWindow = (cafe, marker) => {
+    if (!infoWindowRef.current) return;
+    const dist = cafe.distance_km != null
+      ? parseFloat(cafe.distance_km) < 1
+        ? `${Math.round(parseFloat(cafe.distance_km) * 1000)} m`
+        : `${parseFloat(cafe.distance_km).toFixed(1)} km`
+      : null;
+
+    const logoHtml = cafe.logo_url
+      ? `<img src="${cafe.logo_url}" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0" />`
+      : `<div style="width:40px;height:40px;border-radius:10px;background:#fff7ed;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#f97316;flex-shrink:0">${cafe.name.charAt(0)}</div>`;
+
+    infoWindowRef.current.setContent(`
+      <div style="font-family:system-ui,sans-serif;min-width:200px;max-width:240px;padding:4px">
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">
+          ${logoHtml}
+          <div style="flex:1;min-width:0">
+            <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${cafe.name}</p>
+            ${cafe.address ? `<p style="margin:0;font-size:11px;color:#9ca3af;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${cafe.address}</p>` : ''}
+          </div>
+        </div>
+        ${dist ? `<p style="font-size:11px;font-weight:700;color:#ea580c;margin-bottom:8px">📍 ${dist} away</p>` : ''}
+        <a href="/cafe/${cafe.slug}" style="display:block;text-align:center;background:#f97316;color:#fff;padding:8px 14px;border-radius:10px;text-decoration:none;font-size:12px;font-weight:700">View Menu →</a>
+      </div>
+    `);
+    infoWindowRef.current.open(mapRef.current, marker);
+  };
+
+  // ── Selected marker highlight ────────────────────────────────────────────────
   useEffect(() => {
-    cafeMarkersRef.current.forEach(({ marker }, id) => {
-      const cafe = cafes.find((c) => c.id === id);
-      if (cafe) marker.setIcon(makePinIcon(cafe, id === selectedId));
-      marker.setZIndexOffset(id === selectedId ? 1000 : 0);
+    if (!mapsReady) return;
+    markersRef.current.forEach((marker, id) => {
+      if (!marker.getIcon || typeof marker.getIcon() !== 'object') return;
+      const icon = marker.getIcon();
+      if (icon?.path === window.google.maps.SymbolPath.CIRCLE) {
+        marker.setIcon({ ...icon, fillColor: id === selectedId ? '#ea580c' : '#f97316' });
+      }
     });
-  }, [selectedId, cafes]);
+  }, [mapsReady, selectedId]);
 
-  // ── Derived: cafés shown in the sidebar list ────────────────────────────────
-  // Filtered by (a) selected radius and (b) case-insensitive search across
-  // name/city/address. Order preserved (backend already sorts by distance asc).
+  // ── Map search (Places Autocomplete on header input) ────────────────────────
+  const searchInputRef = useRef(null);
+  useEffect(() => {
+    if (!mapsReady || !searchInputRef.current) return;
+    const ac = new window.google.maps.places.Autocomplete(searchInputRef.current, {
+      types: ['establishment', 'geocode'],
+    });
+    ac.addListener('place_changed', () => {
+      const place = ac.getPlace();
+      if (!place.geometry?.location) {
+        // No geometry — try to match in cafes list
+        const q = (searchInputRef.current?.value || '').trim().toLowerCase();
+        const match = filteredCafes.find((c) => c.name.toLowerCase().includes(q));
+        if (match) { handleCardClick(match); return; }
+        return;
+      }
+      mapRef.current?.panTo(place.geometry.location);
+      mapRef.current?.setZoom(15);
+    });
+  }, [mapsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Sidebar list (client-side filter) ───────────────────────────────────────
   const q = searchQuery.trim().toLowerCase();
   const filteredCafes = cafes.filter((c) => {
     if (q) {
-      const hay = `${c.name || ''} ${c.city || ''} ${c.address || ''}`.toLowerCase();
+      const hay = `${c.name} ${c.city || ''} ${c.address || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
-    // Apply radius only when there's no active search — search results override radius
     if (!q && c.distance_km != null && parseFloat(c.distance_km) > radius) return false;
     return true;
   });
 
-  // ── Cafe search (case-insensitive, distance-sorted) ──────────────────────
-  // Live filter on the loaded cafe list; submit jumps the map to the first match.
-  // Falls back to Nominatim geocoding if no café matches (so "Mumbai" still works).
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    const q = searchQuery.trim();
-    if (!q) return;
-    // First match in the already-loaded, distance-sorted list
-    const match = filteredCafes[0];
-    if (match && match.latitude && match.longitude) {
-      setSelectedId(match.id);
-      mapRef.current?.setView([parseFloat(match.latitude), parseFloat(match.longitude)], 16);
-      setTimeout(() => cafeMarkersRef.current.get(match.id)?.marker.openPopup(), 350);
-      return;
-    }
-    // No café matched — fall back to Nominatim location search to recenter the map
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q + ', India')}&format=json&limit=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      );
-      const data = await res.json();
-      if (!data.length) { toast.error('No café or place matched that name'); return; }
-      const loc = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-      mapRef.current?.setView([loc.lat, loc.lng], 13);
-    } catch {
-      toast.error('Search failed — try again');
-    }
-  };
-
   const handleCardClick = (cafe) => {
     setSelectedId(cafe.id);
     setMobileTab('map');
-    const entry = cafeMarkersRef.current.get(cafe.id);
-    if (entry && mapRef.current) {
-      mapRef.current.setView([entry.lat, entry.lng], 16, { animate: true });
-      setTimeout(() => entry.marker.openPopup(), 350);
+    const marker = markersRef.current.get(cafe.id);
+    if (marker && mapRef.current) {
+      mapRef.current.panTo(marker.getPosition());
+      mapRef.current.setZoom(16);
+      showInfoWindow(cafe, marker);
     }
   };
 
-  // ────────────────────────────────────────────────────────────────────────────
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    const match = filteredCafes[0];
+    if (match) handleCardClick(match);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <>
-      {/* Leaflet popup & tooltip overrides */}
-      <style>{`
-        .dv-popup .leaflet-popup-content-wrapper {
-          border-radius: 14px !important;
-          box-shadow: 0 8px 32px rgba(0,0,0,.14) !important;
-          padding: 0 !important;
-          overflow: hidden;
-          border: 1px solid #f3f4f6;
-        }
-        .dv-popup .leaflet-popup-content { margin: 14px !important; }
-        .dv-popup .leaflet-popup-tip-container { margin-top: -1px; }
-        .leaflet-tooltip-user {
-          background: #1f2937 !important;
-          color: #fff !important;
-          border: none !important;
-          border-radius: 6px !important;
-          font-size: 11px !important;
-          font-weight: 600 !important;
-          padding: 3px 8px !important;
-          box-shadow: 0 2px 8px rgba(0,0,0,.2) !important;
-        }
-        .leaflet-tooltip-user::before { border-top-color: #1f2937 !important; }
-        .leaflet-control-attribution {
-          font-size: 10px !important;
-          background: rgba(255,255,255,0.8) !important;
-          backdrop-filter: blur(4px);
-          border-radius: 6px 0 0 0 !important;
-        }
-      `}</style>
+    <div className="h-screen flex flex-col overflow-hidden">
 
-      <div className="h-screen flex flex-col overflow-hidden">
+      {/* ── Header ── */}
+      <header className="bg-white/95 backdrop-blur-sm border-b border-gray-100 flex-shrink-0 z-20 shadow-sm">
+        <div className="px-3 py-3 flex items-center gap-2 max-w-7xl mx-auto">
+          <button onClick={() => navigate(-1)}
+            className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 flex-shrink-0 transition-colors">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M5 12l7 7M5 12l7-7"/>
+            </svg>
+          </button>
 
-        {/* ── Header ── */}
-        <header className="bg-white/95 backdrop-blur-sm border-b border-gray-100 flex-shrink-0 z-20 shadow-sm">
-          <div className="px-3 py-3 flex items-center gap-2 max-w-7xl mx-auto">
-
-            <button
-              onClick={() => navigate(-1)}
-              className="p-2 rounded-xl hover:bg-gray-100 text-gray-500 flex-shrink-0 transition-colors"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M19 12H5M5 12l7 7M5 12l7-7"/>
-              </svg>
+          <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2 min-w-0">
+            <div className="relative flex-1 min-w-0">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </span>
+              <input
+                ref={searchInputRef}
+                className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-gray-50 placeholder-gray-400"
+                placeholder={mapsReady ? 'Search cafés, city or area…' : 'Search café name or city…'}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+            <button type="submit"
+              className="bg-brand-500 hover:bg-brand-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap">
+              Search
             </button>
+          </form>
 
-            <form onSubmit={handleSearch} className="flex-1 flex gap-2 min-w-0">
-              <div className="relative flex-1 min-w-0">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                </span>
-                <input
-                  className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-gray-50 placeholder-gray-400"
-                  placeholder="Search café name, city or area…"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <button
-                type="submit"
-                className="bg-brand-500 hover:bg-brand-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors whitespace-nowrap"
-              >
-                Search
-              </button>
-            </form>
+          {/* Re-locate button */}
+          <button
+            onClick={() => { setLocating(true); geoLocate(); }}
+            className="p-2.5 rounded-xl border border-brand-200 text-brand-600 hover:bg-brand-50 flex-shrink-0 transition-colors"
+            title="Use my location"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
+            </svg>
+          </button>
 
-            <button
-              onClick={() => requestGeo((loc) => fetchNearby(loc.lat, loc.lng, radius))}
-              className="p-2.5 rounded-xl border border-brand-200 text-brand-600 hover:bg-brand-50 flex-shrink-0 transition-colors"
-              title="Use my location"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
-                <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" opacity="0.3"/>
-              </svg>
-            </button>
-
-            {/* Mobile tab toggle */}
+          {/* Mobile map/list toggle — only show if map is available */}
+          {!mapsUnavailable && (
             <div className="flex md:hidden border border-gray-200 rounded-xl overflow-hidden flex-shrink-0">
-              {(['map', 'list']).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setMobileTab(v)}
-                  className={`px-3 py-2 text-xs font-semibold transition-colors capitalize ${
-                    mobileTab === v ? 'bg-brand-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
-                  }`}
-                >
+              {['map', 'list'].map((v) => (
+                <button key={v} onClick={() => setMobileTab(v)}
+                  className={`px-3 py-2 text-xs font-semibold transition-colors ${mobileTab === v ? 'bg-brand-500 text-white' : 'bg-white text-gray-500'}`}>
                   {v === 'map' ? '🗺' : '☰'}
                 </button>
               ))}
             </div>
+          )}
+        </div>
+
+        {geoError && (
+          <div className="bg-amber-50 border-t border-amber-100 px-4 py-2 flex items-center gap-2">
+            <span className="text-amber-500 text-sm">⚠️</span>
+            <p className="text-xs text-amber-700">
+              {geoError === 'denied'
+                ? 'Location access denied — search a city or area above to find cafés.'
+                : 'Could not get your location — search above or browse the list.'}
+            </p>
+          </div>
+        )}
+      </header>
+
+      {/* ── Body ── */}
+      <div className="flex flex-1 overflow-hidden">
+
+        {/* ── Sidebar ── */}
+        <aside className={`${mapsUnavailable ? 'w-full' : 'w-full md:w-80'} flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden ${mobileTab === 'list' || mapsUnavailable ? 'flex' : 'hidden'} md:flex`}>
+
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
+            <div>
+              <p className="text-sm font-bold text-gray-900">
+                {loading ? 'Searching…'
+                  : q ? `${filteredCafes.length} match${filteredCafes.length !== 1 ? 'es' : ''} for "${q}"`
+                  : userLocation ? `${filteredCafes.length} café${filteredCafes.length !== 1 ? 's' : ''} nearby`
+                  : 'Find cafés near you'}
+              </p>
+              {!loading && (
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {q ? `All distances · ${cafes.length} total` : `Within ${radius} km · ${cafes.length} total`}
+                </p>
+              )}
+            </div>
+            <select value={radius} onChange={(e) => setRadius(Number(e.target.value))}
+              className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-200">
+              {RADIUS_OPTIONS.map((r) => <option key={r} value={r}>{r} km</option>)}
+            </select>
           </div>
 
-          {geoError && (
-            <div className="bg-amber-50 border-t border-amber-100 px-4 py-2 flex items-center gap-2">
-              <span className="text-amber-500 text-sm">⚠️</span>
-              <p className="text-xs text-amber-700">
-                {geoError === 'denied'
-                  ? 'Location access denied — search a city above to find nearby cafés.'
-                  : 'Could not get your location — search a city above.'}
-              </p>
-            </div>
-          )}
-        </header>
-
-        {/* ── Body ── */}
-        <div className="flex flex-1 overflow-hidden">
-
-          {/* ── Sidebar ── */}
-          <aside className={`w-full md:w-80 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col overflow-hidden ${mobileTab === 'list' ? 'flex' : 'hidden'} md:flex`}>
-
-            {/* Sidebar header */}
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
-              <div>
-                <p className="text-sm font-bold text-gray-900">
-                  {loading ? 'Searching…'
-                    : q ? `${filteredCafes.length} match${filteredCafes.length !== 1 ? 'es' : ''} for "${q}"`
-                    : userLocation ? `${filteredCafes.length} café${filteredCafes.length !== 1 ? 's' : ''} nearby`
-                    : 'Find cafés near you'}
-                </p>
-                {!loading && (
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {q
-                      ? `All distances · ${cafes.length} total on map`
-                      : `Within ${radius} km · ${cafes.length} total on map`}
-                  </p>
-                )}
+          <div className="flex-1 overflow-y-auto">
+            {loading && (
+              <div className="flex items-center justify-center gap-3 py-20 text-sm text-gray-500">
+                <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                Finding cafés…
               </div>
-              <select
-                value={radius}
-                onChange={(e) => setRadius(Number(e.target.value))}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600 bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-200"
-              >
-                {RADIUS_OPTIONS.map((r) => <option key={r} value={r}>{r} km</option>)}
-              </select>
-            </div>
+            )}
+            {!loading && filteredCafes.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                <div className="text-3xl mb-3">☕</div>
+                <p className="text-sm font-bold text-gray-700 mb-1">
+                  {q ? `No cafés match "${q}"` : 'No cafés in this radius'}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {q ? 'Try a different name or clear search.' : 'Increase the radius or try a different area.'}
+                </p>
+              </div>
+            )}
+            {!loading && filteredCafes.length > 0 && (
+              <div className="p-3 space-y-2">
+                {filteredCafes.map((cafe) => (
+                  <SidebarCard
+                    key={cafe.id}
+                    cafe={cafe}
+                    selected={cafe.id === selectedId}
+                    searchQuery={q}
+                    onSelect={() => handleCardClick(cafe)}
+                    onNavigate={() => navigate(`/cafe/${cafe.slug}`)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
 
-            <div className="flex-1 overflow-y-auto">
-              {loading && (
-                <div className="flex items-center justify-center gap-3 py-20 text-sm text-gray-500">
-                  <div className="w-5 h-5 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-                  Finding cafés…
-                </div>
-              )}
-
-              {!loading && !locating && !userLocation && (
-                <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-brand-50 flex items-center justify-center mb-4">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#f97316" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/>
-                    </svg>
-                  </div>
-                  <p className="text-sm font-bold text-gray-700 mb-1">Allow location or search</p>
-                  <p className="text-xs text-gray-400 leading-relaxed">Nearby DineVerse cafés will appear on the map</p>
-                </div>
-              )}
-
-              {!loading && userLocation && filteredCafes.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-3xl mb-4">☕</div>
-                  <p className="text-sm font-bold text-gray-700 mb-1">
-                    {q ? `No cafés match "${q}"` : 'No cafés in this radius'}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {q ? 'Try a different name or clear search.' : 'Increase the radius or scroll the map to see more.'}
-                  </p>
-                </div>
-              )}
-
-              {!loading && filteredCafes.length > 0 && (
-                <div className="p-3 space-y-2">
-                  {filteredCafes.map((cafe) => (
-                    <CafeCard
-                      key={cafe.id}
-                      cafe={cafe}
-                      selected={cafe.id === selectedId}
-                      onSelect={() => handleCardClick(cafe)}
-                      onNavigate={() => navigate(`/cafe/${cafe.slug}`)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </aside>
-
-          {/* ── Map canvas ── */}
+        {/* ── Map canvas ── */}
+        {!mapsUnavailable && (
           <div className={`flex-1 relative ${mobileTab === 'list' ? 'hidden md:block' : 'block'}`}>
+
+            {/* Map unavailable banner — shown while SDK loading or if key bad */}
+            {mapsUnavailable && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 z-10">
+                <p className="text-4xl mb-3">🗺️</p>
+                <p className="text-sm font-bold text-gray-700 mb-1">Map unavailable</p>
+                <p className="text-xs text-gray-400 text-center max-w-xs">
+                  Google Maps API key not configured. Browse the list on the left to find and visit cafés.
+                </p>
+              </div>
+            )}
+
+            {/* Google Map div */}
             <div ref={mapDivRef} className="absolute inset-0" />
 
-            {/* Locating overlay — shown while waiting for GPS when permission was pre-granted */}
+            {/* Locating overlay */}
             {locating && (
               <div className="absolute inset-0 bg-white/80 backdrop-blur-[3px] flex flex-col items-center justify-center z-[900] pointer-events-none gap-3">
                 <div className="w-12 h-12 rounded-2xl bg-brand-50 flex items-center justify-center">
@@ -554,8 +453,16 @@ export default function MapPage() {
               </div>
             )}
 
-            {/* DineVerse badge — bottom-left */}
-            {!loading && cafes.length > 0 && (
+            {/* SDK loading overlay */}
+            {!mapsReady && !mapsUnavailable && (
+              <div className="absolute inset-0 bg-gray-100 flex flex-col items-center justify-center z-[800] pointer-events-none gap-3">
+                <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-500">Loading Google Maps…</p>
+              </div>
+            )}
+
+            {/* Café count badge */}
+            {!loading && cafes.length > 0 && mapsReady && (
               <div className="absolute bottom-8 left-4 z-[900] pointer-events-none">
                 <div className="bg-white/90 backdrop-blur-sm border border-gray-200 shadow-md rounded-full px-3.5 py-1.5 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse flex-shrink-0" />
@@ -566,70 +473,71 @@ export default function MapPage() {
               </div>
             )}
           </div>
-        </div>
+        )}
       </div>
-    </>
+    </div>
   );
 }
 
 // ── Sidebar card ──────────────────────────────────────────────────────────────
-function CafeCard({ cafe, selected, onSelect, onNavigate }) {
+function highlight(text, q) {
+  if (!q || !text) return text;
+  const idx = text.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return text;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-yellow-100 text-yellow-900 rounded-sm not-italic font-semibold px-0.5">
+        {text.slice(idx, idx + q.length)}
+      </mark>
+      {text.slice(idx + q.length)}
+    </>
+  );
+}
+
+function SidebarCard({ cafe, selected, searchQuery, onSelect, onNavigate }) {
   const dist = cafe.distance_km != null ? parseFloat(cafe.distance_km) : null;
   const distLabel = dist == null ? null
     : dist < 1 ? `${Math.round(dist * 1000)} m`
     : `${dist.toFixed(1)} km`;
 
   return (
-    <div
-      id={`mc-${cafe.id}`}
-      onClick={onSelect}
+    <div id={`mc-${cafe.id}`} onClick={onSelect}
       className={`flex gap-3 p-3 rounded-2xl cursor-pointer transition-all ${
-        selected
-          ? 'bg-orange-50 ring-1 ring-orange-200 shadow-sm'
-          : 'bg-gray-50 hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-gray-200'
+        selected ? 'bg-orange-50 ring-1 ring-orange-200 shadow-sm' : 'bg-gray-50 hover:bg-white hover:shadow-sm hover:ring-1 hover:ring-gray-200'
       }`}
     >
-      {/* Logo */}
       <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden border border-gray-100 bg-brand-50 flex items-center justify-center shadow-sm">
         {cafe.logo_url
           ? <img src={cafe.logo_url} alt={cafe.name} className="w-full h-full object-cover" />
           : <span className="font-bold text-brand-500 text-xl">{cafe.name.charAt(0).toUpperCase()}</span>
         }
       </div>
-
-      {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="font-bold text-gray-900 text-sm truncate leading-tight">{cafe.name}</p>
-        {cafe.address && (
-          <p className="text-xs text-gray-400 truncate mt-0.5">{cafe.address}</p>
+        <p className="font-bold text-gray-900 text-sm truncate leading-tight">
+          {highlight(cafe.name, searchQuery)}
+        </p>
+        {(cafe.city || cafe.address) && (
+          <p className="text-xs text-gray-400 truncate mt-0.5">
+            {highlight(cafe.city || cafe.address, searchQuery)}
+          </p>
         )}
         <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           {distLabel && (
-            <span className="text-[11px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">
-              {distLabel}
-            </span>
+            <span className="text-[11px] font-bold bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full">{distLabel}</span>
           )}
           {cafe.avg_rating != null && (
-            <span className="text-[11px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5">
-              ★ {parseFloat(cafe.avg_rating).toFixed(1)}
-              <span className="text-yellow-600/70 font-normal ml-0.5">({cafe.rating_count})</span>
+            <span className="text-[11px] font-bold bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+              ★ {parseFloat(cafe.avg_rating).toFixed(1)} <span className="font-normal opacity-70">({cafe.rating_count})</span>
             </span>
           )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onNavigate(); }}
-            className="text-xs text-brand-600 font-semibold hover:underline"
-          >
+          <button onClick={(e) => { e.stopPropagation(); onNavigate(); }}
+            className="text-xs text-brand-600 font-semibold hover:underline">
             View menu →
           </button>
         </div>
       </div>
-
-      {/* Selected indicator */}
-      {selected && (
-        <div className="flex-shrink-0 self-center">
-          <div className="w-2 h-2 rounded-full bg-orange-400" />
-        </div>
-      )}
+      {selected && <div className="flex-shrink-0 self-center w-2 h-2 rounded-full bg-orange-400" />}
     </div>
   );
 }
