@@ -449,7 +449,7 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     price: item?.price || '',
     category_id: item?.category_id || '',
     image_url: item?.image_url || '',
-    is_veg: item?.is_veg ?? true,
+    is_veg: item ? item.is_veg : null, // null = not yet chosen for new items
     is_available: item?.is_available ?? true,
     track_stock: item?.track_stock ?? false,
     stock_quantity: item?.stock_quantity ?? '',
@@ -573,8 +573,9 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (saving) return; // guard against double-submit
-    if (!form.name || !form.price) { toast.error('Name and price are required'); return; }
+    if (form.is_veg === null) { toast.error('Please select Veg or Non-Veg'); return; }
     if (!form.category_id) { toast.error('Please select a category'); return; }
+    if (!form.name || !form.price) { toast.error('Name and price are required'); return; }
     const incompleteVariant = variantRows.some((row) =>
       (row.name.trim() || String(row.price).trim()) &&
       (!row.name.trim() || row.price === '' || Number.isNaN(parseFloat(row.price)) || parseFloat(row.price) < 0)
@@ -613,17 +614,18 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     }
   };
 
-  // Progressive unlock: for new items, category must be selected before details are enabled
+  // Progressive unlock: for new items, both type and category must be chosen first
+  const hasType = form.is_veg !== null;
   const hasCat = !!form.category_id;
-  const detailsLocked = !item && !hasCat;
+  const detailsLocked = !item && (!hasType || !hasCat);
 
   return (
     <Modal title={item ? 'Edit Item' : 'Add Menu Item'} onClose={onClose}>
       {/* Progress hint — shows current completion state for new items */}
       {!item && (
         <div className="flex items-center gap-2 mb-4 text-xs">
-          <span className="flex items-center gap-1 font-semibold text-green-600">
-            <span className="w-4 h-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+          <span className={`flex items-center gap-1 font-semibold ${hasType ? 'text-green-600' : 'text-brand-500'}`}>
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[10px] ${hasType ? 'bg-green-100 text-green-700' : 'bg-brand-500 text-white'}`}>{hasType ? '✓' : '1'}</span>
             Type
           </span>
           <span className="text-gray-300">→</span>
@@ -640,16 +642,19 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
       )}
       <form onSubmit={handleSubmit} className="space-y-4">
 
-        {/* Veg / Non-Veg toggle */}
-        <div className="flex rounded-xl overflow-hidden border border-gray-200">
-          <button type="button" onClick={() => setForm({ ...form, is_veg: true })}
-            className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${form.is_veg ? 'bg-green-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-            🟢 Veg
-          </button>
-          <button type="button" onClick={() => setForm({ ...form, is_veg: false })}
-            className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${!form.is_veg ? 'bg-red-500 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
-            🔴 Non-Veg
-          </button>
+        {/* Veg / Non-Veg toggle — required, no default for new items */}
+        <div>
+          <div className={`flex rounded-xl overflow-hidden border-2 transition-colors ${!hasType && !item ? 'border-amber-300' : 'border-gray-200'}`}>
+            <button type="button" onClick={() => setForm({ ...form, is_veg: true })}
+              className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${form.is_veg === true ? 'bg-green-500 text-white' : 'bg-white text-gray-400 hover:bg-gray-50'}`}>
+              🟢 Veg
+            </button>
+            <button type="button" onClick={() => setForm({ ...form, is_veg: false })}
+              className={`flex-1 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${form.is_veg === false ? 'bg-red-500 text-white' : 'bg-white text-gray-400 hover:bg-gray-50'}`}>
+              🔴 Non-Veg
+            </button>
+          </div>
+          {!hasType && !item && <p className="text-xs text-amber-500 mt-1">Select Veg or Non-Veg to continue</p>}
         </div>
 
         {/* Category — required, inline chips + create */}
@@ -706,7 +711,7 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
 
           <div>
             <label className="label">Price ({cafe?.currency || 'INR'}) *</label>
-            <input type="number" min="0" step="0.01" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
+            <input type="number" min="0" step="any" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
           </div>
 
           <label className="flex items-center gap-2 text-sm cursor-pointer">
