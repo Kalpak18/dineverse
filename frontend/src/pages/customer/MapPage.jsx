@@ -84,19 +84,20 @@ export default function MapPage() {
     if (!mapsReady || initDoneRef.current || !mapDivRef.current) return;
     initDoneRef.current = true;
 
-    const map = new window.google.maps.Map(mapDivRef.current, {
+    const G = window.google.maps;
+    const map = new G.Map(mapDivRef.current, {
       center:            INDIA_CENTER,
       zoom:              5,
       mapTypeControl:    true,
       mapTypeControlOptions: {
-        style:    window.google.maps.MapTypeControlStyle.DROPDOWN_MENU,
-        position: window.google.maps.ControlPosition.TOP_RIGHT,
+        style:      2, // DROPDOWN_MENU numeric value — avoids enum access timing issue
+        position:   3, // TOP_RIGHT
         mapTypeIds: ['roadmap', 'satellite', 'hybrid'],
       },
       streetViewControl: false,
       fullscreenControl: false,
       zoomControl:       true,
-      zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_BOTTOM },
+      zoomControlOptions: { position: 9 }, // RIGHT_BOTTOM
       gestureHandling:   'greedy',
     });
 
@@ -125,7 +126,7 @@ export default function MapPage() {
       title:       'You are here',
       zIndex:      999,
       icon: {
-        path:        window.google.maps.SymbolPath.CIRCLE,
+        path:        0, // SymbolPath.CIRCLE = 0
         scale:       10,
         fillColor:   '#3b82f6',
         fillOpacity: 1,
@@ -149,35 +150,27 @@ export default function MapPage() {
       if (!cafe.latitude || !cafe.longitude) return;
       const pos = { lat: parseFloat(cafe.latitude), lng: parseFloat(cafe.longitude) };
 
-      const marker = new window.google.maps.Marker({
+      const isSelected = cafe.id === selectedId;
+      const markerOptions = {
         position: pos,
         map:      mapRef.current,
         title:    cafe.name,
         icon: {
-          url: cafe.logo_url || '',
-          // Fallback to label if no logo
-          ...(cafe.logo_url ? {
-            scaledSize: new window.google.maps.Size(40, 40),
-            anchor:     new window.google.maps.Point(20, 40),
-          } : {}),
+          path:         0, // SymbolPath.CIRCLE
+          scale:        18,
+          fillColor:    isSelected ? '#ea580c' : '#f97316',
+          fillOpacity:  1,
+          strokeColor:  '#fff',
+          strokeWeight: 2.5,
         },
-        label: cafe.logo_url ? undefined : {
+        label: {
           text:      cafe.name.charAt(0).toUpperCase(),
           color:     '#fff',
-          fontWeight:'bold',
-          fontSize:  '13px',
+          fontWeight: 'bold',
+          fontSize:  '12px',
         },
-        ...(cafe.logo_url ? {} : {
-          icon: {
-            path:         window.google.maps.SymbolPath.CIRCLE,
-            scale:        20,
-            fillColor:    cafe.id === selectedId ? '#ea580c' : '#f97316',
-            fillOpacity:  1,
-            strokeColor:  '#fff',
-            strokeWeight: 2.5,
-          },
-        }),
-      });
+      };
+      const marker = new window.google.maps.Marker(markerOptions);
 
       marker.addListener('click', () => {
         setSelectedId(cafe.id);
@@ -224,7 +217,7 @@ export default function MapPage() {
     markersRef.current.forEach((marker, id) => {
       if (!marker.getIcon || typeof marker.getIcon() !== 'object') return;
       const icon = marker.getIcon();
-      if (icon?.path === window.google.maps.SymbolPath.CIRCLE) {
+      if (icon?.path === 0) { // 0 = SymbolPath.CIRCLE
         marker.setIcon({ ...icon, fillColor: id === selectedId ? '#ea580c' : '#f97316' });
       }
     });
