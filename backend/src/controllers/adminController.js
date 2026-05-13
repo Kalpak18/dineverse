@@ -141,7 +141,6 @@ exports.getCafes = asyncHandler(async (req, res) => {
       db.query(`SELECT COUNT(*) FROM cafes c ${where}`, params),
       db.query(
         `SELECT c.id, c.name, c.email, c.slug, c.phone, c.is_active, c.created_at,
-                c.plan_type, c.plan_start_date, c.plan_expiry_date,
                 COALESCE(ord.total_orders, 0) AS total_orders,
                 COALESCE(mi.menu_items,    0) AS menu_items
          FROM cafes c ${where}
