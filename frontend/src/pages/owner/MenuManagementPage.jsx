@@ -619,6 +619,25 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
 
   return (
     <Modal title={item ? 'Edit Item' : 'Add Menu Item'} onClose={onClose}>
+      {/* Progress hint — shows current completion state for new items */}
+      {!item && (
+        <div className="flex items-center gap-2 mb-4 text-xs">
+          <span className="flex items-center gap-1 font-semibold text-green-600">
+            <span className="w-4 h-4 rounded-full bg-green-100 text-green-700 flex items-center justify-center font-bold text-[10px]">✓</span>
+            Type
+          </span>
+          <span className="text-gray-300">→</span>
+          <span className={`flex items-center gap-1 font-semibold ${hasCat ? 'text-green-600' : 'text-brand-500'}`}>
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[10px] ${hasCat ? 'bg-green-100 text-green-700' : 'bg-brand-500 text-white'}`}>{hasCat ? '✓' : '2'}</span>
+            Category
+          </span>
+          <span className="text-gray-300">→</span>
+          <span className={`flex items-center gap-1 font-semibold ${hasCat ? 'text-brand-500' : 'text-gray-300'}`}>
+            <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[10px] ${hasCat ? 'bg-brand-500 text-white' : 'bg-gray-100 text-gray-400'}`}>3</span>
+            Details
+          </span>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="space-y-4">
 
         {/* Veg / Non-Veg toggle */}
