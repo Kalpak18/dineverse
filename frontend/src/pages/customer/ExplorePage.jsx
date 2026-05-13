@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { getNearbyCafes } from '../../services/api';
+import { getNearbyCafes, getAvailableTables } from '../../services/api';
 
 // Fallback coords (Mumbai) used only if geolocation is denied
 const FALLBACK_LAT = 19.076;
@@ -21,6 +21,22 @@ function highlight(text, query) {
   );
 }
 
+function TableBadges({ slug }) {
+  const [tables, setTables] = useState(null);
+  useEffect(() => {
+    getAvailableTables(slug).then(({ data }) => setTables(data.tables)).catch(() => setTables([]));
+  }, [slug]);
+  if (!tables) return null;
+  const available = tables.filter((t) => t.is_available).length;
+  const total = tables.length;
+  if (total === 0) return null;
+  return (
+    <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 ${available > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+      {available > 0 ? `${available}/${total} tables free` : 'All tables occupied'}
+    </span>
+  );
+}
+
 function CafeCard({ cafe, query, onClick }) {
   return (
     <div
@@ -28,7 +44,7 @@ function CafeCard({ cafe, query, onClick }) {
       className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md cursor-pointer overflow-hidden transition-shadow group"
     >
       {/* Cover */}
-      <div className="h-32 bg-gradient-to-br from-brand-100 to-orange-100 relative overflow-hidden">
+      <div className="h-36 bg-gradient-to-br from-brand-100 to-orange-100 relative overflow-hidden">
         {cafe.cover_image_url ? (
           <img
             src={cafe.cover_image_url}
@@ -38,15 +54,17 @@ function CafeCard({ cafe, query, onClick }) {
         ) : (
           <div className="w-full h-full flex items-center justify-center text-5xl opacity-30">☕</div>
         )}
-        <div className="absolute bottom-2 left-3">
+        {/* Logo badge */}
+        <div className="absolute bottom-3 left-3">
           {cafe.logo_url ? (
-            <img src={cafe.logo_url} alt={cafe.name} className="w-10 h-10 rounded-xl object-cover border-2 border-white shadow" />
+            <img src={cafe.logo_url} alt={cafe.name} className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow" />
           ) : (
-            <div className="w-10 h-10 rounded-xl bg-brand-500 border-2 border-white shadow flex items-center justify-center text-white font-bold text-base">
+            <div className="w-12 h-12 rounded-xl bg-brand-500 border-2 border-white shadow flex items-center justify-center text-white font-bold text-lg">
               {cafe.name.charAt(0)}
             </div>
           )}
         </div>
+        {/* Distance badge */}
         {cafe.distance_km != null && (
           <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full">
             {cafe.distance_km < 1
@@ -57,22 +75,25 @@ function CafeCard({ cafe, query, onClick }) {
       </div>
 
       {/* Details */}
-      <div className="p-3">
-        <h3 className="font-bold text-gray-900 text-sm leading-tight mb-0.5">
-          {highlight(cafe.name, query)}
-        </h3>
-        {cafe.city && (
-          <p className="text-xs text-gray-400 mb-1">{highlight(cafe.city, query)}</p>
+      <div className="p-4">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <h3 className="font-bold text-gray-900 text-sm leading-tight">
+            {highlight(cafe.name, query)}
+          </h3>
+          <TableBadges slug={cafe.slug} />
+        </div>
+        {cafe.description && (
+          <p className="text-xs text-gray-500 line-clamp-2 mb-2">{cafe.description}</p>
         )}
         {cafe.address && (
-          <p className="text-xs text-gray-400 line-clamp-1 flex items-start gap-1">
-            <span className="mt-0.5">📍</span>
+          <p className="text-xs text-gray-400 flex items-center gap-1">
+            <span>📍</span>
             <span>{highlight(cafe.address, query)}</span>
           </p>
         )}
         <button
           onClick={(e) => { e.stopPropagation(); onClick(); }}
-          className="mt-2.5 w-full py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition-colors"
+          className="mt-3 w-full py-2 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold transition-colors"
         >
           Order Now →
         </button>
