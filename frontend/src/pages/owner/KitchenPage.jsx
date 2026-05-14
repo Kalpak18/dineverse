@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
+import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -510,7 +510,7 @@ function HowItWorksModal({ onClose }) {
 // Items are tap-to-cycle rows (no per-item buttons visible by default).
 // Cancel button appears on hover/long-press. No reorder arrows (use Orders page for that).
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate,
-  onAcceptOrder, onRejectOrder, onServeSelected, onCancelItem, onToggleItem,
+  onAcceptOrder, onRejectOrder, onAcceptItem, onRejectItem, onServeSelected, onCancelItem, onToggleItem,
   prepInput, onSetPrepTime }) {
   const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
   const nextStatus = kitchenNext(status, order.order_type);
@@ -623,7 +623,22 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
                   </span>
                   {itemRemaining !== null && <EtaPill mins={itemRemaining} compact />}
                   <div className="flex items-center gap-0.5">
-                    {!isCancelled && ['pending', 'preparing'].includes(ist) && (
+                    {/* Per-item accept/reject — only before order is accepted, only on pending items */}
+                    {order.kitchen_mode === 'individual' && !order.accepted && ist === 'pending' && (
+                      <>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onAcceptItem(order.id, item.id); }}
+                          className="w-5 h-5 rounded text-[9px] bg-green-900/60 text-green-400 hover:bg-green-700 flex items-center justify-center font-bold"
+                          title="Accept this item"
+                        >✓</button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onRejectItem(order.id, item.id, item.item_name); }}
+                          className="w-5 h-5 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center font-bold"
+                          title="Reject this item"
+                        >✕</button>
+                      </>
+                    )}
+                    {!isCancelled && ['pending', 'preparing'].includes(ist) && order.accepted && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
                         className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center"
@@ -721,6 +736,30 @@ function RejectOrderModal({ rejectReason, setRejectReason, rejecting, onSubmit, 
   );
 }
 
+function RejectItemModal({ itemName, rejectReason, setRejectReason, rejecting, onSubmit, onClose, TB }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
+      <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+        <h3 className="font-bold text-white text-lg mb-1">Reject Item</h3>
+        <p className="text-gray-400 text-sm mb-4">
+          Reject <strong className="text-white">"{itemName}"</strong>? The customer will be notified.
+        </p>
+        <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+          placeholder="Reason (e.g. Out of stock, Sold out today…)"
+          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
+          rows={3} autoFocus />
+        <div className="flex gap-3">
+          <button onClick={onClose} className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>Keep Item</button>
+          <button onClick={onSubmit} disabled={!rejectReason.trim() || rejecting}
+            className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
+            {rejecting ? 'Rejecting…' : 'Reject Item'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Inline prep-time input that slides open when kitchen starts cooking an item.
 function PrepTimeInput({ itemId, defaultMins, onSubmit, onSkip }) {
   const [val, setVal] = useState(defaultMins ? String(defaultMins) : '');
@@ -801,9 +840,12 @@ export default function KitchenPage() {
   const [cancelModal, setCancelModal]     = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason]   = useState('');
   const [cancelling, setCancelling]       = useState(false);
-  const [rejectModal, setRejectModal]     = useState(null); // { orderId }
-  const [rejectReason, setRejectReason]   = useState('');
-  const [rejecting, setRejecting]         = useState(false);
+  const [rejectModal, setRejectModal]       = useState(null); // { orderId }
+  const [rejectReason, setRejectReason]     = useState('');
+  const [rejecting, setRejecting]           = useState(false);
+  const [rejectItemModal, setRejectItemModal] = useState(null); // { orderId, itemId, itemName }
+  const [rejectItemReason, setRejectItemReason] = useState('');
+  const [rejectingItem, setRejectingItem]   = useState(false);
   // prepInput: { orderId, itemId, defaultMins } — shows inline time input when item moves to preparing
   const [prepInput, setPrepInput]         = useState(null);
   const [statusFilter, setStatusFilter]   = usePersisted('kds_status_filter', 'all');
@@ -957,6 +999,30 @@ export default function KitchenPage() {
       setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
       toast.success('Order accepted');
     } catch (err) { toast.error(`Couldn't accept order: ${getApiError(err)}`); }
+  };
+
+  const handleAcceptItem = async (orderId, itemId) => {
+    try {
+      const { data } = await acceptItem(orderId, itemId);
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
+      toast.success('Item accepted');
+    } catch (err) { toast.error(`Couldn't accept item: ${getApiError(err)}`); }
+  };
+
+  const handleRejectItemSubmit = async () => {
+    if (!rejectItemReason.trim() || !rejectItemModal) return;
+    setRejectingItem(true);
+    try {
+      const { data } = await rejectItem(rejectItemModal.orderId, rejectItemModal.itemId, rejectItemReason.trim());
+      setOrders((prev) => {
+        if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== rejectItemModal.orderId);
+        return prev.map((o) => (o.id === rejectItemModal.orderId ? data.order : o));
+      });
+      toast.success(`"${rejectItemModal.itemName}" rejected — customer notified`);
+      setRejectItemModal(null);
+      setRejectItemReason('');
+    } catch (err) { toast.error(`Couldn't reject item: ${getApiError(err)}`); }
+    finally { setRejectingItem(false); }
   };
 
   const handleRejectOrder = async () => {
@@ -1117,7 +1183,10 @@ export default function KitchenPage() {
           node: <KDSOrderCard order={order} status={order.status} now={now}
                   selectedItems={selectedItems} onAdvance={handleAdvance}
                   onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
-                  onRejectOrder={(oid) => { setRejectModal({ orderId: oid }); setRejectReason(''); }} onServeSelected={handleServeSelected}
+                  onRejectOrder={(oid) => { setRejectModal({ orderId: oid }); setRejectReason(''); }}
+                  onAcceptItem={handleAcceptItem}
+                  onRejectItem={(oid, iid, name) => { setRejectItemModal({ orderId: oid, itemId: iid, itemName: name }); setRejectItemReason(''); }}
+                  onServeSelected={handleServeSelected}
                   onCancelItem={(oid, iid, name) => { setCancelModal({ orderId: oid, itemId: iid, itemName: name }); setCancelReason(''); }}
                   onToggleItem={toggleItemSelection}
                   prepInput={prepInput} onSetPrepTime={handleSetPrepTime} />,
@@ -1215,6 +1284,7 @@ export default function KitchenPage() {
 
         {cancelModal && <CancelItemModal cancelModal={cancelModal} cancelReason={cancelReason} setCancelReason={setCancelReason} cancelling={cancelling} onSubmit={handleCancelItemSubmit} onClose={() => { setCancelModal(null); setCancelReason(''); }} TB={TB} />}
         {rejectModal && <RejectOrderModal rejectModal={rejectModal} rejectReason={rejectReason} setRejectReason={setRejectReason} rejecting={rejecting} onSubmit={handleRejectOrder} onClose={() => { setRejectModal(null); setRejectReason(''); }} TB={TB} />}
+        {rejectItemModal && <RejectItemModal itemName={rejectItemModal.itemName} rejectReason={rejectItemReason} setRejectReason={setRejectItemReason} rejecting={rejectingItem} onSubmit={handleRejectItemSubmit} onClose={() => { setRejectItemModal(null); setRejectItemReason(''); }} TB={TB} />}
       </div>
     );
   }
@@ -1392,6 +1462,7 @@ export default function KitchenPage() {
 
       {cancelModal && <CancelItemModal cancelModal={cancelModal} cancelReason={cancelReason} setCancelReason={setCancelReason} cancelling={cancelling} onSubmit={handleCancelItemSubmit} onClose={() => { setCancelModal(null); setCancelReason(''); }} TB={TB} />}
       {rejectModal && <RejectOrderModal rejectModal={rejectModal} rejectReason={rejectReason} setRejectReason={setRejectReason} rejecting={rejecting} onSubmit={handleRejectOrder} onClose={() => { setRejectModal(null); setRejectReason(''); }} TB={TB} />}
+      {rejectItemModal && <RejectItemModal itemName={rejectItemModal.itemName} rejectReason={rejectItemReason} setRejectReason={setRejectItemReason} rejecting={rejectingItem} onSubmit={handleRejectItemSubmit} onClose={() => { setRejectItemModal(null); setRejectItemReason(''); }} TB={TB} />}
     </div>
   );
 }
