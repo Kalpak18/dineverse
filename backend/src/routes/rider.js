@@ -3,16 +3,32 @@ const requireRider = require('../middleware/requireRider');
 const { otpLimiter, authLimiter } = require('../middleware/rateLimiter');
 const auth = require('../controllers/riderAuthController');
 const jobs = require('../controllers/riderJobsController');
+const self = require('../controllers/riderSelfController');
 
-// ── Auth (public) ────────────────────────────────────────────
+// ── Existing auth (invite-based, owner-added riders) ────────────────────────
 router.post('/auth/send-otp',   otpLimiter,  auth.sendOtp);
 router.post('/auth/verify-otp', authLimiter, auth.verifyOtp);
-// Phone OTP — endpoints commented in controller until SMS provider is wired.
-// router.post('/auth/send-phone-otp',   otpLimiter,  auth.sendPhoneOtp);
-// router.post('/auth/verify-phone-otp', authLimiter, auth.verifyPhoneOtp);
+router.get ('/auth/me',         requireRider, auth.getMe);
 
-// ── Authenticated rider ──────────────────────────────────────
-router.get   ('/auth/me',          requireRider, auth.getMe);
+// ── Self-registration (independent riders) ──────────────────────────────────
+router.post('/register/send-otp', otpLimiter,  self.registerSendOtp);
+router.post('/register/verify',   authLimiter, self.registerVerify);
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+router.get   ('/profile',          requireRider, self.getProfile);
+router.patch ('/profile',          requireRider, self.updateProfile);
+router.patch ('/profile/location', requireRider, self.updateBaseLocation);
+router.patch ('/availability',     requireRider, self.toggleAvailability);
+
+// ── Nearby orders (self-registered rider discovery) ──────────────────────────
+router.get  ('/nearby-orders',          requireRider, self.getNearbyOrders);
+router.post ('/nearby-orders/:id/accept', requireRider, self.acceptNearbyOrder);
+
+// ── Earnings + history ───────────────────────────────────────────────────────
+router.get ('/earnings', requireRider, self.getEarnings);
+router.get ('/history',  requireRider, self.getHistory);
+
+// ── Active jobs (works for both cafe-assigned and self-accepted orders) ──────
 router.get   ('/jobs',             requireRider, jobs.getMyJobs);
 router.get   ('/jobs/:id',         requireRider, jobs.getJob);
 router.patch ('/jobs/:id/status',  requireRider, jobs.updateJobStatus);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { riderSendOtp, riderVerifyOtp } from '../../services/api';
 import { useRiderAuth } from '../../context/RiderAuthContext';
@@ -78,7 +78,10 @@ export default function RiderLoginPage() {
                 {busy ? 'Sending…' : 'Send code'}
               </button>
               <p className="text-xs text-gray-400 text-center">
-                Your café owner must add you as a rider before you can log in.
+                New rider?{' '}
+                <Link to="/rider/register" className="text-orange-500 font-semibold hover:underline">
+                  Register here
+                </Link>
               </p>
             </form>
           ) : (

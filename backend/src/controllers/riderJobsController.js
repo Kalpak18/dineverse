@@ -50,13 +50,13 @@ exports.getMyJobs = asyncHandler(async (req, res) => {
              FROM order_items oi WHERE oi.order_id = o.id) AS items
      FROM orders o
      JOIN cafes c ON c.id = o.cafe_id
-     WHERE o.cafe_id = $1
-       AND o.rider_id = $2
+     WHERE o.rider_id = $1
        AND o.order_type = 'delivery'
-       AND o.delivery_status = ANY($3)
+       AND o.delivery_status = ANY($2)
        AND c.delivery_enabled = true
+       AND ($3::int IS NULL OR o.cafe_id = $3)
      ORDER BY o.created_at ASC`,
-    [req.cafeId, req.riderId, ACTIVE_STATES]
+    [req.riderId, ACTIVE_STATES, req.cafeId || null]
   );
   ok(res, { jobs: result.rows });
 });
@@ -76,8 +76,9 @@ exports.getJob = asyncHandler(async (req, res) => {
              FROM order_items oi WHERE oi.order_id = o.id) AS items
      FROM orders o
      JOIN cafes c ON c.id = o.cafe_id
-     WHERE o.id = $1 AND o.cafe_id = $2 AND o.rider_id = $3`,
-    [id, req.cafeId, req.riderId]
+     WHERE o.id = $1 AND o.rider_id = $2
+       AND ($3::int IS NULL OR o.cafe_id = $3)`,
+    [id, req.riderId, req.cafeId || null]
   );
   if (!result.rows.length) return fail(res, 'Job not found', 404);
   ok(res, { job: result.rows[0] });
@@ -93,9 +94,10 @@ exports.updateJobStatus = asyncHandler(async (req, res) => {
   }
 
   const cur = await db.query(
-    `SELECT id, delivery_status FROM orders
-     WHERE id = $1 AND cafe_id = $2 AND rider_id = $3`,
-    [id, req.cafeId, req.riderId]
+    `SELECT id, delivery_status, cafe_id FROM orders
+     WHERE id = $1 AND rider_id = $2
+       AND ($3::int IS NULL OR cafe_id = $3)`,
+    [id, req.riderId, req.cafeId || null]
   );
   if (!cur.rows.length) return fail(res, 'Job not found or not assigned to you', 404);
 
@@ -119,9 +121,10 @@ exports.updateJobStatus = asyncHandler(async (req, res) => {
   );
 
   // Broadcast to customer + cafe rooms
+  const cafeId = cur.rows[0].cafe_id;
   const payload = { order_id: id, delivery_status: status };
   req.io?.to(`order:${id}`).emit('delivery_updated', payload);
-  req.io?.to(`cafe:${req.cafeId}`).emit('order_updated', { id, delivery_status: status });
+  if (cafeId) req.io?.to(`cafe:${cafeId}`).emit('order_updated', { id, delivery_status: status });
 
   logger.info('Rider %s advanced order %s: %s → %s', req.riderId, id, currentStatus, status);
   ok(res, { delivery_status: status });
@@ -143,11 +146,12 @@ exports.pingLocation = asyncHandler(async (req, res) => {
   const updated = await db.query(
     `UPDATE orders SET
        driver_lat = $1, driver_lng = $2, driver_updated_at = NOW()
-     WHERE cafe_id = $3 AND rider_id = $4
+     WHERE rider_id = $3
        AND order_type = 'delivery'
-       AND delivery_status = ANY($5)
+       AND delivery_status = ANY($4)
+       AND ($5::int IS NULL OR cafe_id = $5)
      RETURNING id`,
-    [lat, lng, req.cafeId, req.riderId, ACTIVE_STATES]
+    [lat, lng, req.riderId, ACTIVE_STATES, req.cafeId || null]
   );
 
   // Broadcast to each customer's order room

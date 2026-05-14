@@ -347,6 +347,24 @@ export const riderUpdateJob   = (id, status, failure_reason) =>
   riderApi.patch(`/rider/jobs/${id}/status`, { status, ...(failure_reason && { failure_reason }) });
 export const riderPingLocation = (lat, lng)    => riderApi.patch('/rider/location', { lat, lng });
 
+// Self-registration
+export const riderRegisterSendOtp = (email)  => riderApi.post('/rider/register/send-otp', { email });
+export const riderRegisterVerify  = (data)   => riderApi.post('/rider/register/verify', data);
+
+// Profile management
+export const riderGetProfile        = ()       => riderApi.get('/rider/profile');
+export const riderUpdateProfile     = (data)   => riderApi.patch('/rider/profile', data);
+export const riderUpdateBaseLocation= (data)   => riderApi.patch('/rider/profile/location', data);
+export const riderToggleAvailability= (is_online) => riderApi.patch('/rider/availability', { is_online });
+
+// Nearby orders (self-registered rider)
+export const riderGetNearbyOrders   = ()       => riderApi.get('/rider/nearby-orders');
+export const riderAcceptNearbyOrder = (id)     => riderApi.post(`/rider/nearby-orders/${id}/accept`);
+
+// Earnings + history
+export const riderGetEarnings = ()             => riderApi.get('/rider/earnings');
+export const riderGetHistory  = (params)       => riderApi.get('/rider/history', { params });
+
 // ─── Loyalty (Owner) ──────────────────────────────────────────
 export const getLoyaltyProgram    = ()           => api.get('/loyalty/program');
 export const saveLoyaltyProgram   = (data)       => api.post('/loyalty/program', data);

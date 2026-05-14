@@ -1,6 +1,7 @@
 const db          = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { sendRiderInviteEmail } = require('../services/emailService');
 
 // ─── Rider pool ───────────────────────────────────────────────
 
@@ -28,6 +29,18 @@ exports.createRider = asyncHandler(async (req, res) => {
        RETURNING id, name, phone, email, is_active`,
       [req.cafeId, name.trim(), phone?.trim() || null, cleanEmail]
     );
+
+    // Send invite email non-blocking — fetch cafe name for the email
+    if (cleanEmail) {
+      db.query(`SELECT name, owner_name FROM cafes WHERE id = $1`, [req.cafeId])
+        .then(({ rows: cafeRows }) => {
+          const cafeName  = cafeRows[0]?.name  || 'your café';
+          const ownerName = cafeRows[0]?.owner_name || '';
+          sendRiderInviteEmail(cleanEmail, name.trim(), cafeName, ownerName).catch(() => {});
+        })
+        .catch(() => {});
+    }
+
     ok(res, { rider: rows[0] }, 'Rider added');
   } catch (err) {
     if (err.code === '23505') {
