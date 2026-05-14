@@ -1153,15 +1153,17 @@ async function getOrderWithItems(orderId, cafeId = null) {
       params
     ),
     db.query(
-      `SELECT id, menu_item_id, item_name, quantity, unit_price, subtotal,
-              variant_id, variant_name, selected_modifiers, modifier_total,
-              item_status, accepted, cancellation_reason,
-              COALESCE(sort_order, 0) AS sort_order,
-              preparing_at, ready_at, served_at, cancelled_at,
-              prep_started_at, prep_duration_mins,
-              is_veg
-       FROM order_items WHERE order_id = $1
-       ORDER BY sort_order ASC, id ASC`,
+      `SELECT oi.id, oi.menu_item_id, oi.item_name, oi.quantity, oi.unit_price, oi.subtotal,
+              oi.variant_id, oi.variant_name, oi.selected_modifiers, oi.modifier_total,
+              oi.item_status, oi.accepted, oi.cancellation_reason,
+              COALESCE(oi.sort_order, 0) AS sort_order,
+              oi.preparing_at, oi.ready_at, oi.served_at, oi.cancelled_at,
+              oi.prep_started_at, oi.prep_duration_mins,
+              mi.is_veg, mi.default_prep_mins
+       FROM order_items oi
+       LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+       WHERE oi.order_id = $1
+       ORDER BY oi.sort_order ASC, oi.id ASC`,
       [orderId]
     ),
   ]);
