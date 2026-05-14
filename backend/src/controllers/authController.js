@@ -201,6 +201,9 @@ exports.validateCompleteSetup = [
     .notEmpty().withMessage('Slug is required')
     .matches(/^[a-z0-9-]+$/).withMessage('Slug can only contain lowercase letters, numbers, and hyphens'),
   body('phone').trim().notEmpty().withMessage('Phone number is required'),
+  body('address').trim().notEmpty().withMessage('Address is required'),
+  body('city').trim().notEmpty().withMessage('City is required'),
+  body('country').trim().notEmpty().withMessage('Country is required'),
 ];
 
 exports.completeSetup = asyncHandler(async (req, res) => {

@@ -83,10 +83,10 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
   let qClause  = '';
   if (q) {
     params.push(`%${q}%`);
-    // ILIKE = case-insensitive; matches name OR city so "Mumbai" or "starbucks" both work
     qClause = `AND (c.name ILIKE $${params.length} OR c.city ILIKE $${params.length})`;
   }
 
+  // Main query: cafes with coordinates — sorted by distance
   const result = await db.query(`
     WITH dist AS (
       SELECT c.id, c.name, c.slug, c.description, c.city, c.address,
@@ -118,7 +118,41 @@ exports.getNearbyCafes = asyncHandler(async (req, res) => {
     LIMIT 500
   `, params);
 
-  ok(res, { cafes: result.rows });
+  let cafes = result.rows;
+
+  // Fallback: cafes with no coordinates (address not geocoded yet).
+  // Always include them when there's a text search so they aren't invisible.
+  // Append after distance-sorted results so they don't push away nearby cafes.
+  if (q) {
+    const qParam = `%${q}%`;
+    const noLocResult = await db.query(`
+      SELECT c.id, c.name, c.slug, c.description, c.city, c.address,
+             c.logo_url, c.cover_image_url,
+             NULL::float AS latitude, NULL::float AS longitude,
+             NULL::float AS distance_km,
+             COALESCE(r.avg_rating, NULL) AS avg_rating,
+             COALESCE(r.rating_count, 0)  AS rating_count
+      FROM cafes c
+      LEFT JOIN (
+        SELECT cafe_id,
+               ROUND(AVG(rating)::numeric, 1) AS avg_rating,
+               COUNT(*)::int                  AS rating_count
+        FROM order_ratings GROUP BY cafe_id
+      ) r ON r.cafe_id = c.id
+      WHERE c.is_active = true AND c.setup_completed = true
+        AND (c.latitude IS NULL OR c.longitude IS NULL)
+        AND (c.name ILIKE $1 OR c.city ILIKE $1)
+      ORDER BY c.name ASC
+      LIMIT 50
+    `, [qParam]);
+
+    // Deduplicate (shouldn't overlap but be safe)
+    const seenIds = new Set(cafes.map((c) => c.id));
+    const extra = noLocResult.rows.filter((c) => !seenIds.has(c.id));
+    cafes = [...cafes, ...extra];
+  }
+
+  ok(res, { cafes });
 });
 
 // Public: get available tables for a café (no active orders on them)
