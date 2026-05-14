@@ -677,21 +677,32 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
 }
 
 
+// Persist a preference to localStorage and read it back
+function usePersisted(key, defaultVal) {
+  const [val, setVal] = useState(() => {
+    try { const s = localStorage.getItem(key); return s !== null ? JSON.parse(s) : defaultVal; }
+    catch { return defaultVal; }
+  });
+  const set = (v) => { setVal(v); try { localStorage.setItem(key, JSON.stringify(v)); } catch {} };
+  return [val, set];
+}
+
 export default function KitchenPage() {
   const { cafe } = useAuth();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [viewMode, setViewMode] = useState('combined'); // 'individual' | 'combined' | 'rush'
+  const [soundEnabled, setSoundEnabled]   = usePersisted('kds_sound', true);
+  const [fullscreen, setFullscreen]       = useState(false);
+  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined'); // 'individual' | 'combined' | 'rush'
+  const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified'); // 'unified' | 'split'
   const [selectedItems, setSelectedItems] = useState({});
-  const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
-  const [cancelReason, setCancelReason] = useState('');
-  const [cancelling, setCancelling] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | KITCHEN_STATUSES
-  const [vegFilter, setVegFilter] = useState('all'); // 'all' | 'veg' | 'nonveg'
-  const [showHelp, setShowHelp] = useState(false);
+  const [cancelModal, setCancelModal]     = useState(null);
+  const [cancelReason, setCancelReason]   = useState('');
+  const [cancelling, setCancelling]       = useState(false);
+  const [statusFilter, setStatusFilter]   = usePersisted('kds_status_filter', 'all');
+  const [vegFilter, setVegFilter]         = usePersisted('kds_veg_filter', 'all');
+  const [showHelp, setShowHelp]           = useState(false);
   const now = useTimer();
 
   const playChime = useCallback(() => {
@@ -905,7 +916,7 @@ export default function KitchenPage() {
     }
   };
 
-  // Combined view: group dine-in orders from the same table within TABLE_GROUP_WINDOW_MS.
+  // Group dine-in orders from the same table within TABLE_GROUP_WINDOW_MS.
   const groupByTable = (colOrders) => {
     const result = [];
     const tableGroups = new Map();
@@ -931,25 +942,44 @@ export default function KitchenPage() {
     return result;
   };
 
-  // Veg filter: an order passes if at least one active item matches the veg filter.
-  // We check item_name for common veg/non-veg signals (is_veg field if present, else heuristic).
+  // Returns true if any active item in the order has the given vegType ('veg'|'nonveg')
+  // Uses is_veg boolean field; falls through to true when unknown (show in both)
+  const itemIsVeg    = (item) => item.is_veg === true;
+  const itemIsNonVeg = (item) => item.is_veg === false;
+  const orderHasVeg    = (order) => (order.items || []).filter(i => i.item_status !== 'cancelled').some(itemIsVeg);
+  const orderHasNonVeg = (order) => (order.items || []).filter(i => i.item_status !== 'cancelled').some(itemIsNonVeg);
+
+  // For unified mode veg filter
   const orderMatchesVeg = (order) => {
     if (vegFilter === 'all') return true;
-    const activeItems = (order.items || []).filter((i) => i.item_status !== 'cancelled');
-    if (activeItems.length === 0) return true;
-    return activeItems.some((item) => {
-      // Use is_veg field if backend provides it, otherwise keep all (can't determine)
-      if (item.is_veg === true)  return vegFilter === 'veg';
-      if (item.is_veg === false) return vegFilter === 'nonveg';
-      return true; // unknown — show in both filters
-    });
+    const active = (order.items || []).filter((i) => i.item_status !== 'cancelled');
+    if (!active.length) return true;
+    const hasKnown = active.some((i) => i.is_veg !== undefined && i.is_veg !== null);
+    if (!hasKnown) return true; // no is_veg data — show in all filters
+    return vegFilter === 'veg' ? active.some(itemIsVeg) : active.some(itemIsNonVeg);
   };
 
-  // Filtered + sorted orders for the main feed
-  const filteredOrders = orders
+  // Filtered + sorted orders for unified mode
+  const baseOrders = orders
     .filter((o) => statusFilter === 'all' || o.status === statusFilter)
-    .filter(orderMatchesVeg)
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const filteredOrders = baseOrders.filter(orderMatchesVeg);
+
+  // For split kitchen mode — clone order but keep only relevant items visible
+  // (items of the other type are still shown but dimmed; this keeps the card actionable)
+  const vegOrders    = baseOrders.filter((o) => {
+    const active = (o.items || []).filter(i => i.item_status !== 'cancelled');
+    if (!active.length) return true;
+    const hasKnown = active.some(i => i.is_veg !== undefined && i.is_veg !== null);
+    return !hasKnown || active.some(itemIsVeg);
+  });
+  const nonVegOrders = baseOrders.filter((o) => {
+    const active = (o.items || []).filter(i => i.item_status !== 'cancelled');
+    if (!active.length) return true;
+    const hasKnown = active.some(i => i.is_veg !== undefined && i.is_veg !== null);
+    return !hasKnown || active.some(itemIsNonVeg);
+  });
 
   const byStatus = KITCHEN_STATUSES.reduce((acc, s) => {
     acc[s] = orders.filter((o) => o.status === s).length;
@@ -957,12 +987,66 @@ export default function KitchenPage() {
   }, {});
 
   const STATUS_FILTER_CONFIG = [
-    { key: 'all',       label: 'All',       icon: '📋', countKey: null },
-    { key: 'pending',   label: 'Pending',   icon: '🕐', color: 'text-yellow-300', activeBg: 'bg-yellow-500/20 border-yellow-500 text-yellow-300' },
-    { key: 'confirmed', label: 'Confirmed', icon: '✅', color: 'text-blue-300',   activeBg: 'bg-blue-500/20 border-blue-500 text-blue-300'   },
-    { key: 'preparing', label: 'Preparing', icon: '🍳', color: 'text-orange-300', activeBg: 'bg-orange-500/20 border-orange-500 text-orange-300' },
-    { key: 'ready',     label: 'Ready',     icon: '🛎️', color: 'text-teal-300',  activeBg: 'bg-teal-500/20 border-teal-500 text-teal-300'   },
+    { key: 'all',       label: 'All',       icon: '📋', activeBg: 'bg-gray-600/40 border-gray-500 text-white' },
+    { key: 'pending',   label: 'Pending',   icon: '🕐', activeBg: 'bg-yellow-500/20 border-yellow-500 text-yellow-300' },
+    { key: 'confirmed', label: 'Confirmed', icon: '✅', activeBg: 'bg-blue-500/20 border-blue-500 text-blue-300'   },
+    { key: 'preparing', label: 'Preparing', icon: '🍳', activeBg: 'bg-orange-500/20 border-orange-500 text-orange-300' },
+    { key: 'ready',     label: 'Ready',     icon: '🛎️', activeBg: 'bg-teal-500/20 border-teal-500 text-teal-300'   },
   ];
+  const STATUS_BADGE_BG = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
+
+  // Shared card renderer — used by both unified and split panels
+  const renderCardFeed = (feedOrders, highlightVeg = null) => {
+    if (feedOrders.length === 0) return (
+      <div className="flex flex-col items-center justify-center py-20 text-gray-700">
+        <span className="text-5xl mb-3 opacity-20">🍳</span>
+        <p className="text-sm text-gray-600">
+          {orders.length === 0 ? 'All clear!' : 'No orders here'}
+        </p>
+      </div>
+    );
+    if (viewMode === 'rush') return (
+      <div className="p-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+        {feedOrders.map((order) => (
+          <RushCard key={order.id} order={order} now={now}
+            onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} />
+        ))}
+      </div>
+    );
+
+    const cardList = viewMode === 'combined'
+      ? groupByTable(feedOrders).map((group) => ({
+          key: group.tableKey || group.orders[0].id,
+          status: group.orders[0].status,
+          node: <CombinedTableCard group={group} status={group.orders[0].status} now={now}
+                  onAdvance={handleAdvance} onAdvanceAll={handleAdvanceAll} onItemUpdate={handleItemUpdate} />,
+        }))
+      : feedOrders.map((order) => ({
+          key: order.id,
+          status: order.status,
+          node: <KDSOrderCard order={order} status={order.status} now={now}
+                  selectedItems={selectedItems} onAdvance={handleAdvance}
+                  onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
+                  onRejectOrder={handleRejectOrder} onServeSelected={handleServeSelected}
+                  onCancelItem={(oid, iid, name) => { setCancelModal({ orderId: oid, itemId: iid, itemName: name }); setCancelReason(''); }}
+                  onToggleItem={toggleItemSelection} />,
+        }));
+
+    return (
+      <div className="p-3 columns-1 sm:columns-2 xl:columns-3 gap-3">
+        {cardList.map(({ key, status, node }) => (
+          <div key={key} className="break-inside-avoid mb-3">
+            <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+              <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${STATUS_BADGE_BG[status] || 'bg-gray-600'}`}>
+                {STATUS_FILTER_CONFIG.find(c => c.key === status)?.icon} {STATUS_FILTER_CONFIG.find(c => c.key === status)?.label || status}
+              </span>
+            </div>
+            {node}
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   if (loading) {
     return (
@@ -972,205 +1056,219 @@ export default function KitchenPage() {
     );
   }
 
+  // Touch-friendly button base classes — min 44px tap target, no double-tap zoom
+  const TB = 'select-none touch-manipulation active:scale-95 transition-transform';
+
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-3 md:px-5 py-2.5 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
+      <div className="flex items-center justify-between px-3 md:px-5 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg">🍳</span>
-          <h1 className="font-bold text-sm md:text-base truncate">Kitchen</h1>
+          <span className="text-xl">🍳</span>
+          <h1 className="font-bold text-base md:text-lg truncate">Kitchen</h1>
           <span className="hidden md:inline text-xs text-gray-500">{cafe?.name}</span>
-          <span className="text-xs text-gray-500">{orders.length} active</span>
+          <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-semibold">{orders.length}</span>
         </div>
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          {/* View mode */}
-          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+
+        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+          {/* View mode — touch-sized buttons */}
+          <div className="flex gap-0.5 bg-gray-800 rounded-xl p-1">
             {[
-              { key: 'combined',   label: '⊞', labelFull: '⊞ By Table'   },
-              { key: 'individual', label: '☰', labelFull: '☰ Individual' },
-              { key: 'rush',       label: '⚡', labelFull: '⚡ Rush'       },
-            ].map(({ key, label, labelFull }) => (
+              { key: 'combined',   icon: '⊞', label: 'By Table'   },
+              { key: 'individual', icon: '☰', label: 'Individual' },
+              { key: 'rush',       icon: '⚡', label: 'Rush'       },
+            ].map(({ key, icon, label }) => (
               <button key={key} onClick={() => setViewMode(key)}
-                className={`px-2 md:px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? (key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white') : 'text-gray-400 hover:text-gray-200'}`}>
-                <span className="md:hidden">{label}</span>
-                <span className="hidden md:inline">{labelFull}</span>
+                className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                  viewMode === key
+                    ? key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white'
+                    : 'text-gray-400'
+                }`}>
+                <span className="lg:hidden">{icon}</span>
+                <span className="hidden lg:inline">{icon} {label}</span>
               </button>
             ))}
           </div>
+
+          {/* Split kitchen toggle */}
+          <button
+            onClick={() => setKitchenView((v) => v === 'unified' ? 'split' : 'unified')}
+            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
+              kitchenView === 'split'
+                ? 'bg-purple-600/30 border-purple-500 text-purple-300'
+                : 'bg-gray-800 border-transparent text-gray-400'
+            }`}
+            title="Split Veg / Non-veg kitchen view">
+            <span className="hidden sm:inline">{kitchenView === 'split' ? '🟢🔴 Split' : '🟢🔴 Split'}</span>
+            <span className="sm:hidden">🟢🔴</span>
+          </button>
+
           <button onClick={() => setSoundEnabled((s) => !s)}
-            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
             {soundEnabled ? '🔔' : '🔕'}
           </button>
           <button onClick={() => fetchOrders(true)} disabled={refreshing}
-            className="px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors disabled:opacity-50">
+            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 disabled:opacity-50`}>
             <span className={refreshing ? 'animate-spin inline-block' : ''}>↻</span>
           </button>
           <button onClick={() => setShowHelp(true)}
-            className="px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
+            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400`}>
             ?
           </button>
           <button onClick={toggleFullscreen}
-            className="hidden md:block px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
-            {fullscreen ? '⛶' : '⛶'}
+            className={`${TB} hidden md:flex min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 items-center justify-center`}>
+            ⛶
           </button>
         </div>
       </div>
 
       {showHelp && <HowItWorksModal onClose={() => setShowHelp(false)} />}
 
-      {/* ── Filter bar ── */}
-      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center gap-2 overflow-x-auto">
-        {/* Status filters */}
-        <div className="flex items-center gap-1.5 flex-shrink-0">
+      {/* ── Filter bar — hidden in split mode (split has its own panel headers) ── */}
+      {kitchenView === 'unified' && (
+        <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
+          {/* Status filters */}
           {STATUS_FILTER_CONFIG.map(({ key, label, icon, activeBg }) => {
             const count = key === 'all' ? orders.length : byStatus[key] || 0;
             const isActive = statusFilter === key;
-            const countBadgeBg = { pending: 'bg-yellow-500', confirmed: 'bg-blue-500', preparing: 'bg-orange-500', ready: 'bg-teal-500' };
             return (
               <button key={key} onClick={() => setStatusFilter(key)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition-all ${
-                  isActive
-                    ? (key === 'all' ? 'bg-gray-600/40 border-gray-500 text-white' : activeBg)
-                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                className={`${TB} flex items-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl border text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
+                  isActive ? activeBg : 'border-transparent text-gray-500 active:bg-gray-800'
                 }`}>
-                <span>{icon}</span>
+                <span className="text-sm">{icon}</span>
                 <span className="hidden sm:inline">{label}</span>
                 {count > 0 && (
-                  <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${countBadgeBg[key] || 'bg-gray-600'}`}>
+                  <span className={`min-w-[20px] h-5 px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${STATUS_BADGE_BG[key] || 'bg-gray-600'}`}>
                     {count}
                   </span>
                 )}
               </button>
             );
           })}
-        </div>
 
-        {/* Divider */}
-        <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
+          <div className="w-px h-7 bg-gray-700 flex-shrink-0 mx-1" />
 
-        {/* Veg / Non-veg filter */}
-        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Veg filter */}
           {[
-            { key: 'all',    label: 'All',     dot: null },
-            { key: 'veg',    label: '🟢 Veg',  dot: 'bg-green-500' },
-            { key: 'nonveg', label: '🔴 Non-veg', dot: 'bg-red-500' },
-          ].map(({ key, label }) => (
+            { key: 'all',    label: 'All',        cls: 'bg-gray-600/40 border-gray-500 text-white' },
+            { key: 'veg',    label: '🟢 Veg',     cls: 'bg-green-500/20 border-green-500 text-green-300' },
+            { key: 'nonveg', label: '🔴 Non-veg', cls: 'bg-red-500/20 border-red-500 text-red-300' },
+          ].map(({ key, label, cls }) => (
             <button key={key} onClick={() => setVegFilter(key)}
-              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
-                vegFilter === key
-                  ? key === 'veg'    ? 'bg-green-500/20 border-green-500 text-green-300'
-                  : key === 'nonveg' ? 'bg-red-500/20 border-red-500 text-red-300'
-                  : 'bg-gray-600/40 border-gray-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+              className={`${TB} min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap border flex-shrink-0 transition-all ${
+                vegFilter === key ? cls : 'border-transparent text-gray-500 active:bg-gray-800'
               }`}>
               {label}
             </button>
           ))}
         </div>
-      </div>
+      )}
 
       {/* ── Rush mode banner ── */}
       {viewMode === 'rush' && (
         <div className="flex-shrink-0 px-4 py-1.5 bg-orange-950/40 border-b border-orange-900/50 flex items-center gap-3">
           <span className="text-orange-300 font-bold text-xs">⚡ Rush Mode — oldest first</span>
-          <span className="ml-auto text-orange-300 font-bold text-xs">{filteredOrders.length} shown</span>
+          <span className="ml-auto text-orange-300 font-bold text-xs">{(kitchenView === 'unified' ? filteredOrders : baseOrders).length} shown</span>
         </div>
       )}
 
-      {/* ── Main card feed ── */}
-      <div className="flex-1 overflow-y-auto">
-        {filteredOrders.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-700 py-20">
-            <span className="text-5xl mb-3 opacity-20">🍳</span>
-            <p className="text-sm text-gray-600">
-              {orders.length === 0 ? 'No active orders — all clear!' : 'No orders match the current filters'}
-            </p>
-          </div>
-        ) : viewMode === 'rush' ? (
-          /* Rush: ultra-compact grid */
-          <div className="p-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-            {filteredOrders.map((order) => (
-              <RushCard key={order.id} order={order} now={now}
-                onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} />
-            ))}
-          </div>
-        ) : viewMode === 'combined' ? (
-          /* Combined: group by table, show status pill on each card */
-          <div className="p-3 md:p-4 columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3 space-y-3">
-            {groupByTable(filteredOrders).map((group) => (
-              <div key={group.tableKey || group.orders[0].id} className="break-inside-avoid mb-3">
-                {/* Status label above each combined group */}
-                <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
-                  {(() => {
-                    const s = group.orders[0].status;
-                    const cfg = STATUS_FILTER_CONFIG.find((c) => c.key === s);
-                    const badgeBg = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
-                    return cfg ? (
-                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${badgeBg[s] || 'bg-gray-600'}`}>
-                        {cfg.icon} {cfg.label}
-                      </span>
-                    ) : null;
-                  })()}
-                </div>
-                <CombinedTableCard group={group} status={group.orders[0].status} now={now}
-                  onAdvance={handleAdvance} onAdvanceAll={handleAdvanceAll} onItemUpdate={handleItemUpdate} />
+      {/* ── SPLIT KITCHEN VIEW ── */}
+      {kitchenView === 'split' ? (
+        <div className="flex-1 flex overflow-hidden min-h-0">
+
+          {/* Veg panel */}
+          <div className="flex-1 flex flex-col min-w-0 border-r-2 border-green-900/60">
+            <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-green-950/50 border-b border-green-900/40">
+              <span className="w-3 h-3 rounded-sm bg-green-500 flex-shrink-0" />
+              <span className="font-black text-green-300 text-sm uppercase tracking-wider">Veg Kitchen</span>
+              <span className="ml-auto bg-green-800 text-green-200 text-xs font-bold px-2 py-0.5 rounded-full">
+                {vegOrders.length}
+              </span>
+              {/* Status filter chips for this panel */}
+              <div className="flex gap-1 overflow-x-auto scrollbar-none ml-2">
+                {STATUS_FILTER_CONFIG.map(({ key, icon }) => (
+                  <button key={key} onClick={() => setStatusFilter(key)}
+                    className={`${TB} min-w-[32px] min-h-[32px] px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
+                      statusFilter === key
+                        ? key === 'all' ? 'bg-green-700 text-white' : `${STATUS_BADGE_BG[key]} text-white`
+                        : 'bg-gray-800/60 text-gray-500'
+                    }`}>
+                    {icon}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain">
+              {renderCardFeed(vegOrders, 'veg')}
+            </div>
           </div>
-        ) : (
-          /* Individual: one card per order, status pill on each */
-          <div className="p-3 md:p-4 columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3 space-y-3">
-            {filteredOrders.map((order) => (
-              <div key={order.id} className="break-inside-avoid mb-3">
-                {/* Status label above card */}
-                <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
-                  {(() => {
-                    const s = order.status;
-                    const cfg = STATUS_FILTER_CONFIG.find((c) => c.key === s);
-                    const badgeBg = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
-                    return cfg ? (
-                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${badgeBg[s] || 'bg-gray-600'}`}>
-                        {cfg.icon} {cfg.label}
-                      </span>
-                    ) : null;
-                  })()}
-                </div>
-                <KDSOrderCard order={order} status={order.status} now={now}
-                  selectedItems={selectedItems} onAdvance={handleAdvance}
-                  onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
-                  onRejectOrder={handleRejectOrder} onServeSelected={handleServeSelected}
-                  onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
-                  onToggleItem={toggleItemSelection} />
+
+          {/* Non-veg panel */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-red-950/40 border-b border-red-900/40">
+              <span className="w-3 h-3 rounded-sm bg-red-500 flex-shrink-0" />
+              <span className="font-black text-red-300 text-sm uppercase tracking-wider">Non-Veg Kitchen</span>
+              <span className="ml-auto bg-red-900 text-red-200 text-xs font-bold px-2 py-0.5 rounded-full">
+                {nonVegOrders.length}
+              </span>
+              <div className="flex gap-1 overflow-x-auto scrollbar-none ml-2">
+                {STATUS_FILTER_CONFIG.map(({ key, icon }) => (
+                  <button key={key} onClick={() => setStatusFilter(key)}
+                    className={`${TB} min-w-[32px] min-h-[32px] px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
+                      statusFilter === key
+                        ? key === 'all' ? 'bg-red-700 text-white' : `${STATUS_BADGE_BG[key]} text-white`
+                        : 'bg-gray-800/60 text-gray-500'
+                    }`}>
+                    {icon}
+                  </button>
+                ))}
               </div>
-            ))}
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain">
+              {renderCardFeed(nonVegOrders, 'nonveg')}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+
+      ) : (
+        /* ── UNIFIED VIEW ── */
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {filteredOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-700 py-20">
+              <span className="text-5xl mb-3 opacity-20">🍳</span>
+              <p className="text-sm text-gray-600">
+                {orders.length === 0 ? 'No active orders — all clear!' : 'No orders match the current filters'}
+              </p>
+            </div>
+          ) : renderCardFeed(filteredOrders)}
+        </div>
+      )}
 
       {/* Cancel Item Modal */}
       {cancelModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-4">
-          <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700">
+        <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
+          <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
             <h3 className="font-bold text-white text-lg mb-1">Cancel Item</h3>
             <p className="text-gray-400 text-sm mb-4">
-              Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable? The customer will be notified with your reason.
+              Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable? The customer will be notified.
             </p>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               placeholder="Reason (e.g. Out of stock, Sold out today…)"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
+              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
               rows={3}
               autoFocus
             />
             <div className="flex gap-3">
               <button onClick={() => { setCancelModal(null); setCancelReason(''); }}
-                className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-400 hover:bg-gray-800 text-sm font-medium transition-colors">
+                className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>
                 Keep Item
               </button>
               <button onClick={handleCancelItemSubmit} disabled={!cancelReason.trim() || cancelling}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold transition-colors">
+                className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
                 {cancelling ? 'Cancelling…' : 'Cancel Item'}
               </button>
             </div>
