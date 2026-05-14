@@ -689,7 +689,8 @@ export default function KitchenPage() {
   const [cancelModal, setCancelModal] = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
-  const [mobileTab, setMobileTab] = useState('pending');
+  const [statusFilter, setStatusFilter] = useState('all'); // 'all' | KITCHEN_STATUSES
+  const [vegFilter, setVegFilter] = useState('all'); // 'all' | 'veg' | 'nonveg'
   const [showHelp, setShowHelp] = useState(false);
   const now = useTimer();
 
@@ -904,30 +905,18 @@ export default function KitchenPage() {
     }
   };
 
-  const byStatus = KITCHEN_STATUSES.reduce((acc, s) => {
-    acc[s] = orders.filter((o) => o.status === s).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    return acc;
-  }, {});
-
   // Combined view: group dine-in orders from the same table within TABLE_GROUP_WINDOW_MS.
-  // Orders from a table placed >30 min apart are treated as separate seatings.
   const groupByTable = (colOrders) => {
     const result = [];
-    // Map: tableKey → array of groups (each group is a time window)
     const tableGroups = new Map();
-
     for (const order of colOrders) {
       if (order.order_type === 'dine-in' && order.table_number) {
         const key = order.table_number;
         const orderTs = new Date(order.created_at).getTime();
-
         if (!tableGroups.has(key)) tableGroups.set(key, []);
         const groups = tableGroups.get(key);
-
-        // Try to join the most recent group within the time window
         const last = groups[groups.length - 1];
         const lastTs = last ? Math.max(...last.orders.map((o) => new Date(o.created_at).getTime())) : -Infinity;
-
         if (last && orderTs - lastTs <= TABLE_GROUP_WINDOW_MS) {
           last.orders.push(order);
         } else {
@@ -942,6 +931,39 @@ export default function KitchenPage() {
     return result;
   };
 
+  // Veg filter: an order passes if at least one active item matches the veg filter.
+  // We check item_name for common veg/non-veg signals (is_veg field if present, else heuristic).
+  const orderMatchesVeg = (order) => {
+    if (vegFilter === 'all') return true;
+    const activeItems = (order.items || []).filter((i) => i.item_status !== 'cancelled');
+    if (activeItems.length === 0) return true;
+    return activeItems.some((item) => {
+      // Use is_veg field if backend provides it, otherwise keep all (can't determine)
+      if (item.is_veg === true)  return vegFilter === 'veg';
+      if (item.is_veg === false) return vegFilter === 'nonveg';
+      return true; // unknown — show in both filters
+    });
+  };
+
+  // Filtered + sorted orders for the main feed
+  const filteredOrders = orders
+    .filter((o) => statusFilter === 'all' || o.status === statusFilter)
+    .filter(orderMatchesVeg)
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+  const byStatus = KITCHEN_STATUSES.reduce((acc, s) => {
+    acc[s] = orders.filter((o) => o.status === s).length;
+    return acc;
+  }, {});
+
+  const STATUS_FILTER_CONFIG = [
+    { key: 'all',       label: 'All',       icon: '📋', countKey: null },
+    { key: 'pending',   label: 'Pending',   icon: '🕐', color: 'text-yellow-300', activeBg: 'bg-yellow-500/20 border-yellow-500 text-yellow-300' },
+    { key: 'confirmed', label: 'Confirmed', icon: '✅', color: 'text-blue-300',   activeBg: 'bg-blue-500/20 border-blue-500 text-blue-300'   },
+    { key: 'preparing', label: 'Preparing', icon: '🍳', color: 'text-orange-300', activeBg: 'bg-orange-500/20 border-orange-500 text-orange-300' },
+    { key: 'ready',     label: 'Ready',     icon: '🛎️', color: 'text-teal-300',  activeBg: 'bg-teal-500/20 border-teal-500 text-teal-300'   },
+  ];
+
   if (loading) {
     return (
       <div className="h-screen bg-gray-950 flex items-center justify-center">
@@ -952,102 +974,70 @@ export default function KitchenPage() {
 
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
-      {/* Header — desktop: full row / mobile: compact */}
-      <div className="flex items-center justify-between px-3 md:px-6 py-2.5 md:py-3 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
-        <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <span className="text-lg md:text-xl">🍳</span>
-          <h1 className="font-bold text-sm md:text-lg truncate">Kitchen</h1>
+
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-3 md:px-5 py-2.5 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-lg">🍳</span>
+          <h1 className="font-bold text-sm md:text-base truncate">Kitchen</h1>
           <span className="hidden md:inline text-xs text-gray-500">{cafe?.name}</span>
-          <span className="text-xs text-gray-500 ml-1">{orders.length} active</span>
+          <span className="text-xs text-gray-500">{orders.length} active</span>
         </div>
-        <div className="flex items-center gap-1.5 md:gap-3 flex-shrink-0">
-          {/* View mode toggle — desktop */}
-          <div className="hidden md:flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* View mode */}
+          <div className="flex gap-0.5 bg-gray-800 rounded-lg p-0.5">
             {[
-              { key: 'combined',   label: '⊞ By Table'   },
-              { key: 'individual', label: '☰ Individual' },
-              { key: 'rush',       label: '⚡ Rush'       },
-            ].map(({ key, label }) => (
+              { key: 'combined',   label: '⊞', labelFull: '⊞ By Table'   },
+              { key: 'individual', label: '☰', labelFull: '☰ Individual' },
+              { key: 'rush',       label: '⚡', labelFull: '⚡ Rush'       },
+            ].map(({ key, label, labelFull }) => (
               <button key={key} onClick={() => setViewMode(key)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? (key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white') : 'text-gray-400 hover:text-gray-200'}`}>
-                {label}
+                className={`px-2 md:px-3 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === key ? (key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white') : 'text-gray-400 hover:text-gray-200'}`}>
+                <span className="md:hidden">{label}</span>
+                <span className="hidden md:inline">{labelFull}</span>
               </button>
             ))}
           </div>
-          {/* Mobile view toggle cycles through modes */}
-          <button
-            onClick={() => setViewMode((v) => v === 'combined' ? 'individual' : v === 'individual' ? 'rush' : 'combined')}
-            className="md:hidden px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-300"
-          >
-            {viewMode === 'combined' ? '⊞' : viewMode === 'individual' ? '☰' : '⚡'}
-          </button>
-
-          <button
-            onClick={() => setSoundEnabled((s) => !s)}
-            title={soundEnabled ? 'Mute' : 'Unmute'}
-            className={`px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}
-          >
+          <button onClick={() => setSoundEnabled((s) => !s)}
+            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
             {soundEnabled ? '🔔' : '🔕'}
-            <span className="hidden md:inline ml-1">{soundEnabled ? 'Sound On' : 'Muted'}</span>
           </button>
-          <button
-            onClick={() => fetchOrders(true)}
-            disabled={refreshing}
-            title="Refresh"
-            className="px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors disabled:opacity-50 flex items-center gap-1"
-          >
+          <button onClick={() => fetchOrders(true)} disabled={refreshing}
+            className="px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors disabled:opacity-50">
             <span className={refreshing ? 'animate-spin inline-block' : ''}>↻</span>
-            <span className="hidden md:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
           </button>
-          <button
-            onClick={() => setShowHelp(true)}
-            title="How it works"
-            className="px-2 md:px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
-          >
+          <button onClick={() => setShowHelp(true)}
+            className="px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
             ?
           </button>
-          <button
-            onClick={toggleFullscreen}
-            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-            className="hidden md:block px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors"
-          >
-            {fullscreen ? '⛶ Exit' : '⛶ Full'}
+          <button onClick={toggleFullscreen}
+            className="hidden md:block px-2 py-1.5 rounded-lg text-xs font-medium bg-gray-800 text-gray-400 hover:bg-gray-700 transition-colors">
+            {fullscreen ? '⛶' : '⛶'}
           </button>
         </div>
       </div>
 
       {showHelp && <HowItWorksModal onClose={() => setShowHelp(false)} />}
 
-      {/* ── Mobile: horizontal status tabs + single column ── */}
-      <div className="md:hidden flex-1 flex flex-col overflow-hidden min-h-0">
-        {/* Status tabs */}
-        <div className="flex-shrink-0 flex border-b border-gray-800 bg-gray-900 overflow-x-auto">
-          {KITCHEN_STATUSES.map((status) => {
-            const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
-            const count = byStatus[status].length;
-            const isActive = mobileTab === status;
-            const activeCls = {
-              pending:   'border-yellow-400 text-yellow-300',
-              confirmed: 'border-blue-400 text-blue-300',
-              preparing: 'border-orange-400 text-orange-300',
-              ready:     'border-teal-400 text-teal-300',
-            };
-            const badgeBg = {
-              pending: 'bg-yellow-500', confirmed: 'bg-blue-500',
-              preparing: 'bg-orange-500', ready: 'bg-teal-500',
-            };
+      {/* ── Filter bar ── */}
+      <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center gap-2 overflow-x-auto">
+        {/* Status filters */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {STATUS_FILTER_CONFIG.map(({ key, label, icon, activeBg }) => {
+            const count = key === 'all' ? orders.length : byStatus[key] || 0;
+            const isActive = statusFilter === key;
+            const countBadgeBg = { pending: 'bg-yellow-500', confirmed: 'bg-blue-500', preparing: 'bg-orange-500', ready: 'bg-teal-500' };
             return (
-              <button
-                key={status}
-                onClick={() => setMobileTab(status)}
-                className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 py-3 px-2 border-b-2 text-xs font-bold uppercase tracking-wide transition-colors whitespace-nowrap ${
-                  isActive ? activeCls[status] : 'border-transparent text-gray-500'
-                }`}
-              >
-                <span>{colIcons[status]}</span>
-                <span>{TAB_LABELS[status]}</span>
+              <button key={key} onClick={() => setStatusFilter(key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition-all ${
+                  isActive
+                    ? (key === 'all' ? 'bg-gray-600/40 border-gray-500 text-white' : activeBg)
+                    : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+                }`}>
+                <span>{icon}</span>
+                <span className="hidden sm:inline">{label}</span>
                 {count > 0 && (
-                  <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${badgeBg[status]}`}>
+                  <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${countBadgeBg[key] || 'bg-gray-600'}`}>
                     {count}
                   </span>
                 )}
@@ -1056,164 +1046,106 @@ export default function KitchenPage() {
           })}
         </div>
 
-        {/* Single active column — scrollable */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          {(() => {
-            const colOrders = byStatus[mobileTab];
-            const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
-            if (colOrders.length === 0) return (
-              <div className="flex flex-col items-center justify-center py-24 text-gray-700">
-                <span className="text-5xl mb-3 opacity-20">{colIcons[mobileTab]}</span>
-                <p className="text-sm text-gray-600">No {TAB_LABELS[mobileTab].toLowerCase()} orders</p>
-              </div>
-            );
-            if (viewMode === 'combined') return groupByTable(colOrders).map((group) => (
-              <CombinedTableCard
-                key={group.tableKey || group.orders[0].id}
-                group={group}
-                status={mobileTab}
-                now={now}
-                onAdvance={handleAdvance}
-                onAdvanceAll={handleAdvanceAll}
-                onItemUpdate={handleItemUpdate}
-              />
-            ));
-            return colOrders.map((order) => (
-              <KDSOrderCard key={order.id} order={order} status={mobileTab} now={now}
-                selectedItems={selectedItems} onAdvance={handleAdvance}
-                onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
-                onRejectOrder={handleRejectOrder} onServeSelected={handleServeSelected}
-                onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
-                onToggleItem={toggleItemSelection} />
-            ));
-          })()}
+        {/* Divider */}
+        <div className="w-px h-6 bg-gray-700 flex-shrink-0" />
+
+        {/* Veg / Non-veg filter */}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {[
+            { key: 'all',    label: 'All',     dot: null },
+            { key: 'veg',    label: '🟢 Veg',  dot: 'bg-green-500' },
+            { key: 'nonveg', label: '🔴 Non-veg', dot: 'bg-red-500' },
+          ].map(({ key, label }) => (
+            <button key={key} onClick={() => setVegFilter(key)}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-all border ${
+                vegFilter === key
+                  ? key === 'veg'    ? 'bg-green-500/20 border-green-500 text-green-300'
+                  : key === 'nonveg' ? 'bg-red-500/20 border-red-500 text-red-300'
+                  : 'bg-gray-600/40 border-gray-500 text-white'
+                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:bg-gray-800'
+              }`}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ── Desktop: Rush view — all active orders flat, sorted by urgency ── */}
+      {/* ── Rush mode banner ── */}
       {viewMode === 'rush' && (
-        <div className="flex-1 overflow-hidden min-h-0 hidden md:flex flex-col">
-          <div className="flex-shrink-0 px-4 py-2 bg-orange-950/40 border-b border-orange-900/50 flex items-center gap-3">
-            <span className="text-orange-300 font-bold text-sm">⚡ Rush Mode</span>
-            <span className="text-gray-400 text-xs">All active orders sorted oldest first — tap items to advance</span>
-            <span className="ml-auto text-orange-300 font-bold text-sm">{orders.length} orders</span>
-          </div>
-          <div className="flex-1 overflow-y-auto p-3">
-            {orders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-gray-700">
-                <span className="text-5xl mb-3 opacity-20">⚡</span>
-                <p className="text-sm text-gray-600">No active orders — all clear!</p>
-              </div>
-            ) : (
-              <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
-                {[...orders]
-                  .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                  .map((order) => (
-                    <RushCard
-                      key={order.id}
-                      order={order}
-                      now={now}
-                      onAdvance={handleAdvance}
-                      onItemUpdate={handleItemUpdate}
-                    />
-                  ))
-                }
-              </div>
-            )}
-          </div>
+        <div className="flex-shrink-0 px-4 py-1.5 bg-orange-950/40 border-b border-orange-900/50 flex items-center gap-3">
+          <span className="text-orange-300 font-bold text-xs">⚡ Rush Mode — oldest first</span>
+          <span className="ml-auto text-orange-300 font-bold text-xs">{filteredOrders.length} shown</span>
         </div>
       )}
 
-      {/* ── Desktop: 4-column KDS board ── */}
-      <div className={`flex-1 gap-0 overflow-hidden min-h-0 ${viewMode === 'rush' ? 'hidden' : 'hidden md:flex'}`}>
-        {KITCHEN_STATUSES.map((status) => {
-          const colOrders = byStatus[status];
-          const colIcons = { pending: '🕐', confirmed: '✅', preparing: '🍳', ready: '🛎️' };
-          const colHeaderBg = {
-            pending:   'bg-yellow-950/60 border-yellow-800/50',
-            confirmed: 'bg-blue-950/60 border-blue-800/50',
-            preparing: 'bg-orange-950/60 border-orange-800/50',
-            ready:     'bg-teal-950/60 border-teal-800/50',
-          };
-          const colCountBg = {
-            pending:   'bg-yellow-500',
-            confirmed: 'bg-blue-500',
-            preparing: 'bg-orange-500',
-            ready:     'bg-teal-500',
-          };
-          const colTitleColor = {
-            pending:   'text-yellow-300',
-            confirmed: 'text-blue-300',
-            preparing: 'text-orange-300',
-            ready:     'text-teal-300',
-          };
-
-          // Find the oldest order in this column for the header alert
-          const oldestOrder = colOrders.length > 0
-            ? colOrders.reduce((oldest, o) => new Date(o.created_at) < new Date(oldest.created_at) ? o : oldest)
-            : null;
-          const oldestMins = oldestOrder ? elapsedMins(oldestOrder.created_at, now) : 0;
-
-          return (
-            <div key={status} className="flex-1 min-w-0 flex flex-col border-r border-gray-800 last:border-r-0">
-              {/* Column header */}
-              <div className={`flex-shrink-0 flex items-center gap-2 px-3 py-2.5 border-b ${colHeaderBg[status]}`}>
-                <span className="text-base">{colIcons[status]}</span>
-                <span className={`text-sm font-bold uppercase tracking-wide ${colTitleColor[status]}`}>{TAB_LABELS[status]}</span>
-                {colOrders.length > 0 && (
-                  <span className={`min-w-[22px] h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center text-white ${colCountBg[status]}`}>
-                    {colOrders.length}
-                  </span>
-                )}
-                {/* Oldest order age — critical signal for kitchen manager */}
-                {oldestOrder && oldestMins >= 5 && (
-                  <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${timerCls(oldestOrder.created_at, now)}`}>
-                    oldest {oldestMins}m
-                  </span>
-                )}
+      {/* ── Main card feed ── */}
+      <div className="flex-1 overflow-y-auto">
+        {filteredOrders.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-gray-700 py-20">
+            <span className="text-5xl mb-3 opacity-20">🍳</span>
+            <p className="text-sm text-gray-600">
+              {orders.length === 0 ? 'No active orders — all clear!' : 'No orders match the current filters'}
+            </p>
+          </div>
+        ) : viewMode === 'rush' ? (
+          /* Rush: ultra-compact grid */
+          <div className="p-3 grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+            {filteredOrders.map((order) => (
+              <RushCard key={order.id} order={order} now={now}
+                onAdvance={handleAdvance} onItemUpdate={handleItemUpdate} />
+            ))}
+          </div>
+        ) : viewMode === 'combined' ? (
+          /* Combined: group by table, show status pill on each card */
+          <div className="p-3 md:p-4 columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3 space-y-3">
+            {groupByTable(filteredOrders).map((group) => (
+              <div key={group.tableKey || group.orders[0].id} className="break-inside-avoid mb-3">
+                {/* Status label above each combined group */}
+                <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+                  {(() => {
+                    const s = group.orders[0].status;
+                    const cfg = STATUS_FILTER_CONFIG.find((c) => c.key === s);
+                    const badgeBg = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
+                    return cfg ? (
+                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${badgeBg[s] || 'bg-gray-600'}`}>
+                        {cfg.icon} {cfg.label}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
+                <CombinedTableCard group={group} status={group.orders[0].status} now={now}
+                  onAdvance={handleAdvance} onAdvanceAll={handleAdvanceAll} onItemUpdate={handleItemUpdate} />
               </div>
-
-              {/* Column body — independently scrollable */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                {colOrders.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 text-gray-700">
-                    <span className="text-4xl mb-3 opacity-20">{colIcons[status]}</span>
-                    <p className="text-xs text-gray-600">No {TAB_LABELS[status].toLowerCase()} orders</p>
-                  </div>
-                ) : viewMode === 'combined' ? (
-                  groupByTable(colOrders).map((group) => (
-                    <CombinedTableCard
-                      key={group.tableKey || group.orders[0].id}
-                      group={group}
-                      status={status}
-                      now={now}
-                      onAdvance={handleAdvance}
-                      onAdvanceAll={handleAdvanceAll}
-                      onItemUpdate={handleItemUpdate}
-                    />
-                  ))
-                ) : (
-                  colOrders.map((order) => (
-                    <KDSOrderCard
-                      key={order.id}
-                      order={order}
-                      status={status}
-                      now={now}
-                      selectedItems={selectedItems}
-                      onAdvance={handleAdvance}
-                      onItemUpdate={handleItemUpdate}
-                      onAcceptOrder={handleAcceptOrder}
-                      onRejectOrder={handleRejectOrder}
-                      onServeSelected={handleServeSelected}
-                      onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
-                      onToggleItem={toggleItemSelection}
-                    />
-                  ))
-                )}
+            ))}
+          </div>
+        ) : (
+          /* Individual: one card per order, status pill on each */
+          <div className="p-3 md:p-4 columns-1 sm:columns-2 lg:columns-3 xl:columns-4 gap-3 space-y-3">
+            {filteredOrders.map((order) => (
+              <div key={order.id} className="break-inside-avoid mb-3">
+                {/* Status label above card */}
+                <div className="flex items-center gap-1.5 mb-1.5 px-0.5">
+                  {(() => {
+                    const s = order.status;
+                    const cfg = STATUS_FILTER_CONFIG.find((c) => c.key === s);
+                    const badgeBg = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
+                    return cfg ? (
+                      <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full text-white ${badgeBg[s] || 'bg-gray-600'}`}>
+                        {cfg.icon} {cfg.label}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
+                <KDSOrderCard order={order} status={order.status} now={now}
+                  selectedItems={selectedItems} onAdvance={handleAdvance}
+                  onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
+                  onRejectOrder={handleRejectOrder} onServeSelected={handleServeSelected}
+                  onCancelItem={(orderId, itemId, itemName) => { setCancelModal({ orderId, itemId, itemName }); setCancelReason(''); }}
+                  onToggleItem={toggleItemSelection} />
               </div>
-            </div>
-          );
-        })}
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Cancel Item Modal */}
@@ -1233,17 +1165,12 @@ export default function KitchenPage() {
               autoFocus
             />
             <div className="flex gap-3">
-              <button
-                onClick={() => { setCancelModal(null); setCancelReason(''); }}
-                className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-400 hover:bg-gray-800 text-sm font-medium transition-colors"
-              >
+              <button onClick={() => { setCancelModal(null); setCancelReason(''); }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-700 text-gray-400 hover:bg-gray-800 text-sm font-medium transition-colors">
                 Keep Item
               </button>
-              <button
-                onClick={handleCancelItemSubmit}
-                disabled={!cancelReason.trim() || cancelling}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold transition-colors"
-              >
+              <button onClick={handleCancelItemSubmit} disabled={!cancelReason.trim() || cancelling}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-bold transition-colors">
                 {cancelling ? 'Cancelling…' : 'Cancel Item'}
               </button>
             </div>
