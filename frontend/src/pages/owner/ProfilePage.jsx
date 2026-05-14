@@ -796,6 +796,33 @@ export default function ProfilePage() {
             <button type="button" disabled={saving} onClick={() => saveTab()} className="btn-primary w-full">
               {saving ? 'Saving…' : 'Save Delivery Settings'}
             </button>
+
+            {/* ── Readiness warning ── */}
+            {form.delivery_enabled && (() => {
+              const needsRiders    = ['self', 'both'].includes(form.delivery_mode) && riders.filter(r => r.is_active).length === 0;
+              const needsPlatforms = ['third_party', 'both'].includes(form.delivery_mode) && platforms.filter(p => p.is_active && p.has_api_key).length === 0;
+              const selfOnly       = form.delivery_mode === 'self'        && needsRiders;
+              const thirdOnly      = form.delivery_mode === 'third_party' && needsPlatforms;
+              const bothMissing    = form.delivery_mode === 'both'        && needsRiders && needsPlatforms;
+              const bothPartial    = form.delivery_mode === 'both'        && (needsRiders || needsPlatforms) && !bothMissing;
+
+              if (!selfOnly && !thirdOnly && !bothMissing && !bothPartial) return null;
+
+              let msg = '';
+              if (selfOnly)    msg = 'You have no active riders. Customers can place delivery orders but no one will be available to fulfill them. Add at least one rider below.';
+              if (thirdOnly)   msg = 'No courier platform has an API key configured. Delivery orders will arrive but cannot be dispatched. Add a platform with an API key below.';
+              if (bothMissing) msg = 'No active riders and no courier platforms configured. Delivery orders cannot be fulfilled until you add riders or a courier platform.';
+              if (bothPartial) msg = needsRiders
+                ? 'No active riders. Orders will be dispatched to your courier platforms only — you won\'t be able to use own-rider delivery until you add riders below.'
+                : 'No courier platform has an API key. Only own-rider delivery is available right now.';
+
+              return (
+                <div className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 text-xs text-amber-800 mt-2">
+                  <span className="text-base flex-shrink-0 mt-0.5">⚠️</span>
+                  <p className="leading-relaxed">{msg}</p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Rider pool — shown for self / both modes */}

@@ -676,6 +676,29 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
         </div>
       )}
 
+      {/* ── No-fulfillment warning ── */}
+      {canAssign && (() => {
+        const wantsOwnRiders  = ['self', 'both'].includes(cafeDeliveryMode);
+        const wantsPlatforms  = ['third_party', 'both'].includes(cafeDeliveryMode);
+        const hasRiders       = riders.length > 0;
+        const hasPlatforms    = platforms.length > 0;
+        const noWayToFulfill  = (wantsOwnRiders && !hasRiders) && (wantsPlatforms ? !hasPlatforms : true);
+
+        if (!noWayToFulfill) return null;
+
+        let hint = '';
+        if (cafeDeliveryMode === 'self')        hint = 'No active riders in your pool. Add riders in Settings → Delivery so you can assign someone to this order.';
+        else if (cafeDeliveryMode === 'third_party') hint = 'No courier platforms are configured with an API key. Go to Settings → Delivery to add one.';
+        else hint = 'No riders or courier platforms available. Go to Settings → Delivery to add riders or configure a courier.';
+
+        return (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5 text-xs text-amber-800">
+            <span className="flex-shrink-0 mt-0.5">⚠️</span>
+            <p className="leading-relaxed flex-1">{hint}</p>
+          </div>
+        );
+      })()}
+
       {/* Actions */}
       <div className="space-y-2">
         {/* Self-managed: assign rider */}
@@ -689,13 +712,17 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
             ) : (
               <div className="space-y-2 border border-gray-200 rounded-xl p-3">
                 <p className="text-xs font-semibold text-gray-700">Assign rider</p>
-                {riders.length > 0 && (
+                {riders.length > 0 ? (
                   <select className="input text-sm" value={selectedRider}
                     onChange={(e) => setSelectedRider(e.target.value)}>
                     <option value="">Select from pool…</option>
                     {riders.map(r => <option key={r.id} value={r.id}>{r.name}{r.phone ? ` · ${r.phone}` : ''}</option>)}
                     <option value="__manual">Enter manually…</option>
                   </select>
+                ) : (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2">
+                    No riders in your pool yet — enter a name manually below or add riders in Settings → Delivery.
+                  </p>
                 )}
                 {(!riders.length || selectedRider === '__manual') && (
                   <div className="flex gap-2">
