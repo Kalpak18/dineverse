@@ -1157,7 +1157,9 @@ async function getOrderWithItems(orderId, cafeId = null) {
               variant_id, variant_name, selected_modifiers, modifier_total,
               item_status, accepted, cancellation_reason,
               COALESCE(sort_order, 0) AS sort_order,
-              preparing_at, ready_at, served_at, cancelled_at
+              preparing_at, ready_at, served_at, cancelled_at,
+              prep_started_at, prep_duration_mins,
+              is_veg
        FROM order_items WHERE order_id = $1
        ORDER BY sort_order ASC, id ASC`,
       [orderId]
@@ -1573,6 +1575,41 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
       [id, order.status, newOrderStatus, req.cafeId]
     ).catch(() => {});
   }
+
+  const fullOrder = await getOrderWithItems(id, req.cafeId);
+  if (req.io) {
+    req.io.to(`cafe:${req.cafeId}`).emit('order_updated', fullOrder);
+    req.io.to(`order:${id}`).emit('order_updated', fullOrder);
+  }
+  ok(res, { order: fullOrder });
+});
+
+// ─── Owner/Staff: set prep time for a single item ─────────────────────────────
+// Called when kitchen taps "Start cooking" on an item and enters duration.
+// Sets prep_started_at = NOW() and prep_duration_mins = <input>.
+// Broadcasts order_updated so KDS, cashier orders, and customer tracking all update.
+exports.setItemPrepTime = asyncHandler(async (req, res) => {
+  const { id, itemId } = req.params;
+  const { prep_duration_mins } = req.body;
+
+  const mins = parseInt(prep_duration_mins, 10);
+  if (!mins || mins < 1 || mins > 300) return fail(res, 'prep_duration_mins must be 1–300', 400);
+
+  const orderCheck = await db.query(
+    'SELECT id, status FROM orders WHERE id = $1 AND cafe_id = $2',
+    [id, req.cafeId]
+  );
+  if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (['paid', 'cancelled'].includes(orderCheck.rows[0].status)) return fail(res, 'Order is already completed');
+
+  const itemResult = await db.query(
+    `UPDATE order_items
+     SET prep_started_at = NOW(), prep_duration_mins = $1
+     WHERE id = $2 AND order_id = $3
+     RETURNING id, prep_started_at, prep_duration_mins`,
+    [mins, itemId, id]
+  );
+  if (itemResult.rows.length === 0) return fail(res, 'Item not found', 404);
 
   const fullOrder = await getOrderWithItems(id, req.cafeId);
   if (req.io) {

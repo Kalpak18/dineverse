@@ -10,7 +10,7 @@ const {
   getOrderStatus, customerCancelOrder,
   createOrderPayment, verifyOrderPayment,
   getTableBill,
-  setKitchenMode, updateItemStatus,
+  setKitchenMode, updateItemStatus, setItemPrepTime,
   acceptOrder, rejectOrder, acceptItem, rejectItem,
   cancelItem, reorderItems, generateKot, getKotHistory,
   updateDriverLocation, getDriverOrderInfo,
@@ -51,6 +51,7 @@ router.get('/:id',                           authenticate, checkSubscription, ge
 router.patch('/:id/status',                  authenticate, checkSubscription, updateOrderStatus);
 router.patch('/:id/kitchen-mode',            authenticate, checkSubscription, setKitchenMode);
 router.patch('/:id/items/:itemId/status',    authenticate, checkSubscription, updateItemStatus);
+router.patch('/:id/items/:itemId/prep-time', authenticate, checkSubscription, setItemPrepTime);
 router.post('/:id/accept',                   authenticate, checkSubscription, acceptOrder);
 router.post('/:id/reject',                   authenticate, checkSubscription, rejectOrder);
 router.post('/:id/items/:itemId/accept',     authenticate, checkSubscription, acceptItem);

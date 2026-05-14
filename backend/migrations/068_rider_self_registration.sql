@@ -52,9 +52,9 @@ CREATE INDEX IF NOT EXISTS idx_cafe_riders_online
 -- ── Per-order earnings ledger ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS rider_earnings (
   id            SERIAL PRIMARY KEY,
-  rider_id      INTEGER      NOT NULL REFERENCES cafe_riders(id) ON DELETE CASCADE,
-  order_id      INTEGER      NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-  cafe_id       INTEGER      REFERENCES cafes(id) ON DELETE SET NULL,
+  rider_id      UUID         NOT NULL REFERENCES cafe_riders(id) ON DELETE CASCADE,
+  order_id      UUID         NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  cafe_id       UUID         REFERENCES cafes(id) ON DELETE SET NULL,
   cafe_name     VARCHAR(200),
   delivery_fee  DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   tip_amount    DECIMAL(10,2) NOT NULL DEFAULT 0.00,

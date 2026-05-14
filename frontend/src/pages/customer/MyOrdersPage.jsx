@@ -8,6 +8,7 @@ import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { fmtToken, fmtPrice, fmtTime, fmtCurrency, groupByDate } from '../../utils/formatters';
+import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useCart } from '../../context/CartContext';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
@@ -367,12 +368,19 @@ export default function MyOrdersPage() {
 function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onReorder }) {
   const [chatOpen, setChatOpen] = useState(false);
   const [receiptOrder, setReceiptOrder] = useState(null);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!orderHasPrepTime(order.items)) return;
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, [order.items]);
   const currency = (() => { try { return JSON.parse(localStorage.getItem(`session_${slug}`) || '{}').currency || 'INR'; } catch { return 'INR'; } })();
   const c = (n) => fmtCurrency(n, cafeInfo?.currency || currency);
   const cfg        = ORDER_STATUS[order.status] || ORDER_STATUS.pending;
   const isPending  = order.status === 'pending';
   const isTerminal = ['paid', 'cancelled'].includes(order.status);
   const isReady    = order.status === 'ready' || (order.order_type === 'takeaway' && order.status === 'served');
+  const etaMins    = orderEtaMins(order.items, now);
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
@@ -402,17 +410,33 @@ function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onRe
           </div>
         </div>
 
+        {/* ETA banner — shown when kitchen has set prep time */}
+        {etaMins !== null && !isTerminal && (
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl mb-3 text-sm font-semibold ${
+            etaMins <= 0 ? 'bg-teal-50 text-teal-700 border border-teal-200' :
+            etaMins <= 5 ? 'bg-orange-50 text-orange-700 border border-orange-200' :
+            'bg-blue-50 text-blue-700 border border-blue-100'
+          }`}>
+            <span className="text-base">{etaMins <= 0 ? '🔔' : '⏱'}</span>
+            <span>
+              {etaMins <= 0 ? 'Your order is almost ready!' : `Ready in ~${etaMins} min`}
+            </span>
+          </div>
+        )}
+
         {/* Items */}
         <div className="space-y-0.5 mb-3 border-t border-dashed border-gray-100 pt-2.5">
-          {(order.items || []).map((item, i) => (
+          {(order.items || []).map((item, i) => {
+            const itemRemaining = itemRemainingMins(item, now);
+            return (
             <div key={i} className="flex justify-between text-sm">
               <div className="flex-1">
                 <span className={`text-gray-700 ${isTerminal && order.status === 'cancelled' ? 'line-through text-gray-400' : ''}`}>
                   {item.item_name} × {item.quantity}
                 </span>
-                {/* Item status for individual mode */}
+                {/* Item status + per-item ETA */}
                 {order.kitchen_mode === 'individual' && item.item_status && (
-                  <div className="flex items-center gap-1 mt-0.5">
+                  <div className="flex items-center flex-wrap gap-1 mt-0.5">
                     <span className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full ${
                       item.item_status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                       item.item_status === 'preparing' ? 'bg-orange-100 text-orange-700' :
@@ -428,6 +452,15 @@ function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onRe
                        item.item_status === 'cancelled' ? '❌' : '❓'}
                       {item.item_status}
                     </span>
+                    {itemRemaining !== null && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                        itemRemaining <= 0 ? 'bg-teal-100 text-teal-700' :
+                        itemRemaining <= 3 ? 'bg-red-100 text-red-600' :
+                        'bg-orange-100 text-orange-600'
+                      }`}>
+                        {itemRemaining <= 0 ? '✓ Ready' : `~${itemRemaining}m`}
+                      </span>
+                    )}
                     {item.cancellation_reason && (
                       <span className="text-[10px] text-red-600 ml-1">{item.cancellation_reason}</span>
                     )}
@@ -436,7 +469,8 @@ function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onRe
               </div>
               <span className="text-gray-600 font-medium">{c(item.subtotal)}</span>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Price breakdown — handles inclusive vs exclusive GST so the line items

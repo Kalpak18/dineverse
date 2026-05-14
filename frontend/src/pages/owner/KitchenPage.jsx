@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, cancelOrderItem, reorderOrderItems } from '../../services/api';
+import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
+import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
@@ -509,7 +510,8 @@ function HowItWorksModal({ onClose }) {
 // Items are tap-to-cycle rows (no per-item buttons visible by default).
 // Cancel button appears on hover/long-press. No reorder arrows (use Orders page for that).
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate,
-  onAcceptOrder, onRejectOrder, onServeSelected, onCancelItem, onToggleItem }) {
+  onAcceptOrder, onRejectOrder, onServeSelected, onCancelItem, onToggleItem,
+  prepInput, onSetPrepTime }) {
   const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
   const nextStatus = kitchenNext(status, order.order_type);
   const actionLabel = kitchenLabel(status, order.order_type);
@@ -522,10 +524,11 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
   const cardBg = overdue ? 'border-l-red-500 bg-red-950/25' : STATUS_COLORS[status];
   const tc = timerCls(order.created_at, now);
   const icon = urgencyIcon(order.created_at, now);
+  const etaMins = orderEtaMins(order.items, now);
 
   return (
     <div className={`rounded-xl border-l-4 p-2.5 ${cardBg}`}>
-      {/* Header row — token + location + timer */}
+      {/* Header row — token + location + timer + ETA */}
       <div className="flex items-center justify-between mb-1.5 gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="font-black text-white text-base leading-none flex-shrink-0">
@@ -534,6 +537,11 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
           <span className="text-xs text-gray-400 truncate">
             {order.order_type === 'takeaway' ? '🥡' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ ${order.table_number}`}
           </span>
+          {etaMins !== null && (
+            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${etaMins <= 0 ? 'bg-teal-600/80 text-white' : etaMins <= 3 ? 'bg-red-600/80 text-white animate-pulse' : 'bg-orange-600/60 text-orange-100'}`}>
+              ETA {etaMins <= 0 ? 'Ready' : `${etaMins}m`}
+            </span>
+          )}
         </div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex-shrink-0 ${tc}`}>
           {icon}{elapsed(order.created_at, now)}
@@ -581,53 +589,62 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
         </div>
       )}
 
-      {/* Item list — compact tap-to-cycle rows. items-start so multi-line names stay top-aligned */}
+      {/* Item list — compact tap-to-cycle rows */}
       <div className="space-y-0.5 mb-1.5">
         {sortedItems.map((item) => {
           const ist = item.item_status || 'pending';
           const nextIst = NEXT_ITEM_STATUS[ist];
           const isCancelled = ist === 'cancelled';
+          const itemRemaining = itemRemainingMins(item, now);
+          const isPrepInput = prepInput?.orderId === order.id && prepInput?.itemId === item.id;
           return (
-            <div
-              key={item.id}
-              onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
-              className={`flex items-start gap-1.5 rounded border-l-[3px] px-2 py-1.5 transition-all select-none group
-                ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
-                ${ITEM_ROW_STYLE[ist]}`}
-            >
-              {/* Qty badge — fixed width, aligned to top */}
-              <span className="w-5 h-5 mt-0.5 rounded bg-gray-800/80 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
-                {item.quantity}
-              </span>
-              {/* Item name — wraps naturally, never truncates */}
-              <span className={`flex-1 text-xs font-medium leading-snug ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
-                {item.item_name}
-                {itemDetails(item) && (
-                  <span className="block text-[10px] leading-snug text-gray-400 font-normal mt-0.5">{itemDetails(item)}</span>
-                )}
-                {isCancelled && item.cancellation_reason && (
-                  <span className="block text-[9px] text-red-400 mt-0.5">{item.cancellation_reason}</span>
-                )}
-              </span>
-              {/* Right side — status badge + cancel + advance arrow, top-aligned */}
-              <div className="flex flex-col items-end gap-0.5 flex-shrink-0 mt-0.5">
-                <span className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded whitespace-nowrap ${ITEM_BADGE_STYLE[ist]}`}>
-                  {ITEM_STATUS_LABEL[ist]}
+            <div key={item.id}>
+              <div
+                onClick={() => !isCancelled && nextIst && onItemUpdate(order.id, item.id, nextIst)}
+                className={`flex items-start gap-1.5 rounded border-l-[3px] px-2 py-1.5 transition-all select-none group
+                  ${!isCancelled && nextIst ? 'cursor-pointer active:scale-[0.98]' : 'cursor-default'}
+                  ${ITEM_ROW_STYLE[ist]}`}
+              >
+                <span className="w-5 h-5 mt-0.5 rounded bg-gray-800/80 flex items-center justify-center text-[11px] font-bold text-white flex-shrink-0">
+                  {item.quantity}
                 </span>
-                <div className="flex items-center gap-0.5">
-                  {/* Cancel — always visible as tiny red button (not hover-only — touchscreens don't hover) */}
-                  {!isCancelled && ['pending', 'preparing'].includes(ist) && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
-                      className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center"
-                      title="Cancel item"
-                    >✕</button>
+                <span className={`flex-1 text-xs font-medium leading-snug ${isCancelled ? 'line-through text-gray-500' : 'text-gray-100'}`}>
+                  {item.item_name}
+                  {itemDetails(item) && (
+                    <span className="block text-[10px] leading-snug text-gray-400 font-normal mt-0.5">{itemDetails(item)}</span>
                   )}
-                  {!isCancelled && nextIst && (
-                    <span className="text-gray-600 text-[10px]">›</span>
+                  {isCancelled && item.cancellation_reason && (
+                    <span className="block text-[9px] text-red-400 mt-0.5">{item.cancellation_reason}</span>
                   )}
+                </span>
+                <div className="flex flex-col items-end gap-0.5 flex-shrink-0 mt-0.5">
+                  <span className={`text-[9px] font-bold uppercase px-1 py-0.5 rounded whitespace-nowrap ${ITEM_BADGE_STYLE[ist]}`}>
+                    {ITEM_STATUS_LABEL[ist]}
+                  </span>
+                  {itemRemaining !== null && <EtaPill mins={itemRemaining} compact />}
+                  <div className="flex items-center gap-0.5">
+                    {!isCancelled && ['pending', 'preparing'].includes(ist) && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
+                        className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center"
+                        title="Cancel item"
+                      >✕</button>
+                    )}
+                    {!isCancelled && nextIst && (
+                      <span className="text-gray-600 text-[10px]">›</span>
+                    )}
+                  </div>
                 </div>
               </div>
+              {/* Inline prep time input — appears after item moves to preparing */}
+              {isPrepInput && (
+                <PrepTimeInput
+                  itemId={item.id}
+                  defaultMins={prepInput.defaultMins}
+                  onSubmit={(mins) => onSetPrepTime(order.id, item.id, mins)}
+                  onSkip={() => onSetPrepTime(order.id, item.id, null)}
+                />
+              )}
             </div>
           );
         })}
@@ -704,6 +721,57 @@ function RejectOrderModal({ rejectReason, setRejectReason, rejecting, onSubmit, 
   );
 }
 
+// Inline prep-time input that slides open when kitchen starts cooking an item.
+function PrepTimeInput({ itemId, defaultMins, onSubmit, onSkip }) {
+  const [val, setVal] = useState(defaultMins ? String(defaultMins) : '');
+  const ref = useRef(null);
+  useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
+  const submit = (e) => {
+    e.preventDefault();
+    const n = parseInt(val, 10);
+    if (!n || n < 1) { onSkip(); return; }
+    onSubmit(n);
+  };
+  return (
+    <form onSubmit={submit} className="flex items-center gap-1.5 mt-1 bg-gray-800/60 rounded-lg px-2 py-1.5">
+      <span className="text-[10px] text-gray-400 whitespace-nowrap">⏱ mins to cook:</span>
+      <input
+        ref={ref}
+        type="number" min="1" max="300" inputMode="numeric"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        placeholder="15"
+        className="w-14 bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-white text-center focus:outline-none focus:border-orange-400"
+      />
+      <button type="submit"
+        className="px-2 py-0.5 rounded bg-orange-600 hover:bg-orange-500 text-white text-[10px] font-bold">
+        Start
+      </button>
+      <button type="button" onClick={onSkip}
+        className="px-2 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-400 text-[10px]">
+        Skip
+      </button>
+    </form>
+  );
+}
+
+// Small ETA pill shown on item rows and order card headers.
+function EtaPill({ mins, compact = false }) {
+  if (mins === null || mins === undefined) return null;
+  const done = mins <= 0;
+  const urgent = mins > 0 && mins <= 3;
+  const cls = done
+    ? 'bg-teal-600/80 text-white'
+    : urgent
+      ? 'bg-red-600/80 text-white animate-pulse'
+      : 'bg-orange-600/60 text-orange-100';
+  return (
+    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${cls}`}>
+      {done ? '✓ Ready' : `${mins}m`}
+    </span>
+  );
+}
+
 // Persist a preference to localStorage and read it back
 function usePersisted(key, defaultVal) {
   const [val, setVal] = useState(() => {
@@ -736,6 +804,8 @@ export default function KitchenPage() {
   const [rejectModal, setRejectModal]     = useState(null); // { orderId }
   const [rejectReason, setRejectReason]   = useState('');
   const [rejecting, setRejecting]         = useState(false);
+  // prepInput: { orderId, itemId, defaultMins } — shows inline time input when item moves to preparing
+  const [prepInput, setPrepInput]         = useState(null);
   const [statusFilter, setStatusFilter]   = usePersisted('kds_status_filter', 'all');
   const [vegFilter, setVegFilter]         = usePersisted('kds_veg_filter', 'all');
   const [showHelp, setShowHelp]           = useState(false);
@@ -819,13 +889,30 @@ export default function KitchenPage() {
         return prev.map((o) => (o.id === orderId ? data.order : o));
       });
 
-      // Print serving slip when item is marked ready — placed with food at counter
-      // so waiter knows which table/customer to deliver to without asking kitchen
+      // When item starts cooking, prompt kitchen for prep time
+      if (status === 'preparing') {
+        const item = (data.order.items || []).find((i) => i.id === itemId);
+        const defaultMins = item?.default_prep_mins || null;
+        setPrepInput({ orderId, itemId, defaultMins });
+      }
+
+      // Print serving slip when item is marked ready
       if (status === 'ready' && data.order.kitchen_mode === 'individual') {
         printKitchenToken(data.order, cafe?.name, [itemId]);
       }
     } catch (err) {
       toast.error('Failed to update item status');
+    }
+  };
+
+  const handleSetPrepTime = async (orderId, itemId, mins) => {
+    setPrepInput(null);
+    if (!mins) return; // skipped
+    try {
+      const { data } = await setItemPrepTime(orderId, itemId, mins);
+      setOrders((prev) => prev.map((o) => o.id === orderId ? data.order : o));
+    } catch (err) {
+      toast.error('Failed to set prep time');
     }
   };
 
@@ -1032,7 +1119,8 @@ export default function KitchenPage() {
                   onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
                   onRejectOrder={(oid) => { setRejectModal({ orderId: oid }); setRejectReason(''); }} onServeSelected={handleServeSelected}
                   onCancelItem={(oid, iid, name) => { setCancelModal({ orderId: oid, itemId: iid, itemName: name }); setCancelReason(''); }}
-                  onToggleItem={toggleItemSelection} />,
+                  onToggleItem={toggleItemSelection}
+                  prepInput={prepInput} onSetPrepTime={handleSetPrepTime} />,
         }));
 
     return (

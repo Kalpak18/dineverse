@@ -10,6 +10,7 @@ import { loadRazorpayScript } from '../../utils/razorpayLoader';
 import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStorage';
 import { pushNotification } from '../../utils/customerNotifications';
 import { isInclusiveTax } from '../../utils/billDisplay';
+import { itemRemainingMins, orderEtaMins, orderHasPrepTime } from '../../utils/prepTime';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },
@@ -40,6 +41,11 @@ export default function OrderConfirmation() {
   const [orders, setOrders] = useState([]);
   const [cancelling, setCancelling] = useState(null);
   const [paying, setPaying] = useState(null);          // order ID currently in payment flow
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(id);
+  }, []);
   const [cafeInfo, setCafeInfo] = useState(null);
   const c = (n) => fmtCurrency(n, cafeInfo?.currency || sessionCurrency);
   const [ratingOrder, setRatingOrder] = useState(null); // order being rated
@@ -524,6 +530,22 @@ export default function OrderConfirmation() {
                 </div>
               </div>
 
+              {/* ETA banner */}
+              {(() => {
+                const etaMins = orderEtaMins(order.items, now);
+                if (etaMins === null || isTerminal) return null;
+                return (
+                  <div className={`flex items-center gap-2 px-3 py-2 rounded-xl mb-3 text-sm font-semibold ${
+                    etaMins <= 0 ? 'bg-teal-50 text-teal-700 border border-teal-200' :
+                    etaMins <= 5 ? 'bg-orange-50 text-orange-700 border border-orange-200' :
+                    'bg-blue-50 text-blue-700 border border-blue-100'
+                  }`}>
+                    <span className="text-base">{etaMins <= 0 ? '🔔' : '⏱'}</span>
+                    <span>{etaMins <= 0 ? 'Your order is almost ready!' : `Ready in ~${etaMins} min`}</span>
+                  </div>
+                );
+              })()}
+
               {/* Items */}
               {order.items?.length > 0 && (
                 <div className="space-y-1 mb-3">
@@ -532,6 +554,7 @@ export default function OrderConfirmation() {
                     const itemStatusCfg = cafeInfo?.plan_tier === 'premium' && item.item_status && item.item_status !== 'pending'
                       ? ITEM_STATUS_LABELS[item.item_status]
                       : null;
+                    const itemRemaining = itemRemainingMins(item, now);
                     return (
                       <div key={item.id}>
                         <div className="flex justify-between text-sm">
@@ -542,17 +565,28 @@ export default function OrderConfirmation() {
                             {isCancelled ? <span className="text-red-400 text-xs font-semibold">Unavailable</span> : c(item.subtotal)}
                           </span>
                         </div>
-                        {/* Per-item status chip (premium only) */}
-                        {itemStatusCfg && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${itemStatusCfg.color}`}>
-                              {itemStatusCfg.icon} {itemStatusCfg.label}
+                        {/* Per-item status chip + ETA */}
+                        <div className="flex items-center flex-wrap gap-1.5 mt-0.5">
+                          {itemStatusCfg && (
+                            <>
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${itemStatusCfg.color}`}>
+                                {itemStatusCfg.icon} {itemStatusCfg.label}
+                              </span>
+                              {isCancelled && item.cancellation_reason && (
+                                <span className="text-[11px] text-red-500">— {item.cancellation_reason}</span>
+                              )}
+                            </>
+                          )}
+                          {itemRemaining !== null && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                              itemRemaining <= 0 ? 'bg-teal-100 text-teal-700' :
+                              itemRemaining <= 3 ? 'bg-red-100 text-red-600' :
+                              'bg-orange-100 text-orange-600'
+                            }`}>
+                              {itemRemaining <= 0 ? '✓ Almost ready' : `~${itemRemaining}m`}
                             </span>
-                            {isCancelled && item.cancellation_reason && (
-                              <span className="text-[11px] text-red-500">— {item.cancellation_reason}</span>
-                            )}
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     );
                   })}
