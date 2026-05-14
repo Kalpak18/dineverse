@@ -418,11 +418,23 @@ function HowItWorksModal({ onClose }) {
 
           <hr className="border-gray-800" />
 
+          {/* Accept flow */}
+          <section>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Accepting orders (Individual mode)</h3>
+            <div className="space-y-1.5 text-xs text-gray-400">
+              <p>• New orders arrive in <span className="text-yellow-300">By Table</span> mode. Tap any item to switch to <span className="text-white font-semibold">Individual</span> mode — accept/reject buttons appear immediately.</p>
+              <p>• Use the <span className="text-green-300 font-semibold">✓</span> button on each item to <span className="text-green-300">accept</span> it, or <span className="text-red-400 font-semibold">✕</span> to <span className="text-red-400">reject</span> it with a reason. The customer is notified instantly.</p>
+              <p>• Or tap <span className="text-green-300 font-semibold">✅ Accept</span> / <span className="text-red-400 font-semibold">✕ Reject</span> at the top of the card to accept or reject the whole order at once.</p>
+              <p>• Once accepted, <span className="text-gray-200">tap any item row</span> to advance it: <span className="text-red-400">Pending</span> → <span className="text-orange-400">Cooking</span> → <span className="text-teal-400">Ready</span> → <span className="text-green-400">Served</span></p>
+            </div>
+          </section>
+
+          <hr className="border-gray-800" />
+
           {/* Advancing status */}
           <section>
-            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Updating order status</h3>
+            <h3 className="text-white font-semibold mb-2 text-xs uppercase tracking-wide text-gray-500">Cooking & serving</h3>
             <div className="space-y-1.5 text-xs text-gray-400">
-              <p>• <span className="text-gray-200">Tap any item row</span> to advance it one step: <span className="text-red-400">Pending</span> → <span className="text-orange-400">Cooking</span> → <span className="text-teal-400">Ready</span> → <span className="text-green-400">Served</span></p>
               <p>• Use <span className="text-orange-300 font-semibold">🍳 All Start</span> to move every pending item to Cooking at once</p>
               <p>• Use <span className="text-teal-300 font-semibold">✓ All Ready</span> to mark every cooking item as ready</p>
               <p>• Use <span className="text-emerald-300 font-semibold">🍽️ Serve All</span> to mark every ready item as served</p>
@@ -919,12 +931,23 @@ export default function KitchenPage() {
 
   const handleItemUpdate = async (orderId, itemId, status) => {
     try {
-      // Orders default to 'combined' mode; switch to individual on first item tap
       const order = orders.find((o) => o.id === orderId);
+
+      // First tap on a combined-mode order: switch to individual so accept/reject
+      // buttons appear. Do NOT advance item status yet — kitchen must accept first.
       if (order?.kitchen_mode !== 'individual') {
         const { data: modeData } = await setKitchenMode(orderId, 'individual');
         setOrders((prev) => prev.map((o) => o.id === orderId ? modeData.order : o));
+        toast('Accept or reject each item before cooking', { icon: '👆', style: { background: '#1f2937', color: '#fff' } });
+        return;
       }
+
+      // Order is in individual mode but not yet accepted — block item status changes
+      if (!order.accepted) {
+        toast('Accept the order first before updating items', { icon: '⚠️', style: { background: '#1f2937', color: '#fff' } });
+        return;
+      }
+
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => {
         if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== orderId);
@@ -1029,8 +1052,11 @@ export default function KitchenPage() {
     if (!rejectReason.trim() || !rejectModal) return;
     setRejecting(true);
     try {
-      await rejectOrder(rejectModal.orderId, rejectReason.trim());
-      setOrders((prev) => prev.filter((o) => o.id !== rejectModal.orderId));
+      const { data } = await rejectOrder(rejectModal.orderId, rejectReason.trim());
+      setOrders((prev) => {
+        if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== rejectModal.orderId);
+        return prev.map((o) => o.id === rejectModal.orderId ? data.order : o);
+      });
       toast.success('Order rejected');
       setRejectModal(null);
       setRejectReason('');

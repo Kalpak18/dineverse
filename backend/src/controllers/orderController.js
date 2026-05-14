@@ -1479,15 +1479,12 @@ exports.setKitchenMode = asyncHandler(async (req, res) => {
     [mode, id]
   );
 
-  // When switching to individual: reset item statuses to pending AND auto-accept
-  // so every item immediately shows "Start" without requiring a separate accept step.
+  // When switching to individual: reset item statuses to pending so the kitchen
+  // sees a clean slate. Do NOT auto-accept — the kitchen must explicitly accept
+  // or reject each item (or the whole order) before cooking can begin.
   if (mode === 'individual') {
     await db.query(
-      "UPDATE order_items SET item_status = 'pending', accepted = true WHERE order_id = $1",
-      [id]
-    );
-    await db.query(
-      'UPDATE orders SET accepted = true WHERE id = $1',
+      "UPDATE order_items SET item_status = 'pending', accepted = false WHERE order_id = $1",
       [id]
     );
   }
