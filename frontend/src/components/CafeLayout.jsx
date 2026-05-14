@@ -6,8 +6,8 @@ export default function CafeLayout() {
 
   return (
     <div className="flex flex-col min-h-screen">
-      {/* pb-[60px] keeps content above the fixed bottom nav on all pages */}
-      <div className="pb-[60px]" style={{ flex: 1 }}>
+      {/* padding keeps content above the fixed bottom nav (60px) + iPhone home indicator */}
+      <div style={{ flex: 1, paddingBottom: 'calc(60px + env(safe-area-inset-bottom))' }}>
         <Outlet />
       </div>
       <CustomerBottomNav />
