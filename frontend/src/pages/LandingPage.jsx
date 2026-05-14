@@ -259,7 +259,7 @@ export default function LandingPage() {
                 </span>
               ))}
             </div>
-            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · From {p.essential.perMonth[3]}/month after trial</p>
+            <p className="text-xs text-gray-400 mt-3">No credit card required · Cancel anytime · From ₹499/month after trial</p>
           </div>
 
           {/* Phone mockup */}
