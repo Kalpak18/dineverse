@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems } from '../../services/api';
+import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, cancelOrderItem, reorderOrderItems } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
@@ -122,32 +122,12 @@ function urgencyIcon(createdAt, now) {
   return '';
 }
 
-const ITEM_STATUS_STYLE = {
-  pending:   'bg-gray-100 text-gray-600',
-  preparing: 'bg-orange-100 text-orange-700',
-  ready:     'bg-teal-100 text-teal-700',
-  served:    'bg-green-100 text-green-700',
-  cancelled: 'bg-red-100 text-red-500 line-through',
-};
-
 const ITEM_STATUS_LABEL = {
   pending: 'Pending', preparing: 'Cooking', ready: 'Ready', served: 'Served', cancelled: 'Cancelled',
 };
 
 const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
 const TAB_LABELS = { pending: 'Pending', confirmed: 'Confirmed', preparing: 'Preparing', ready: 'Ready' };
-const TAB_COLORS = {
-  pending:   'border-yellow-400 text-yellow-300',
-  confirmed: 'border-blue-400  text-blue-300',
-  preparing: 'border-orange-400 text-orange-300',
-  ready:     'border-teal-400  text-teal-300',
-};
-const TAB_BADGE_BG = {
-  pending:   'bg-yellow-500',
-  confirmed: 'bg-blue-500',
-  preparing: 'bg-orange-500',
-  ready:     'bg-teal-500',
-};
 
 const STATUS_COLORS = {
   pending:   'border-yellow-400 bg-yellow-950/30',
@@ -678,6 +658,52 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
 }
 
 
+function CancelItemModal({ cancelModal, cancelReason, setCancelReason, cancelling, onSubmit, onClose, TB }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
+      <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+        <h3 className="font-bold text-white text-lg mb-1">Cancel Item</h3>
+        <p className="text-gray-400 text-sm mb-4">
+          Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable? The customer will be notified.
+        </p>
+        <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+          placeholder="Reason (e.g. Out of stock, Sold out today…)"
+          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
+          rows={3} autoFocus />
+        <div className="flex gap-3">
+          <button onClick={onClose} className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>Keep Item</button>
+          <button onClick={onSubmit} disabled={!cancelReason.trim() || cancelling}
+            className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
+            {cancelling ? 'Cancelling…' : 'Cancel Item'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RejectOrderModal({ rejectReason, setRejectReason, rejecting, onSubmit, onClose, TB }) {
+  return (
+    <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
+      <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+        <h3 className="font-bold text-white text-lg mb-1">Reject Order</h3>
+        <p className="text-gray-400 text-sm mb-4">Give a reason — the customer will be notified immediately.</p>
+        <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+          placeholder="Reason (e.g. Kitchen closed, Out of ingredients…)"
+          className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
+          rows={3} autoFocus />
+        <div className="flex gap-3">
+          <button onClick={onClose} className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>Keep Order</button>
+          <button onClick={onSubmit} disabled={!rejectReason.trim() || rejecting}
+            className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
+            {rejecting ? 'Rejecting…' : 'Reject Order'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Persist a preference to localStorage and read it back
 function usePersisted(key, defaultVal) {
   const [val, setVal] = useState(() => {
@@ -704,9 +730,12 @@ export default function KitchenPage() {
   const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined');
   const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified');
   const [selectedItems, setSelectedItems] = useState({});
-  const [cancelModal, setCancelModal]     = useState(null);
+  const [cancelModal, setCancelModal]     = useState(null); // { orderId, itemId, itemName }
   const [cancelReason, setCancelReason]   = useState('');
   const [cancelling, setCancelling]       = useState(false);
+  const [rejectModal, setRejectModal]     = useState(null); // { orderId }
+  const [rejectReason, setRejectReason]   = useState('');
+  const [rejecting, setRejecting]         = useState(false);
   const [statusFilter, setStatusFilter]   = usePersisted('kds_status_filter', 'all');
   const [vegFilter, setVegFilter]         = usePersisted('kds_veg_filter', 'all');
   const [showHelp, setShowHelp]           = useState(false);
@@ -819,29 +848,6 @@ export default function KitchenPage() {
     }
   };
 
-  const handleMoveItem = async (orderId, itemId, direction) => {
-    const order = orders.find((o) => o.id === orderId);
-    if (!order) return;
-    const sorted = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-    const idx = sorted.findIndex((i) => i.id === itemId);
-    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-
-    // Swap sort_order values between the two items
-    const reordered = sorted.map((item, i) => {
-      if (i === idx)     return { id: item.id, sort_order: sorted[swapIdx].sort_order ?? swapIdx };
-      if (i === swapIdx) return { id: item.id, sort_order: sorted[idx].sort_order ?? idx };
-      return { id: item.id, sort_order: item.sort_order ?? i };
-    });
-
-    try {
-      const { data } = await reorderOrderItems(orderId, reordered);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-    } catch (err) {
-      toast.error('Failed to reorder items');
-    }
-  };
-
   const handleAdvanceAll = async (groupOrders) => {
     const toAdvance = groupOrders.filter((o) => kitchenNext(o.status, o.order_type));
     if (!toAdvance.length) return;
@@ -866,23 +872,17 @@ export default function KitchenPage() {
     } catch (err) { toast.error(`Couldn't accept order: ${getApiError(err)}`); }
   };
 
-  const handleRejectOrder = async (orderId) => {
-    const reason = prompt('Enter rejection reason:');
-    if (!reason?.trim()) return;
+  const handleRejectOrder = async () => {
+    if (!rejectReason.trim() || !rejectModal) return;
+    setRejecting(true);
     try {
-      const { data } = await rejectOrder(orderId, reason.trim());
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      await rejectOrder(rejectModal.orderId, rejectReason.trim());
+      setOrders((prev) => prev.filter((o) => o.id !== rejectModal.orderId));
       toast.success('Order rejected');
+      setRejectModal(null);
+      setRejectReason('');
     } catch (err) { toast.error(`Couldn't reject order: ${getApiError(err)}`); }
-  };
-
-  const handleAcceptItem = async (orderId, itemId) => {
-    try {
-      const { data } = await acceptItem(orderId, itemId);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-    } catch (err) {
-      toast.error('Failed to accept item');
-    }
+    finally { setRejecting(false); }
   };
 
   const toggleItemSelection = (orderId, itemId) => {
@@ -949,12 +949,8 @@ export default function KitchenPage() {
     return result;
   };
 
-  // Returns true if any active item in the order has the given vegType ('veg'|'nonveg')
-  // Uses is_veg boolean field; falls through to true when unknown (show in both)
   const itemIsVeg    = (item) => item.is_veg === true;
   const itemIsNonVeg = (item) => item.is_veg === false;
-  const orderHasVeg    = (order) => (order.items || []).filter(i => i.item_status !== 'cancelled').some(itemIsVeg);
-  const orderHasNonVeg = (order) => (order.items || []).filter(i => i.item_status !== 'cancelled').some(itemIsNonVeg);
 
   // For unified mode veg filter
   const orderMatchesVeg = (order) => {
@@ -1034,7 +1030,7 @@ export default function KitchenPage() {
           node: <KDSOrderCard order={order} status={order.status} now={now}
                   selectedItems={selectedItems} onAdvance={handleAdvance}
                   onItemUpdate={handleItemUpdate} onAcceptOrder={handleAcceptOrder}
-                  onRejectOrder={handleRejectOrder} onServeSelected={handleServeSelected}
+                  onRejectOrder={(oid) => { setRejectModal({ orderId: oid }); setRejectReason(''); }} onServeSelected={handleServeSelected}
                   onCancelItem={(oid, iid, name) => { setCancelModal({ orderId: oid, itemId: iid, itemName: name }); setCancelReason(''); }}
                   onToggleItem={toggleItemSelection} />,
         }));
@@ -1129,27 +1125,8 @@ export default function KitchenPage() {
           {renderCardFeed(stationOrders)}
         </div>
 
-        {/* Cancel modal */}
-        {cancelModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
-            <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
-              <h3 className="font-bold text-white text-lg mb-1">Cancel Item</h3>
-              <p className="text-gray-400 text-sm mb-4">Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable?</p>
-              <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="Reason (e.g. Out of stock…)"
-                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
-                rows={3} autoFocus />
-              <div className="flex gap-3">
-                <button onClick={() => { setCancelModal(null); setCancelReason(''); }}
-                  className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>Keep</button>
-                <button onClick={handleCancelItemSubmit} disabled={!cancelReason.trim() || cancelling}
-                  className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
-                  {cancelling ? 'Cancelling…' : 'Cancel Item'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        {cancelModal && <CancelItemModal cancelModal={cancelModal} cancelReason={cancelReason} setCancelReason={setCancelReason} cancelling={cancelling} onSubmit={handleCancelItemSubmit} onClose={() => { setCancelModal(null); setCancelReason(''); }} TB={TB} />}
+        {rejectModal && <RejectOrderModal rejectModal={rejectModal} rejectReason={rejectReason} setRejectReason={setRejectReason} rejecting={rejecting} onSubmit={handleRejectOrder} onClose={() => { setRejectModal(null); setRejectReason(''); }} TB={TB} />}
       </div>
     );
   }
@@ -1325,35 +1302,8 @@ export default function KitchenPage() {
         </div>
       )}
 
-      {/* Cancel Item Modal */}
-      {cancelModal && (
-        <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
-          <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
-            <h3 className="font-bold text-white text-lg mb-1">Cancel Item</h3>
-            <p className="text-gray-400 text-sm mb-4">
-              Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable? The customer will be notified.
-            </p>
-            <textarea
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              placeholder="Reason (e.g. Out of stock, Sold out today…)"
-              className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
-              rows={3}
-              autoFocus
-            />
-            <div className="flex gap-3">
-              <button onClick={() => { setCancelModal(null); setCancelReason(''); }}
-                className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>
-                Keep Item
-              </button>
-              <button onClick={handleCancelItemSubmit} disabled={!cancelReason.trim() || cancelling}
-                className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
-                {cancelling ? 'Cancelling…' : 'Cancel Item'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {cancelModal && <CancelItemModal cancelModal={cancelModal} cancelReason={cancelReason} setCancelReason={setCancelReason} cancelling={cancelling} onSubmit={handleCancelItemSubmit} onClose={() => { setCancelModal(null); setCancelReason(''); }} TB={TB} />}
+      {rejectModal && <RejectOrderModal rejectModal={rejectModal} rejectReason={rejectReason} setRejectReason={setRejectReason} rejecting={rejecting} onSubmit={handleRejectOrder} onClose={() => { setRejectModal(null); setRejectReason(''); }} TB={TB} />}
     </div>
   );
 }
