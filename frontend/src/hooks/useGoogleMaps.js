@@ -32,7 +32,7 @@ function loadScript() {
   };
 
   const script = document.createElement('script');
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&libraries=places&callback=__gmapsReady`;
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${GMAPS_KEY}&libraries=places,geometry&callback=__gmapsReady`;
   script.async = true;
   script.defer = true;
   script.onerror = () => {
