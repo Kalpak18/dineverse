@@ -269,15 +269,26 @@ exports.webhookHandler = asyncHandler(async (req, res) => {
   if (notes.type === 'commission_payment' && notes.cafe_id) {
     const cafeId = notes.cafe_id;
     try {
+      // Idempotency: skip if this payment_id was already used to settle commission
+      const already = await db.query(
+        `SELECT 1 FROM orders
+         WHERE cafe_id = $1 AND commission_payment_id = $2 LIMIT 1`,
+        [cafeId, razorpay_payment_id]
+      );
+      if (already.rows.length > 0) {
+        logger.info('Webhook commission already settled for payment %s — skipping', razorpay_payment_id);
+        return res.status(200).json({ ok: true, already: true });
+      }
       const updated = await db.query(
         `UPDATE orders
          SET commission_status       = 'collected',
-             commission_collected_at = NOW()
+             commission_collected_at = NOW(),
+             commission_payment_id   = $2
          WHERE cafe_id = $1
            AND commission_status = 'cash_due'
            AND status = 'paid'
          RETURNING id`,
-        [cafeId]
+        [cafeId, razorpay_payment_id]
       );
       logger.info('Webhook commission settled: cafe %s payment %s, %d orders',
         cafeId, razorpay_payment_id, updated.rows.length);
@@ -740,15 +751,26 @@ exports.verifyCommissionPayment = asyncHandler(async (req, res) => {
     return fail(res, 'Payment amount does not cover the commission balance', 400);
   }
 
+  // Idempotency: if this payment_id already settled commission, return success without double-applying
+  const already = await db.query(
+    `SELECT 1 FROM orders WHERE cafe_id = $1 AND commission_payment_id = $2 LIMIT 1`,
+    [cafeId, razorpay_payment_id]
+  );
+  if (already.rows.length > 0) {
+    logger.info('Commission already settled for payment %s — idempotent return', razorpay_payment_id);
+    return ok(res, { settled_orders: 0, payment_id: razorpay_payment_id }, 'Commission already recorded');
+  }
+
   const updated = await db.query(
     `UPDATE orders
      SET commission_status        = 'collected',
-         commission_collected_at  = NOW()
+         commission_collected_at  = NOW(),
+         commission_payment_id    = $2
      WHERE cafe_id = $1
        AND commission_status = 'cash_due'
        AND status = 'paid'
      RETURNING id`,
-    [cafeId]
+    [cafeId, razorpay_payment_id]
   );
 
   logger.info(

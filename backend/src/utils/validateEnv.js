@@ -26,6 +26,14 @@ module.exports = function validateEnv() {
     logger.warn('[STARTUP] Razorpay keys not set — online payments will fail');
   }
 
+  // In production, test keys must not be used — they accept test-mode HMAC signatures
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      logger.error('[STARTUP] RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are required in production. Set them in your environment variables.');
+      process.exit(1);
+    }
+  }
+
   // Razorpay webhook secret — needed to verify webhook payloads from Razorpay servers
   if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
     logger.warn('[STARTUP] RAZORPAY_WEBHOOK_SECRET not set — webhooks will be ignored (subscription may not activate on payment failure/retry)');

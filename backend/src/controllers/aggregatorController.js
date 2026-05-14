@@ -115,7 +115,7 @@ exports.urbanPiperOrder = asyncHandler(async (req, res) => {
     logger.info('UrbanPiper order %s inserted for café %s', normalized.external_order_id, cafeId);
     ok(res, { order_id: orderId }, 'Order received', 201);
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
     client.release();

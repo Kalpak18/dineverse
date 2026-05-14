@@ -29,8 +29,10 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Account not found or deactivated' });
     }
     const dbVersion = result.rows[0].token_version;
-    const tokenVersion = decoded.tv ?? 1;
-    if (tokenVersion !== dbVersion) {
+    // No ?? 1 fallback — tokens without a tv field are pre-versioning and must re-login.
+    // This ensures password reset actually invalidates all outstanding sessions.
+    const tokenVersion = decoded.tv;
+    if (tokenVersion === undefined || tokenVersion !== dbVersion) {
       return res.status(401).json({ success: false, message: 'Session expired — please log in again' });
     }
   } catch {

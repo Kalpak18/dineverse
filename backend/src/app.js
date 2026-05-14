@@ -106,10 +106,11 @@ io.use((socket, next) => {
   if (!token) return next();
   try {
     socket.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
   } catch {
     // Invalid token — allow connection but socket.user stays undefined
+    next();
   }
-  next();
 });
 
 io.on('connection', (socket) => {
@@ -168,8 +169,16 @@ io.on('connection', (socket) => {
 app.use(compression({ threshold: 1024 }));
 
 // Razorpay webhook needs the raw body buffer for HMAC verification.
-// Must be registered BEFORE the global express.json() parser.
+// UrbanPiper webhook needs rawBody attached for HMAC verification (falls back to JSON stringify otherwise).
+// Both must be registered BEFORE the global express.json() parser.
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/aggregator/urbanpiper/order', (req, res, next) => {
+  express.raw({ type: '*/*' })(req, res, (err) => {
+    if (err) return next(err);
+    req.rawBody = req.body;
+    next();
+  });
+});
 app.use(express.json({ limit: '1mb' }));
 
 // Stamp every request with a unique ID — appears in logs and response header

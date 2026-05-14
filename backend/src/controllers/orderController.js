@@ -99,7 +99,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     delivery_address, delivery_address2, delivery_city, delivery_zipcode,
     delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
   } = req.body;
-  const tip = Math.max(0, parseFloat(tip_amount) || 0);
+  const tip = Math.max(0, Math.min(parseFloat(tip_amount) || 0, 10000));
   const tableNum = (order_type === 'takeaway' || order_type === 'delivery') ? (order_type === 'delivery' ? 'Delivery' : 'Takeaway') : (table_number || '');
 
   const client = await db.pool.connect();

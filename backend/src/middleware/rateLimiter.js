@@ -44,7 +44,7 @@ function otpKeyGenerator(req) {
 // Strict limiter for login/register (brute-force protection)
 exports.authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 20,
+  max: 5,
   store: makeStore('rl:auth:'),
   message: { success: false, message: 'Too many attempts. Please try again in 15 minutes.' },
   standardHeaders: true,

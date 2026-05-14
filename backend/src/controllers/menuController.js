@@ -4,7 +4,10 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
 
-const bustMenuCache = (cafeId) => cache.del(`menu:${cafeId}`); // returns Promise — callers await it
+const logger = require('../utils/logger');
+const bustMenuCache = (cafeId) => cache.del(`menu:${cafeId}`).catch((err) => {
+  logger.warn('Menu cache bust failed for cafe %s: %s', cafeId, err.message);
+});
 
 // ─── CATEGORIES ───────────────────────────────────────────────
 
