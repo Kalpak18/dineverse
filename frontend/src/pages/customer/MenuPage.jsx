@@ -543,7 +543,7 @@ export default function MenuPage() {
         </aside>
 
         {/* ── Items Content ── */}
-        <main ref={contentRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ background: '#f8f8f8' }}>
+        <main ref={contentRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ background: '#f8f8f8', paddingBottom: itemCount > 0 || activeOrders?.length > 0 ? 'calc(120px + env(safe-area-inset-bottom))' : undefined }}>
 
           {/* ── Deals panel ── */}
           {!isSearching && selectedCatId === '__deals__' ? (
@@ -737,7 +737,7 @@ export default function MenuPage() {
 
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
-        <div className="fixed bottom-4 left-0 right-0 px-3 z-20 max-w-2xl mx-auto flex flex-col gap-2">
+        <div className="fixed left-0 right-0 px-3 z-20 max-w-2xl mx-auto flex flex-col gap-2" style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}>
           {activeOrders.length > 0 && (
             <button
               onClick={() => navigate(`/cafe/${slug}/confirmation`)}
