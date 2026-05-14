@@ -2,52 +2,6 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import DineLogo from '../components/DineLogo';
 
-// ── Pricing data ─────────────────────────────────────────────
-// Index: 0=1mo · 1=3mo · 2=6mo · 3=1yr · 4=2yr · 5=3yr
-const PRICING = {
-  INR: {
-    essential: {
-      perMonth: ['₹699', '₹599', '₹549', '₹499', '₹449', '₹444'],
-      total:    ['₹699', '₹1,797', '₹3,294', '₹5,988', '₹10,788', '₹15,999'],
-      save:     [null, 'Save ₹300', 'Save ₹900', 'Save ₹2,400', 'Save ₹5,988', 'Save ₹9,165'],
-    },
-    pro: {
-      perMonth: ['₹1,299', '₹1,199', '₹1,099', '₹999', '₹899', '₹888'],
-      total:    ['₹1,299', '₹3,597', '₹6,594', '₹11,988', '₹21,576', '₹31,968'],
-      save:     [null, 'Save ₹300', 'Save ₹1,200', 'Save ₹3,600', 'Save ₹9,600', 'Save ₹14,796'],
-    },
-    footer: 'All prices include GST · Secured by Razorpay · Instant activation',
-  },
-  USD: {
-    essential: {
-      perMonth: ['$8', '$7', '$6.50', '$6', '$5.30', '$5.25'],
-      total:    ['$8', '$21', '$39', '$72', '$127', '$189'],
-      save:     [null, 'Save $3', 'Save $9', 'Save $24', 'Save $69', 'Save $108'],
-    },
-    pro: {
-      perMonth: ['$15', '$14', '$13', '$12', '$10.80', '$10.50'],
-      total:    ['$15', '$42', '$78', '$144', '$259', '$378'],
-      save:     [null, 'Save $3', 'Save $12', 'Save $36', 'Save $101', 'Save $162'],
-    },
-    footer: 'Prices include applicable taxes · Secure payment · Instant activation',
-  },
-};
-
-// Index: 0=1mo · 1=3mo · 2=6mo · 3=1yr · 4=2yr · 5=3yr
-const DURATION_LABELS = ['1 Month', '3 Months', '6 Months', '1 Year', '2 Years', '3 Years'];
-const DURATION_BADGES = [null, 'Save 14%', 'Save 21%', 'Save 29%', 'Save 36%', 'Best Value'];
-
-async function detectCurrency() {
-  const cached = sessionStorage.getItem('dv_pricing_currency');
-  if (cached) return cached;
-  try {
-    const res = await fetch('https://ipapi.co/json/', { signal: AbortSignal.timeout(3000) });
-    const { country_code } = await res.json();
-    const c = country_code === 'IN' ? 'INR' : 'USD';
-    sessionStorage.setItem('dv_pricing_currency', c);
-    return c;
-  } catch { return 'INR'; }
-}
 
 function CheckIcon({ cls = 'text-green-500' }) {
   return (
@@ -229,12 +183,6 @@ function TestimonialsSection() {
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const [currency, setCurrency] = useState('INR');
-  const [durIdx, setDurIdx]     = useState(3); // default: 1 year
-
-  useEffect(() => { detectCurrency().then(setCurrency); }, []);
-
-  const p = PRICING[currency] ?? PRICING.INR;
 
   return (
     <div className="min-h-screen bg-white font-sans">
@@ -246,7 +194,6 @@ export default function LandingPage() {
           <div className="hidden md:flex items-center gap-8 text-sm text-gray-600">
             <a href="#how-it-works" className="hover:text-brand-600 transition-colors">How It Works</a>
             <a href="#features"     className="hover:text-brand-600 transition-colors">Features</a>
-            <a href="#pricing"      className="hover:text-brand-600 transition-colors">Pricing</a>
             <a href="#help"         className="hover:text-brand-600 transition-colors">Help</a>
           </div>
           <div className="flex items-center gap-3">
@@ -539,228 +486,6 @@ export default function LandingPage() {
       {/* ── Testimonials (real, from DB) ── */}
       <TestimonialsSection />
 
-      {/* ── Pricing ── */}
-      <section id="pricing" className="py-20 px-6 bg-gray-50">
-        <div className="max-w-5xl mx-auto">
-          <div className="text-center mb-10">
-            <span className="text-xs font-semibold text-brand-600 uppercase tracking-wide">Simple, Honest Pricing</span>
-            <h2 className="text-3xl font-extrabold text-gray-900 mt-2">Pay for what you need. No hidden fees.</h2>
-            <p className="text-gray-500 mt-3 text-sm">Every plan starts with a 30-day free trial — full access, no card required.</p>
-          </div>
-
-          {/* Billing period toggle */}
-          <div className="flex justify-center mb-10">
-            <div className="flex flex-wrap justify-center gap-2">
-              {DURATION_LABELS.map((label, i) => (
-                <button
-                  key={label}
-                  onClick={() => setDurIdx(i)}
-                  className={`relative px-3 py-2 rounded-lg text-sm font-semibold transition-all border ${
-                    durIdx === i
-                      ? 'bg-brand-500 text-white border-brand-500 shadow'
-                      : 'bg-white text-gray-500 border-gray-200 hover:border-brand-300 hover:text-gray-800'
-                  }`}
-                >
-                  {label}
-                  {DURATION_BADGES[i] && (
-                    <span className={`absolute -top-2.5 -right-1 text-[9px] font-extrabold px-1.5 py-0.5 rounded-full whitespace-nowrap ${
-                      i === 5 ? 'bg-green-500 text-white' : 'bg-amber-400 text-amber-900'
-                    }`}>
-                      {DURATION_BADGES[i]}
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid sm:grid-cols-3 gap-6">
-
-            {/* Free Trial */}
-            <div className="bg-white border-2 border-gray-200 rounded-2xl p-6 flex flex-col">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-1">Free Trial</p>
-              <p className="text-xs text-gray-400 mb-3">Try before you commit</p>
-              <p className="text-4xl font-extrabold text-gray-900">₹0</p>
-              <p className="text-sm text-gray-400 mt-1 mb-2">30 days · No card required</p>
-              <div className="inline-flex items-center gap-1.5 bg-gray-100 rounded-lg px-2.5 py-1.5 mb-5 self-start">
-                <span className="text-xs text-gray-500 font-medium">☕ Any size café</span>
-              </div>
-              <ul className="space-y-2.5 mb-8 flex-1 text-sm text-gray-600">
-                {[
-                  'Full access to every feature',
-                  'Unlimited orders & menu items',
-                  'QR ordering, KDS, GST billing',
-                  'Analytics, staff accounts, multi-branch',
-                ].map((f) => (
-                  <li key={f} className="flex items-center gap-2"><CheckIcon /> {f}</li>
-                ))}
-              </ul>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl border-2 border-brand-500 text-brand-600 font-bold hover:bg-brand-50 transition-colors text-sm">
-                Start Free — No Card
-              </button>
-            </div>
-
-            {/* Essential */}
-            <div className="relative bg-white border-2 border-brand-500 rounded-2xl p-6 flex flex-col shadow-lg">
-              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
-                🔥 MOST POPULAR
-              </span>
-              <p className="text-xs font-bold text-brand-600 uppercase tracking-wide mb-1">Essential</p>
-              <p className="text-xs text-gray-400 mb-3">Everything a small café needs to run smoothly</p>
-              <div className="flex items-baseline gap-1 mb-1">
-                <p className="text-4xl font-extrabold text-gray-900">{p.essential.perMonth[durIdx]}</p>
-                <span className="text-base text-gray-400">/mo</span>
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">{p.essential.total[durIdx]} total · billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
-              {p.essential.save[durIdx] && (
-                <p className="text-xs font-semibold text-green-600 mt-0.5">{p.essential.save[durIdx]}</p>
-              )}
-              <div className="inline-flex items-center gap-1.5 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1.5 mt-3 mb-4 self-start">
-                <span className="text-xs text-brand-700 font-medium">☕ Solo cafés · Food stalls · Small restaurants</span>
-              </div>
-              <ul className="space-y-2.5 mb-2 flex-1 text-sm text-gray-700">
-                {[
-                  ['Customers order themselves via QR', 'Zero waiter back-and-forth, zero wrong orders'],
-                  ['Live kitchen display — orders appear instantly', 'No shouting, no slips, no missed tickets'],
-                  ['GST tax invoice in one tap', 'CGST + SGST auto-split, UPI QR on every bill'],
-                  ['Unlimited orders, items & categories', 'No caps, ever — grow without paying more'],
-                  ['Daily revenue & bestseller reports', 'Know your numbers every single evening'],
-                  ['Staff accounts + role-based access', 'Separate logins for counter, kitchen, manager'],
-                  ['Delivery, takeaway & dine-in modes', 'Handle every order type from one dashboard'],
-                  ['Discount & offer management', 'Run happy-hour deals, combo offers automatically'],
-                ].map(([title, sub]) => (
-                  <li key={title} className="flex items-start gap-2">
-                    <CheckIcon cls="text-brand-500 mt-0.5 flex-shrink-0" />
-                    <span>
-                      <span className="font-medium text-gray-800">{title}</span>
-                      <span className="block text-xs text-gray-400 mt-0.5">{sub}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-brand-600 font-semibold mt-3 mb-5 bg-brand-50 rounded-lg px-3 py-2">
-                💡 Pays for itself with just 2–3 extra covers a day — less time on billing = more time serving.
-              </p>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white font-bold transition-colors text-sm shadow-md shadow-brand-200">
-                Get Essential →
-              </button>
-            </div>
-
-            {/* Pro */}
-            <div className="relative bg-white border-2 border-purple-400 rounded-2xl p-6 flex flex-col">
-              <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-purple-600 text-white text-[10px] font-extrabold px-4 py-1 rounded-full whitespace-nowrap">
-                👨‍🍳 FOR RESTAURANT TEAMS
-              </span>
-              <p className="text-xs font-bold text-purple-600 uppercase tracking-wide mb-1">Kitchen Pro</p>
-              <p className="text-xs text-gray-400 mb-3">Full kitchen control for busy restaurants and multi-staff teams</p>
-              <div className="flex items-baseline gap-1 mb-1">
-                <p className="text-4xl font-extrabold text-gray-900">{p.pro.perMonth[durIdx]}</p>
-                <span className="text-base text-gray-400">/mo</span>
-              </div>
-              <p className="text-xs text-gray-400 mt-0.5">{p.pro.total[durIdx]} total · billed {DURATION_LABELS[durIdx].toLowerCase()}</p>
-              {p.pro.save[durIdx] && (
-                <p className="text-xs font-semibold text-green-600 mt-0.5">{p.pro.save[durIdx]}</p>
-              )}
-              <div className="inline-flex items-center gap-1.5 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-1.5 mt-3 mb-4 self-start">
-                <span className="text-xs text-purple-700 font-medium">🍽️ Medium restaurants · High-volume dine-in · Chains</span>
-              </div>
-              <p className="text-xs font-semibold text-gray-400 mb-3">Everything in Essential, plus:</p>
-              <ul className="space-y-2.5 mb-2 flex-1 text-sm text-gray-700">
-                {[
-                  ['Item-level kitchen tracking', 'Each dish tracked: Preparing → Ready → Served. Chef owns every ticket.'],
-                  ['Customers see live dish progress', `Fewer "where's my food?" questions — transparency = happier tables.`],
-                  ['Course sequencing', 'Starters fire first, mains hold until the table is ready. Zero cold plates.'],
-                  ['Cancel individual items mid-order', 'Remove a dish, customer gets notified instantly — no awkward conversations.'],
-                  ['Advanced KDS with category filters', 'Separate hot, cold, beverage queues. Each station sees only their work.'],
-                  ['Full KOT reprint history', 'Reprint any ticket from any past order. Accountability end to end.'],
-                ].map(([title, sub]) => (
-                  <li key={title} className="flex items-start gap-2">
-                    <CheckIcon cls="text-purple-500 mt-0.5 flex-shrink-0" />
-                    <span>
-                      <span className="font-medium text-gray-800">{title}</span>
-                      <span className="block text-xs text-gray-400 mt-0.5">{sub}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <p className="text-xs text-purple-700 font-semibold mt-3 mb-5 bg-purple-50 rounded-lg px-3 py-2">
-                💡 At 50+ covers/day, one avoided remake or wrong order covers the monthly cost.
-              </p>
-              <button onClick={() => navigate('/owner/register')} className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold transition-colors text-sm">
-                Get Kitchen Pro →
-              </button>
-            </div>
-
-          </div>
-          <p className="text-center text-xs text-gray-400 mt-6">{p.footer}</p>
-
-          {/* Quick compare */}
-          <div className="mt-10 bg-white border border-gray-200 rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <p className="font-semibold text-gray-900 text-sm">Full feature comparison</p>
-              <span className="text-xs text-gray-400">All plans include 30-day free trial</span>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase">Feature</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-gray-400 uppercase text-center">Trial</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-brand-600 uppercase text-center">Essential</th>
-                    <th className="px-4 py-3 text-xs font-semibold text-purple-600 uppercase text-center">Kitchen Pro</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {[
-                    { label: 'QR menu & self-ordering',             trial: true,  ess: true,  pro: true  },
-                    { label: 'Unlimited orders & menu items',       trial: true,  ess: true,  pro: true  },
-                    { label: 'Live kitchen display (KDS)',          trial: true,  ess: true,  pro: true  },
-                    { label: 'GST tax invoices & thermal printing', trial: true,  ess: true,  pro: true  },
-                    { label: 'Delivery, takeaway & dine-in',        trial: true,  ess: true,  pro: true  },
-                    { label: 'Revenue analytics & reports',         trial: true,  ess: true,  pro: true  },
-                    { label: 'Staff accounts & role access',        trial: true,  ess: true,  pro: true  },
-                    { label: 'Multi-branch management',             trial: true,  ess: true,  pro: true  },
-                    { label: 'Offers & discount management',        trial: true,  ess: true,  pro: true  },
-                    { label: 'KOT printing per ticket',             trial: true,  ess: true,  pro: true  },
-                    { label: 'Per-item status tracking in kitchen', trial: false, ess: false, pro: true  },
-                    { label: 'Customer sees live dish progress',    trial: false, ess: false, pro: true  },
-                    { label: 'Course sequencing (starters → mains)',trial: false, ess: false, pro: true  },
-                    { label: 'Cancel items mid-order & notify',     trial: false, ess: false, pro: true  },
-                    { label: 'Category-filtered KDS stations',      trial: false, ess: false, pro: true  },
-                    { label: 'Full KOT reprint history',            trial: false, ess: false, pro: true  },
-                  ].map((row) => (
-                    <tr key={row.label} className="hover:bg-gray-50">
-                      <td className="px-6 py-2.5 text-gray-700">{row.label}</td>
-                      {[row.trial, row.ess, row.pro].map((val, i) => (
-                        <td key={i} className="px-4 py-2.5 text-center">
-                          {val
-                            ? <span className={`font-bold ${i === 1 ? 'text-brand-500' : i === 2 ? 'text-purple-500' : 'text-green-500'}`}>✓</span>
-                            : <span className="text-gray-200 font-bold">—</span>}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* FAQ-style objection busters */}
-          <div className="mt-10 grid sm:grid-cols-3 gap-4">
-            {[
-              { q: 'Do I need any hardware?', a: 'No. Works on any smartphone, tablet, or laptop. Your kitchen display runs on a cheap Android tablet or an old phone propped up in the kitchen.' },
-              { q: 'What if I need to cancel mid-trial?', a: 'Just stop — no card was charged, nothing to cancel. If you upgrade and later want to stop, we refund the unused months, no questions asked.' },
-              { q: 'Can I switch plans later?', a: 'Yes, anytime. Upgrade from Essential to Pro in one click. Downgrade too — your data stays safe regardless.' },
-            ].map(({ q, a }) => (
-              <div key={q} className="bg-white border border-gray-200 rounded-xl p-4">
-                <p className="text-sm font-semibold text-gray-800 mb-1.5">{q}</p>
-                <p className="text-xs text-gray-500 leading-relaxed">{a}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── Help Desk ── */}
       <section id="help" className="py-16 px-6 bg-white border-t border-gray-100">
         <div className="max-w-4xl mx-auto">
@@ -866,7 +591,6 @@ export default function LandingPage() {
               <p className="font-semibold text-white text-sm mb-3">Product</p>
               <ul className="space-y-2 text-sm">
                 <li><a href="#features"     className="hover:text-white transition-colors">Features</a></li>
-                <li><a href="#pricing"      className="hover:text-white transition-colors">Pricing</a></li>
                 <li><a href="#how-it-works" className="hover:text-white transition-colors">How It Works</a></li>
               </ul>
             </div>
