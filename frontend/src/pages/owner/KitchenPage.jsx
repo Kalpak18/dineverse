@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
@@ -689,13 +690,19 @@ function usePersisted(key, defaultVal) {
 
 export default function KitchenPage() {
   const { cafe } = useAuth();
+  const [searchParams] = useSearchParams();
+  // ?station=veg  → locked to veg-only screen
+  // ?station=nonveg → locked to non-veg-only screen
+  // (no param) → normal unified/split UI
+  const stationLock = searchParams.get('station'); // 'veg' | 'nonveg' | null
+
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled]   = usePersisted('kds_sound', true);
   const [fullscreen, setFullscreen]       = useState(false);
-  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined'); // 'individual' | 'combined' | 'rush'
-  const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified'); // 'unified' | 'split'
+  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined');
+  const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified');
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal]     = useState(null);
   const [cancelReason, setCancelReason]   = useState('');
@@ -1059,6 +1066,95 @@ export default function KitchenPage() {
   // Touch-friendly button base classes — min 44px tap target, no double-tap zoom
   const TB = 'select-none touch-manipulation active:scale-95 transition-transform';
 
+  // ── STATION-LOCKED MODE (/owner/kitchen?station=veg or ?station=nonveg) ──
+  // This mode is for a dedicated physical screen: full screen, single-purpose,
+  // no UI clutter, auto-fullscreen prompt. Bookmark the URL on the touch display.
+  if (stationLock === 'veg' || stationLock === 'nonveg') {
+    const isVeg      = stationLock === 'veg';
+    const stationOrders = isVeg ? vegOrders : nonVegOrders;
+    const headerBg   = isVeg ? 'bg-green-950'         : 'bg-red-950';
+    const borderCol  = isVeg ? 'border-green-800'      : 'border-red-900';
+    const dotBg      = isVeg ? 'bg-green-500'          : 'bg-red-500';
+    const labelColor = isVeg ? 'text-green-200'        : 'text-red-200';
+    const countBg    = isVeg ? 'bg-green-800 text-green-100' : 'bg-red-900 text-red-100';
+    const stationLabel = isVeg ? '🟢 Veg Kitchen' : '🔴 Non-Veg Kitchen';
+
+    return (
+      <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+        {/* Station header */}
+        <div className={`flex-shrink-0 flex items-center gap-3 px-4 py-3 ${headerBg} border-b ${borderCol}`}>
+          <span className={`w-4 h-4 rounded ${dotBg} flex-shrink-0`} />
+          <span className={`font-black text-lg uppercase tracking-wider ${labelColor}`}>{stationLabel}</span>
+          <span className={`ml-2 text-sm font-bold px-2.5 py-1 rounded-full ${countBg}`}>{stationOrders.length} orders</span>
+          <span className="hidden md:inline text-xs text-gray-600 ml-1">— {cafe?.name}</span>
+
+          {/* Status filter chips */}
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-none ml-auto">
+            {STATUS_FILTER_CONFIG.map(({ key, icon, label }) => (
+              <button key={key} onClick={() => setStatusFilter(key)}
+                className={`${TB} min-w-[44px] min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${
+                  statusFilter === key
+                    ? isVeg ? 'bg-green-700 text-white' : 'bg-red-700 text-white'
+                    : 'bg-gray-800/60 text-gray-400'
+                }`}>
+                <span>{icon}</span>
+                <span className="hidden sm:inline">{label}</span>
+                <span className={`text-[10px] px-1 rounded-full ${STATUS_BADGE_BG[key] ? STATUS_BADGE_BG[key] + ' text-white' : ''}`}>
+                  {key !== 'all' ? (byStatus[key] || '') : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button onClick={() => setSoundEnabled((s) => !s)}
+            className={`${TB} min-w-[44px] min-h-[40px] px-3 py-2 rounded-xl text-sm flex-shrink-0 ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+            {soundEnabled ? '🔔' : '🔕'}
+          </button>
+          <button onClick={toggleFullscreen}
+            className={`${TB} min-w-[44px] min-h-[40px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 flex-shrink-0`}>
+            ⛶
+          </button>
+        </div>
+
+        {/* Rush banner */}
+        {viewMode === 'rush' && (
+          <div className="flex-shrink-0 px-4 py-1.5 bg-orange-950/40 border-b border-orange-900/50 flex items-center gap-3">
+            <span className="text-orange-300 font-bold text-xs">⚡ Rush Mode</span>
+            <span className="ml-auto text-orange-300 font-bold text-xs">{stationOrders.length} orders</span>
+          </div>
+        )}
+
+        {/* Card feed */}
+        <div className="flex-1 overflow-y-auto overscroll-contain">
+          {renderCardFeed(stationOrders)}
+        </div>
+
+        {/* Cancel modal */}
+        {cancelModal && (
+          <div className="fixed inset-0 bg-black/80 flex items-end sm:items-center justify-center z-50 px-4 pb-4 sm:pb-0">
+            <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm border border-gray-700 shadow-2xl">
+              <h3 className="font-bold text-white text-lg mb-1">Cancel Item</h3>
+              <p className="text-gray-400 text-sm mb-4">Mark <strong className="text-white">"{cancelModal.itemName}"</strong> as unavailable?</p>
+              <textarea value={cancelReason} onChange={(e) => setCancelReason(e.target.value)}
+                placeholder="Reason (e.g. Out of stock…)"
+                className="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-3 text-sm text-white placeholder-gray-500 resize-none focus:outline-none focus:border-red-500 mb-4"
+                rows={3} autoFocus />
+              <div className="flex gap-3">
+                <button onClick={() => { setCancelModal(null); setCancelReason(''); }}
+                  className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl border border-gray-700 text-gray-300 text-sm font-semibold`}>Keep</button>
+                <button onClick={handleCancelItemSubmit} disabled={!cancelReason.trim() || cancelling}
+                  className={`${TB} flex-1 min-h-[48px] py-3 rounded-xl bg-red-600 disabled:opacity-50 text-white text-sm font-bold`}>
+                  {cancelling ? 'Cancelling…' : 'Cancel Item'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── NORMAL UNIFIED / SPLIT VIEW ──
   return (
     <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
 
@@ -1100,8 +1196,7 @@ export default function KitchenPage() {
                 : 'bg-gray-800 border-transparent text-gray-400'
             }`}
             title="Split Veg / Non-veg kitchen view">
-            <span className="hidden sm:inline">{kitchenView === 'split' ? '🟢🔴 Split' : '🟢🔴 Split'}</span>
-            <span className="sm:hidden">🟢🔴</span>
+            🟢🔴
           </button>
 
           <button onClick={() => setSoundEnabled((s) => !s)}
@@ -1128,7 +1223,6 @@ export default function KitchenPage() {
       {/* ── Filter bar — hidden in split mode (split has its own panel headers) ── */}
       {kitchenView === 'unified' && (
         <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
-          {/* Status filters */}
           {STATUS_FILTER_CONFIG.map(({ key, label, icon, activeBg }) => {
             const count = key === 'all' ? orders.length : byStatus[key] || 0;
             const isActive = statusFilter === key;
@@ -1150,7 +1244,6 @@ export default function KitchenPage() {
 
           <div className="w-px h-7 bg-gray-700 flex-shrink-0 mx-1" />
 
-          {/* Veg filter */}
           {[
             { key: 'all',    label: 'All',        cls: 'bg-gray-600/40 border-gray-500 text-white' },
             { key: 'veg',    label: '🟢 Veg',     cls: 'bg-green-500/20 border-green-500 text-green-300' },
@@ -1177,31 +1270,23 @@ export default function KitchenPage() {
       {/* ── SPLIT KITCHEN VIEW ── */}
       {kitchenView === 'split' ? (
         <div className="flex-1 flex overflow-hidden min-h-0">
-
           {/* Veg panel */}
           <div className="flex-1 flex flex-col min-w-0 border-r-2 border-green-900/60">
             <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-green-950/50 border-b border-green-900/40">
               <span className="w-3 h-3 rounded-sm bg-green-500 flex-shrink-0" />
               <span className="font-black text-green-300 text-sm uppercase tracking-wider">Veg Kitchen</span>
-              <span className="ml-auto bg-green-800 text-green-200 text-xs font-bold px-2 py-0.5 rounded-full">
-                {vegOrders.length}
-              </span>
-              {/* Status filter chips for this panel */}
+              <span className="ml-auto bg-green-800 text-green-200 text-xs font-bold px-2 py-0.5 rounded-full">{vegOrders.length}</span>
               <div className="flex gap-1 overflow-x-auto scrollbar-none ml-2">
                 {STATUS_FILTER_CONFIG.map(({ key, icon }) => (
                   <button key={key} onClick={() => setStatusFilter(key)}
-                    className={`${TB} min-w-[32px] min-h-[32px] px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
-                      statusFilter === key
-                        ? key === 'all' ? 'bg-green-700 text-white' : `${STATUS_BADGE_BG[key]} text-white`
-                        : 'bg-gray-800/60 text-gray-500'
-                    }`}>
-                    {icon}
-                  </button>
+                    className={`${TB} min-w-[36px] min-h-[36px] px-2 py-2 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
+                      statusFilter === key ? key === 'all' ? 'bg-green-700 text-white' : `${STATUS_BADGE_BG[key]} text-white` : 'bg-gray-800/60 text-gray-500'
+                    }`}>{icon}</button>
                 ))}
               </div>
             </div>
             <div className="flex-1 overflow-y-auto overscroll-contain">
-              {renderCardFeed(vegOrders, 'veg')}
+              {renderCardFeed(vegOrders)}
             </div>
           </div>
 
@@ -1210,24 +1295,18 @@ export default function KitchenPage() {
             <div className="flex-shrink-0 flex items-center gap-2 px-4 py-3 bg-red-950/40 border-b border-red-900/40">
               <span className="w-3 h-3 rounded-sm bg-red-500 flex-shrink-0" />
               <span className="font-black text-red-300 text-sm uppercase tracking-wider">Non-Veg Kitchen</span>
-              <span className="ml-auto bg-red-900 text-red-200 text-xs font-bold px-2 py-0.5 rounded-full">
-                {nonVegOrders.length}
-              </span>
+              <span className="ml-auto bg-red-900 text-red-200 text-xs font-bold px-2 py-0.5 rounded-full">{nonVegOrders.length}</span>
               <div className="flex gap-1 overflow-x-auto scrollbar-none ml-2">
                 {STATUS_FILTER_CONFIG.map(({ key, icon }) => (
                   <button key={key} onClick={() => setStatusFilter(key)}
-                    className={`${TB} min-w-[32px] min-h-[32px] px-2 py-1 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
-                      statusFilter === key
-                        ? key === 'all' ? 'bg-red-700 text-white' : `${STATUS_BADGE_BG[key]} text-white`
-                        : 'bg-gray-800/60 text-gray-500'
-                    }`}>
-                    {icon}
-                  </button>
+                    className={`${TB} min-w-[36px] min-h-[36px] px-2 py-2 rounded-lg text-xs font-bold flex-shrink-0 transition-colors ${
+                      statusFilter === key ? key === 'all' ? 'bg-red-700 text-white' : `${STATUS_BADGE_BG[key]} text-white` : 'bg-gray-800/60 text-gray-500'
+                    }`}>{icon}</button>
                 ))}
               </div>
             </div>
             <div className="flex-1 overflow-y-auto overscroll-contain">
-              {renderCardFeed(nonVegOrders, 'nonveg')}
+              {renderCardFeed(nonVegOrders)}
             </div>
           </div>
         </div>
