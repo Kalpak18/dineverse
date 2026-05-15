@@ -84,7 +84,8 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   else alert('Pop-up blocked. Allow pop-ups to print serving slips.');
 }
 
-const OVERDUE_MS = 20 * 60 * 1000; // 20 min = overdue (was 25)
+const OVERDUE_MS = 20 * 60 * 1000;       // 20 min = overdue
+const STALE_MS   = 2 * 60 * 60 * 1000;  // 2 hours = stale test data, don't pulse
 
 function useTimer() {
   const [now, setNow] = useState(Date.now());
@@ -103,12 +104,18 @@ function elapsed(createdAt, now) {
   const mins = elapsedMins(createdAt, now);
   if (mins < 1) return 'now';
   if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h${mins % 60}m`;
+  // Cap display at 99m — orders older than that are stale test data
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h >= 2) return '99m+';
+  return `${h}h${m}m`;
 }
 
-// Returns Tailwind classes for timer badge based on urgency
+// Returns Tailwind classes for timer badge based on urgency.
+// Orders older than 2 hours are almost certainly stale test data — don't pulse them.
 function timerCls(createdAt, now) {
   const mins = elapsedMins(createdAt, now);
+  if (mins >= 120) return 'bg-gray-800 text-gray-600'; // stale test data
   if (mins < 8)  return 'bg-gray-800 text-gray-400';
   if (mins < 15) return 'bg-amber-900/70 text-amber-300 font-bold';
   if (mins < 20) return 'bg-orange-900/70 text-orange-300 font-bold';
@@ -118,6 +125,7 @@ function timerCls(createdAt, now) {
 // Returns urgency emoji
 function urgencyIcon(createdAt, now) {
   const mins = elapsedMins(createdAt, now);
+  if (mins >= 120) return ''; // stale
   if (mins >= 20) return '🔥';
   if (mins >= 12) return '⚠️';
   return '';
@@ -186,7 +194,8 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onItem
   const { tableKey, orders } = group;
   const orderCount = orders.length;
   const earliestTs = orders.reduce((min, o) => Math.min(min, new Date(o.created_at).getTime()), Infinity);
-  const allOverdue = orders.every((o) => now - new Date(o.created_at).getTime() > OVERDUE_MS);
+  const age = now - new Date(earliestTs).getTime();
+  const allOverdue = age > OVERDUE_MS && age < STALE_MS && orders.every((o) => now - new Date(o.created_at).getTime() > OVERDUE_MS);
 
   const cardCls = `rounded-xl border-l-4 p-3 ${
     allOverdue ? 'border-red-500 bg-red-950/40 animate-pulse' : STATUS_COLORS[status]
@@ -524,7 +533,8 @@ function HowItWorksModal({ onClose }) {
 function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpdate,
   onAcceptOrder, onRejectOrder, onAcceptItem, onRejectItem, onServeSelected, onCancelItem, onToggleItem,
   prepInput, onSetPrepTime }) {
-  const overdue = (now - new Date(order.created_at).getTime()) > OVERDUE_MS;
+  const orderAge = now - new Date(order.created_at).getTime();
+  const overdue = orderAge > OVERDUE_MS && orderAge < STALE_MS;
   const nextStatus = kitchenNext(status, order.order_type);
   const actionLabel = kitchenLabel(status, order.order_type);
   const sortedItems = [...(order.items || [])].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
@@ -635,22 +645,7 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
                   </span>
                   {itemRemaining !== null && <EtaPill mins={itemRemaining} compact />}
                   <div className="flex items-center gap-0.5">
-                    {/* Per-item accept/reject — only before order is accepted, only on pending items */}
-                    {order.kitchen_mode === 'individual' && !order.accepted && ist === 'pending' && (
-                      <>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onAcceptItem(order.id, item.id); }}
-                          className="w-5 h-5 rounded text-[9px] bg-green-900/60 text-green-400 hover:bg-green-700 flex items-center justify-center font-bold"
-                          title="Accept this item"
-                        >✓</button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onRejectItem(order.id, item.id, item.item_name); }}
-                          className="w-5 h-5 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center font-bold"
-                          title="Reject this item"
-                        >✕</button>
-                      </>
-                    )}
-                    {!isCancelled && ['pending', 'preparing'].includes(ist) && order.accepted && (
+                    {!isCancelled && ['pending', 'preparing'].includes(ist) && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onCancelItem(order.id, item.id, item.item_name); }}
                         className="w-4 h-4 rounded text-[9px] bg-red-900/50 text-red-400 hover:bg-red-800 flex items-center justify-center"
@@ -860,9 +855,13 @@ export default function KitchenPage() {
   const [rejectingItem, setRejectingItem]   = useState(false);
   // prepInput: { orderId, itemId, defaultMins } — shows inline time input when item moves to preparing
   const [prepInput, setPrepInput]         = useState(null);
-  const [statusFilter, setStatusFilter]   = usePersisted('kds_status_filter', 'all');
-  const [vegFilter, setVegFilter]         = usePersisted('kds_veg_filter', 'all');
-  const [showHelp, setShowHelp]           = useState(false);
+  const [statusFilter, setStatusFilterRaw] = usePersisted('kds_status_filter', 'all');
+  const [vegFilter, setVegFilter]          = usePersisted('kds_veg_filter', 'all');
+  const [showHelp, setShowHelp]            = useState(false);
+  // pinnedIds: order IDs that matched the filter when it was applied.
+  // Orders stay visible (pinned) until they leave KITCHEN_STATUSES entirely,
+  // so advancing an order's status never makes it disappear mid-workflow.
+  const [pinnedIds, setPinnedIds]          = useState(null); // null = no pin (show all matching)
   const now = useTimer();
 
   const playChime = useCallback(() => {
@@ -931,23 +930,6 @@ export default function KitchenPage() {
 
   const handleItemUpdate = async (orderId, itemId, status) => {
     try {
-      const order = orders.find((o) => o.id === orderId);
-
-      // First tap on a combined-mode order: switch to individual so accept/reject
-      // buttons appear. Do NOT advance item status yet — kitchen must accept first.
-      if (order?.kitchen_mode !== 'individual') {
-        const { data: modeData } = await setKitchenMode(orderId, 'individual');
-        setOrders((prev) => prev.map((o) => o.id === orderId ? modeData.order : o));
-        toast('Accept or reject each item before cooking', { icon: '👆', style: { background: '#1f2937', color: '#fff' } });
-        return;
-      }
-
-      // Order is in individual mode but not yet accepted — block item status changes
-      if (!order.accepted) {
-        toast('Accept the order first before updating items', { icon: '⚠️', style: { background: '#1f2937', color: '#fff' } });
-        return;
-      }
-
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => {
         if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== orderId);
@@ -1128,6 +1110,18 @@ export default function KitchenPage() {
     return result;
   };
 
+  // When a filter is selected, pin the IDs that currently match so they stay
+  // visible even after their status advances. Switching back to 'all' clears the pin.
+  const setStatusFilter = useCallback((key) => {
+    setStatusFilterRaw(key);
+    if (key === 'all') {
+      setPinnedIds(null);
+    } else {
+      const ids = new Set(orders.filter((o) => o.status === key).map((o) => o.id));
+      setPinnedIds(ids);
+    }
+  }, [orders, setStatusFilterRaw]);
+
   const itemIsVeg    = (item) => item.is_veg === true;
   const itemIsNonVeg = (item) => item.is_veg === false;
 
@@ -1141,9 +1135,16 @@ export default function KitchenPage() {
     return vegFilter === 'veg' ? active.some(itemIsVeg) : active.some(itemIsNonVeg);
   };
 
-  // Filtered + sorted orders for unified mode
+  // Filtered + sorted orders for unified mode.
+  // When a status filter is active, we show orders that EITHER currently match
+  // OR were pinned (matched when the filter was applied) — so advancing an order
+  // from e.g. pending→preparing never removes it from the "Pending" filter view.
   const baseOrders = orders
-    .filter((o) => statusFilter === 'all' || o.status === statusFilter)
+    .filter((o) => {
+      if (statusFilter === 'all') return true;
+      if (pinnedIds && pinnedIds.has(o.id)) return true; // pinned — stay visible
+      return o.status === statusFilter;
+    })
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
 
   const filteredOrders = baseOrders.filter(orderMatchesVeg);
