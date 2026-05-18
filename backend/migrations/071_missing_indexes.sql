@@ -15,7 +15,7 @@ CREATE INDEX IF NOT EXISTS idx_offers_cafe_active
 
 -- platform_offers — same pattern: active platform promos queried on menu load.
 CREATE INDEX IF NOT EXISTS idx_platform_offers_active
-  ON platform_offers(is_active, valid_from, valid_until)
+  ON platform_offers(is_active, start_date, end_date)
   WHERE is_active = true;
 
 -- otp_codes.expires_at — cleanup job and expiry check both scan this column.
