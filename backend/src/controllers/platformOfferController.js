@@ -44,6 +44,7 @@ exports.createPlatformOffer = asyncHandler(async (req, res) => {
     name, description, offer_type, discount_value, max_discount_amount,
     coupon_code, min_order_amount, target_type, cafe_ids,
     active_days, active_from, active_until, start_date, end_date, max_uses,
+    max_uses_per_customer,
   } = req.body;
 
   if (!name?.trim()) return fail(res, 'Offer name is required');
@@ -66,8 +67,9 @@ exports.createPlatformOffer = asyncHandler(async (req, res) => {
     `INSERT INTO platform_offers
        (name, description, offer_type, discount_value, max_discount_amount,
         coupon_code, min_order_amount, target_type,
-        active_days, active_from, active_until, start_date, end_date, max_uses)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        active_days, active_from, active_until, start_date, end_date, max_uses,
+        max_uses_per_customer)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
      RETURNING *`,
     [
       name.trim(), description || null, offer_type, parsedDiscount,
@@ -76,6 +78,7 @@ exports.createPlatformOffer = asyncHandler(async (req, res) => {
       active_days || null, active_from || null, active_until || null,
       start_date || null, end_date || null,
       max_uses ? parseInt(max_uses) : null,
+      max_uses_per_customer ? parseInt(max_uses_per_customer) : null,
     ]
   );
   const offer = rows[0];
@@ -100,27 +103,29 @@ exports.updatePlatformOffer = asyncHandler(async (req, res) => {
     name, description, offer_type, discount_value, max_discount_amount,
     coupon_code, min_order_amount, target_type, cafe_ids,
     active_days, active_from, active_until, start_date, end_date, max_uses, is_active,
+    max_uses_per_customer,
   } = req.body;
 
   const { rows } = await db.query(
     `UPDATE platform_offers SET
-       name                = COALESCE($1,  name),
-       description         = COALESCE($2,  description),
-       offer_type          = COALESCE($3,  offer_type),
-       discount_value      = COALESCE($4,  discount_value),
-       max_discount_amount = COALESCE($5,  max_discount_amount),
-       coupon_code         = COALESCE($6,  coupon_code),
-       min_order_amount    = COALESCE($7,  min_order_amount),
-       target_type         = COALESCE($8,  target_type),
-       active_days         = COALESCE($9,  active_days),
-       active_from         = COALESCE($10, active_from),
-       active_until        = COALESCE($11, active_until),
-       start_date          = COALESCE($12, start_date),
-       end_date            = COALESCE($13, end_date),
-       max_uses            = COALESCE($14, max_uses),
-       is_active           = COALESCE($15, is_active),
-       updated_at          = NOW()
-     WHERE id = $16
+       name                  = COALESCE($1,  name),
+       description           = COALESCE($2,  description),
+       offer_type            = COALESCE($3,  offer_type),
+       discount_value        = COALESCE($4,  discount_value),
+       max_discount_amount   = COALESCE($5,  max_discount_amount),
+       coupon_code           = COALESCE($6,  coupon_code),
+       min_order_amount      = COALESCE($7,  min_order_amount),
+       target_type           = COALESCE($8,  target_type),
+       active_days           = COALESCE($9,  active_days),
+       active_from           = COALESCE($10, active_from),
+       active_until          = COALESCE($11, active_until),
+       start_date            = COALESCE($12, start_date),
+       end_date              = COALESCE($13, end_date),
+       max_uses              = COALESCE($14, max_uses),
+       is_active             = COALESCE($15, is_active),
+       max_uses_per_customer = COALESCE($16, max_uses_per_customer),
+       updated_at            = NOW()
+     WHERE id = $17
      RETURNING *`,
     [
       name || null, description || null, offer_type || null,
@@ -131,7 +136,9 @@ exports.updatePlatformOffer = asyncHandler(async (req, res) => {
       target_type || null, active_days || null, active_from || null, active_until || null,
       start_date || null, end_date || null,
       max_uses != null ? parseInt(max_uses) : null,
-      is_active != null ? is_active : null, id,
+      is_active != null ? is_active : null,
+      max_uses_per_customer != null ? parseInt(max_uses_per_customer) : null,
+      id,
     ]
   );
   if (!rows.length) return fail(res, 'Offer not found', 404);

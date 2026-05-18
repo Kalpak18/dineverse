@@ -19,7 +19,7 @@ const EMPTY_FORM = {
   max_discount_amount: '', coupon_code: '', min_order_amount: '',
   target_type: 'all', cafe_ids: [],
   active_days: [], active_from: '', active_until: '',
-  start_date: '', end_date: '', max_uses: '', is_active: true,
+  start_date: '', end_date: '', max_uses: '', max_uses_per_customer: '', is_active: true,
 };
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -89,7 +89,7 @@ export default function AdminOffersPage() {
       active_from: o.active_from ? String(o.active_from).slice(0, 5) : '',
       active_until: o.active_until ? String(o.active_until).slice(0, 5) : '',
       start_date: o.start_date || '', end_date: o.end_date || '',
-      max_uses: o.max_uses || '', is_active: o.is_active ?? true,
+      max_uses: o.max_uses || '', max_uses_per_customer: o.max_uses_per_customer || '', is_active: o.is_active ?? true,
     });
     setShowForm(true);
   };
@@ -122,7 +122,8 @@ export default function AdminOffersPage() {
         discount_value:      parseFloat(form.discount_value) || 0,
         max_discount_amount: form.max_discount_amount ? parseFloat(form.max_discount_amount) : undefined,
         min_order_amount:    parseFloat(form.min_order_amount) || 0,
-        max_uses:            form.max_uses ? parseInt(form.max_uses) : undefined,
+        max_uses:              form.max_uses ? parseInt(form.max_uses) : undefined,
+        max_uses_per_customer: form.max_uses_per_customer ? parseInt(form.max_uses_per_customer) : undefined,
         active_days:         form.active_days.length ? form.active_days : undefined,
         active_from:         form.active_from || undefined,
         active_until:        form.active_until || undefined,
@@ -258,7 +259,8 @@ export default function AdminOffersPage() {
                     {o.coupon_code && <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">{o.coupon_code}</span>}
                     {o.start_date && <span>From {o.start_date}</span>}
                     {o.end_date && <span>Until {o.end_date}</span>}
-                    {o.max_uses && <span>{o.uses_count}/{o.max_uses} uses</span>}
+                    <span>{o.uses_count || 0}{o.max_uses ? `/${o.max_uses}` : ''} uses</span>
+                    {o.max_uses_per_customer && <span>· {o.max_uses_per_customer}× per customer</span>}
                   </div>
                   {o.description && <p className="text-xs text-gray-500 mt-1">{o.description}</p>}
                 </div>
@@ -307,7 +309,8 @@ export default function AdminOffersPage() {
                   {o.coupon_code && <span className="font-mono bg-gray-800 px-1.5 py-0.5 rounded">{o.coupon_code}</span>}
                   {o.start_date && <span>From {o.start_date}</span>}
                   {o.end_date && <span>Until {o.end_date}</span>}
-                  {o.max_uses && <span>{o.uses_count}/{o.max_uses} uses</span>}
+                  <span>{o.uses_count || 0}{o.max_uses ? `/${o.max_uses}` : ''} uses</span>
+                  {o.max_uses_per_customer && <span>· {o.max_uses_per_customer}× per customer</span>}
                 </div>
                 {o.description && <p className="text-xs text-gray-500 mt-1">{o.description}</p>}
               </div>
@@ -435,6 +438,17 @@ export default function AdminOffersPage() {
                   onChange={(e) => setForm({ ...form, max_uses: e.target.value })}
                   placeholder="Unlimited if blank"
                   className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500" />
+                <p className="text-xs text-gray-500 mt-1">Total across all customers.</p>
+              </div>
+
+              {/* Per-customer limit */}
+              <div>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Max Uses Per Customer</label>
+                <input type="number" min="1" value={form.max_uses_per_customer}
+                  onChange={(e) => setForm({ ...form, max_uses_per_customer: e.target.value })}
+                  placeholder="Unlimited per customer"
+                  className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-white text-sm focus:outline-none focus:border-orange-500" />
+                <p className="text-xs text-gray-500 mt-1">e.g. 1 = each customer uses once only.</p>
               </div>
 
               {/* Date range */}

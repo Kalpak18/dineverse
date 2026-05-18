@@ -35,18 +35,19 @@ exports.createOffer = asyncHandler(async (req, res) => {
     combo_items, combo_price, min_order_amount,
     active_from, active_until, active_days, coupon_code,
     start_date, end_date, max_uses, max_discount_amount,
-    bogo_item_id,
+    bogo_item_id, max_uses_per_customer,
   } = req.body;
 
   if (!name?.trim()) return fail(res, 'Offer name is required');
   if (!['percentage', 'fixed', 'combo', 'bogo', 'first_order'].includes(offer_type))
     return fail(res, 'Invalid offer_type');
 
-  const normalizedCoupon    = coupon_code?.trim().toUpperCase() || null;
-  const parsedDiscount      = parseFloat(discount_value);
-  const parsedComboPrice    = parseFloat(combo_price);
-  const parsedMinOrder      = parseFloat(min_order_amount) || 0;
-  const parsedMaxDiscount   = max_discount_amount ? parseFloat(max_discount_amount) : null;
+  const normalizedCoupon        = coupon_code?.trim().toUpperCase() || null;
+  const parsedDiscount          = parseFloat(discount_value);
+  const parsedComboPrice        = parseFloat(combo_price);
+  const parsedMinOrder          = parseFloat(min_order_amount) || 0;
+  const parsedMaxDiscount       = max_discount_amount ? parseFloat(max_discount_amount) : null;
+  const parsedMaxPerCustomer    = max_uses_per_customer ? parseInt(max_uses_per_customer) : null;
 
   if (offer_type === 'percentage') {
     if (Number.isNaN(parsedDiscount) || parsedDiscount < 1 || parsedDiscount > 100)
@@ -70,8 +71,8 @@ exports.createOffer = asyncHandler(async (req, res) => {
         combo_items, combo_price, min_order_amount,
         active_from, active_until, active_days, coupon_code,
         start_date, end_date, max_uses, max_discount_amount,
-        bogo_item_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        bogo_item_id, max_uses_per_customer)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
      RETURNING *`,
     [
       req.cafeId, name.trim(), description || null, offer_type,
@@ -83,7 +84,7 @@ exports.createOffer = asyncHandler(async (req, res) => {
       normalizedCoupon,
       start_date || null, end_date || null,
       max_uses ? parseInt(max_uses) : null, parsedMaxDiscount,
-      bogo_item_id || null,
+      bogo_item_id || null, parsedMaxPerCustomer,
     ]
   );
   ok(res, { offer: result.rows[0] }, 'Offer created', 201);
@@ -91,53 +92,51 @@ exports.createOffer = asyncHandler(async (req, res) => {
 
 exports.updateOffer = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const {
-    name, description, offer_type, discount_value,
-    combo_items, combo_price, min_order_amount,
-    active_from, active_until, active_days, is_active, coupon_code,
-    start_date, end_date, max_uses, max_discount_amount, bogo_item_id,
-  } = req.body;
+  const body = req.body;
 
-  const normalizedCoupon = coupon_code !== undefined
-    ? (coupon_code?.trim().toUpperCase() || null)
-    : undefined;
+  // Helper: distinguishes "field omitted" (undefined → keep existing) from
+  // "field explicitly sent as null/empty" (→ clear to NULL in DB).
+  // Fields that use COALESCE-skip when absent, but can be cleared when explicitly null.
+  const has = (k) => Object.prototype.hasOwnProperty.call(body, k);
 
+  const name        = has('name')        ? (body.name?.trim() || null)                             : undefined;
+  const description = has('description') ? (body.description || null)                              : undefined;
+  const offer_type  = has('offer_type')  ? (body.offer_type  || null)                              : undefined;
+  const discount_value      = has('discount_value')      ? (body.discount_value != null ? parseFloat(body.discount_value) : null) : undefined;
+  const combo_items         = has('combo_items')         ? (body.combo_items != null ? JSON.stringify(body.combo_items) : null)   : undefined;
+  const combo_price         = has('combo_price')         ? (body.combo_price != null ? parseFloat(body.combo_price) : null)       : undefined;
+  const min_order_amount    = has('min_order_amount')    ? (body.min_order_amount != null ? parseFloat(body.min_order_amount) : null) : undefined;
+  const active_from         = has('active_from')         ? (body.active_from  || null) : undefined;
+  const active_until        = has('active_until')        ? (body.active_until || null) : undefined;
+  const active_days         = has('active_days')         ? (body.active_days  || null) : undefined;
+  const is_active           = has('is_active')           ? (body.is_active != null ? body.is_active : null) : undefined;
+  const coupon_code         = has('coupon_code')         ? (body.coupon_code?.trim().toUpperCase() || null) : undefined;
+  const start_date          = has('start_date')          ? (body.start_date || null) : undefined;
+  const end_date            = has('end_date')            ? (body.end_date   || null) : undefined;
+  const max_uses            = has('max_uses')            ? (body.max_uses != null ? parseInt(body.max_uses) : null) : undefined;
+  const max_discount_amount = has('max_discount_amount') ? (body.max_discount_amount != null ? parseFloat(body.max_discount_amount) : null) : undefined;
+  const bogo_item_id        = has('bogo_item_id')        ? (body.bogo_item_id || null) : undefined;
+  const max_uses_per_customer = has('max_uses_per_customer') ? (body.max_uses_per_customer != null ? parseInt(body.max_uses_per_customer) : null) : undefined;
+
+  // Build SET clause dynamically — only include fields that were sent in the request
+  const fields = { name, description, offer_type, discount_value, combo_items, combo_price,
+    min_order_amount, active_from, active_until, active_days, is_active, coupon_code,
+    start_date, end_date, max_uses, max_discount_amount, bogo_item_id, max_uses_per_customer };
+
+  const setClauses = [];
+  const params = [];
+  for (const [col, val] of Object.entries(fields)) {
+    if (val === undefined) continue; // field not sent — leave as-is
+    params.push(val);
+    setClauses.push(`${col} = $${params.length}`);
+  }
+
+  if (setClauses.length === 0) return fail(res, 'No fields to update', 400);
+
+  params.push(id, req.cafeId);
   const result = await db.query(
-    `UPDATE offers SET
-       name                = COALESCE($1,  name),
-       description         = COALESCE($2,  description),
-       offer_type          = COALESCE($3,  offer_type),
-       discount_value      = COALESCE($4,  discount_value),
-       combo_items         = COALESCE($5,  combo_items),
-       combo_price         = COALESCE($6,  combo_price),
-       min_order_amount    = COALESCE($7,  min_order_amount),
-       active_from         = COALESCE($8,  active_from),
-       active_until        = COALESCE($9,  active_until),
-       active_days         = COALESCE($10, active_days),
-       is_active           = COALESCE($11, is_active),
-       coupon_code         = CASE WHEN $12::TEXT IS NOT NULL THEN $12::VARCHAR(30) ELSE coupon_code END,
-       start_date          = COALESCE($13, start_date),
-       end_date            = COALESCE($14, end_date),
-       max_uses            = COALESCE($15, max_uses),
-       max_discount_amount = COALESCE($16, max_discount_amount),
-       bogo_item_id        = COALESCE($17, bogo_item_id)
-     WHERE id = $18 AND cafe_id = $19
-     RETURNING *`,
-    [
-      name || null, description || null, offer_type || null,
-      discount_value != null ? parseFloat(discount_value) : null,
-      combo_items != null ? JSON.stringify(combo_items) : null,
-      combo_price != null ? parseFloat(combo_price) : null,
-      min_order_amount != null ? parseFloat(min_order_amount) : null,
-      active_from || null, active_until || null, active_days || null,
-      is_active != null ? is_active : null,
-      normalizedCoupon !== undefined ? normalizedCoupon : null,
-      start_date || null, end_date || null,
-      max_uses != null ? parseInt(max_uses) : null,
-      max_discount_amount != null ? parseFloat(max_discount_amount) : null,
-      bogo_item_id || null,
-      id, req.cafeId,
-    ]
+    `UPDATE offers SET ${setClauses.join(', ')} WHERE id = $${params.length - 1} AND cafe_id = $${params.length} RETURNING *`,
+    params
   );
   if (result.rows.length === 0) return fail(res, 'Offer not found', 404);
   ok(res, { offer: result.rows[0] });
@@ -167,7 +166,8 @@ function isScheduleActive(offer) {
   return true;
 }
 
-const calculateOfferDiscount = async (offer, items, total) => {
+// bogoPriceMap: optional pre-fetched { [itemId]: price } — avoids DB hit when called in a loop
+const calculateOfferDiscount = async (offer, items, total, bogoPriceMap = null) => {
   if (!offer?.offer_type) return 0;
   total = parseFloat(total) || 0;
 
@@ -180,16 +180,20 @@ const calculateOfferDiscount = async (offer, items, total) => {
     discount = Math.min(parseFloat(offer.discount_value) || 0, total);
 
   } else if (offer.offer_type === 'first_order') {
-    // first_order: discount_value is %, or use a fixed if type indicates
     discount = (total * parseFloat(offer.discount_value || 0)) / 100;
 
   } else if (offer.offer_type === 'bogo' && offer.bogo_item_id) {
     // BOGO: find the qualifying item in cart, give its price free
-    const { rows } = await db.query(
-      'SELECT price FROM menu_items WHERE id = $1 LIMIT 1',
-      [offer.bogo_item_id]
-    );
-    const itemPrice = parseFloat(rows[0]?.price || 0);
+    let itemPrice;
+    if (bogoPriceMap && offer.bogo_item_id in bogoPriceMap) {
+      itemPrice = bogoPriceMap[offer.bogo_item_id];
+    } else {
+      const { rows } = await db.query(
+        'SELECT price FROM menu_items WHERE id = $1 LIMIT 1',
+        [offer.bogo_item_id]
+      );
+      itemPrice = parseFloat(rows[0]?.price || 0);
+    }
     const qty = items.reduce((sum, i) =>
       i.menu_item_id === offer.bogo_item_id ? sum + i.quantity : sum, 0
     );
@@ -353,16 +357,14 @@ exports.previewOffer = asyncHandler(async (req, res) => {
     return ok(res, { applied: false, discount_amount: 0, final_amount: orderTotal, near_miss: nearMiss });
   }
 
-  const offerRow = result.fundedBy === 'platform'
-    ? await db.query('SELECT name, description, offer_type, discount_value FROM platform_offers WHERE id = $1', [result.platformOfferId])
-    : await db.query('SELECT name, description, offer_type, discount_value FROM offers WHERE id = $1', [result.offerId]);
-
   ok(res, {
     applied:          true,
     funded_by:        result.fundedBy,
-    offer_name:       offerRow.rows[0]?.name,
-    offer_type:       offerRow.rows[0]?.offer_type,
-    discount_value:   offerRow.rows[0]?.discount_value,
+    offer_id:         result.offerId,
+    platform_offer_id: result.platformOfferId,
+    offer_name:       result.offerName,
+    offer_type:       result.offerType,
+    discount_value:   result.discountValue,
     discount_amount:  result.discountAmount,
     final_amount:     result.finalAmount,
     near_miss:        null,
@@ -429,6 +431,18 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
     if (prevOrders.length > 0) return fail(res, 'This offer is for first-time customers only', 400);
   }
 
+  // Per-customer cap check
+  if (offer.max_uses_per_customer && req.body.customer_phone) {
+    const used = await customerOfferUses(
+      fundedBy === 'owner' ? offer.id : null,
+      fundedBy === 'platform' ? offer.id : null,
+      req.body.customer_phone
+    );
+    if (used >= offer.max_uses_per_customer) {
+      return fail(res, `You've already used this offer ${offer.max_uses_per_customer} time${offer.max_uses_per_customer !== 1 ? 's' : ''} — limit reached`, 400);
+    }
+  }
+
   const discountAmount = await calculateOfferDiscount(offer, items, orderTotal);
   if (discountAmount <= 0) {
     return fail(res, offer.offer_type === 'combo'
@@ -451,8 +465,20 @@ exports.validateCoupon = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Helper: check how many times a customer used a specific offer ─
+async function customerOfferUses(offerId, platformOfferId, customerPhone) {
+  if (!customerPhone) return 0;
+  const col = offerId ? 'offer_id' : 'platform_offer_id';
+  const id  = offerId || platformOfferId;
+  const { rows } = await db.query(
+    `SELECT COUNT(*) AS cnt FROM offer_redemptions WHERE ${col} = $1 AND customer_phone = $2`,
+    [id, customerPhone]
+  );
+  return parseInt(rows[0]?.cnt || 0);
+}
+
 // ─── Helper: apply best offer (owner + platform) to an order ─────
-// Returns { offerId, platformOfferId, fundedBy, discountAmount, finalAmount }
+// Returns { offerId, platformOfferId, fundedBy, discountAmount, finalAmount, ... }
 exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
   const { dayOfWeek, timeStr, today } = nowIST();
 
@@ -480,7 +506,15 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
 
   if (allOffers.length === 0) return { offerId: null, platformOfferId: null, fundedBy: null, discountAmount: 0, finalAmount: total };
 
-  // Pre-check: if any first_order offer is in play and we have a phone, see if customer is repeat
+  // Pre-fetch BOGO item prices in one query so the per-offer loop has no DB hits
+  const bogoItemIds = [...new Set(allOffers.filter((o) => o.offer_type === 'bogo' && o.bogo_item_id).map((o) => o.bogo_item_id))];
+  let bogoPriceMap = {};
+  if (bogoItemIds.length) {
+    const { rows: bogoRows } = await db.query('SELECT id, price FROM menu_items WHERE id = ANY($1)', [bogoItemIds]);
+    bogoRows.forEach((r) => { bogoPriceMap[r.id] = parseFloat(r.price) || 0; });
+  }
+
+  // Pre-check first_order eligibility
   let hasPriorOrder = false;
   if (customerPhone && allOffers.some((o) => o.offer_type === 'first_order')) {
     const { rows } = await db.query(
@@ -490,13 +524,40 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
     hasPriorOrder = rows.length > 0;
   }
 
+  // Batch-fetch per-customer redemption counts for offers that have a per-customer cap
+  let customerUsesMap = {};
+  if (customerPhone) {
+    const capsOwner    = allOffers.filter((o) => o._fundedBy === 'owner'    && o.max_uses_per_customer);
+    const capsPlatform = allOffers.filter((o) => o._fundedBy === 'platform' && o.max_uses_per_customer);
+    const checks = [];
+    if (capsOwner.length) {
+      checks.push(db.query(
+        `SELECT offer_id AS id, COUNT(*) AS cnt FROM offer_redemptions
+         WHERE offer_id = ANY($1) AND customer_phone = $2 GROUP BY offer_id`,
+        [capsOwner.map((o) => o.id), customerPhone]
+      ).then(({ rows }) => rows.forEach((r) => { customerUsesMap[r.id] = parseInt(r.cnt); })));
+    }
+    if (capsPlatform.length) {
+      checks.push(db.query(
+        `SELECT platform_offer_id AS id, COUNT(*) AS cnt FROM offer_redemptions
+         WHERE platform_offer_id = ANY($1) AND customer_phone = $2 GROUP BY platform_offer_id`,
+        [capsPlatform.map((o) => o.id), customerPhone]
+      ).then(({ rows }) => rows.forEach((r) => { customerUsesMap[r.id] = parseInt(r.cnt); })));
+    }
+    if (checks.length) await Promise.all(checks);
+  }
+
   let bestDiscount = 0;
   let bestOffer    = null;
 
   for (const offer of allOffers) {
-    // Skip first_order offers for repeat customers (only when phone is provided)
     if (offer.offer_type === 'first_order' && customerPhone && hasPriorOrder) continue;
-    const discount = await calculateOfferDiscount(offer, items, total);
+    // Per-customer cap check
+    if (offer.max_uses_per_customer && customerPhone) {
+      const used = customerUsesMap[offer.id] || 0;
+      if (used >= offer.max_uses_per_customer) continue;
+    }
+    const discount = await calculateOfferDiscount(offer, items, total, bogoPriceMap);
     if (discount > bestDiscount) {
       bestDiscount = discount;
       bestOffer    = offer;
@@ -511,6 +572,10 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
     fundedBy,
     discountAmount:   parseFloat(discountAmount.toFixed(2)),
     finalAmount:      parseFloat((total - discountAmount).toFixed(2)),
+    offerName:        bestOffer?.name || null,
+    offerType:        bestOffer?.offer_type || null,
+    discountValue:    bestOffer?.discount_value || null,
+    offerDescription: bestOffer?.description || null,
   };
 };
 
@@ -565,6 +630,18 @@ exports.applyCoupon = async (cafeId, couponCode, items, total, customerPhone) =>
       [cafeId, customerPhone]
     );
     if (prev.length > 0) return { offerId: null, platformOfferId: null, fundedBy: null, discountAmount: 0, finalAmount: total };
+  }
+
+  // Per-customer cap check
+  if (offer.max_uses_per_customer && customerPhone) {
+    const used = await customerOfferUses(
+      fundedBy === 'owner' ? offer.id : null,
+      fundedBy === 'platform' ? offer.id : null,
+      customerPhone
+    );
+    if (used >= offer.max_uses_per_customer) {
+      return { offerId: null, platformOfferId: null, fundedBy: null, discountAmount: 0, finalAmount: total };
+    }
   }
 
   const discountAmount = await calculateOfferDiscount(offer, items, total);

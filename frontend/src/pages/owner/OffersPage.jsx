@@ -12,6 +12,7 @@ const EMPTY_FORM = {
   active_days: [], combo_price: '', coupon_code: '',
   combo_items: [], bogo_item_id: '',
   start_date: '', end_date: '', max_uses: '', max_discount_amount: '',
+  max_uses_per_customer: '',
   is_active: true,
 };
 
@@ -65,18 +66,19 @@ function OfferForm({ initial, onSave, onCancel, menuItems }) {
     try {
       const payload = {
         ...form,
-        discount_value:      parseFloat(form.discount_value) || 0,
-        min_order_amount:    parseFloat(form.min_order_amount) || 0,
-        max_discount_amount: form.max_discount_amount ? parseFloat(form.max_discount_amount) : null,
-        max_uses:            form.max_uses ? parseInt(form.max_uses) : null,
-        combo_price:         form.combo_price ? parseFloat(form.combo_price) : null,
-        combo_items:         form.offer_type === 'combo' ? form.combo_items.map(({ menu_item_id, quantity }) => ({ menu_item_id, quantity })) : null,
-        bogo_item_id:        form.offer_type === 'bogo' ? form.bogo_item_id : null,
-        active_from:         form.active_from || null,
-        active_until:        form.active_until || null,
-        active_days:         form.active_days.length ? form.active_days : null,
-        start_date:          form.start_date || null,
-        end_date:            form.end_date || null,
+        discount_value:        parseFloat(form.discount_value) || 0,
+        min_order_amount:      parseFloat(form.min_order_amount) || 0,
+        max_discount_amount:   form.max_discount_amount ? parseFloat(form.max_discount_amount) : null,
+        max_uses:              form.max_uses ? parseInt(form.max_uses) : null,
+        max_uses_per_customer: form.max_uses_per_customer ? parseInt(form.max_uses_per_customer) : null,
+        combo_price:           form.combo_price ? parseFloat(form.combo_price) : null,
+        combo_items:           form.offer_type === 'combo' ? form.combo_items.map(({ menu_item_id, quantity }) => ({ menu_item_id, quantity })) : null,
+        bogo_item_id:          form.offer_type === 'bogo' ? form.bogo_item_id : null,
+        active_from:           form.active_from || null,
+        active_until:          form.active_until || null,
+        active_days:           form.active_days.length ? form.active_days : null,
+        start_date:            form.start_date || null,
+        end_date:              form.end_date || null,
       };
       await onSave(payload);
     } finally {
@@ -145,7 +147,7 @@ function OfferForm({ initial, onSave, onCancel, menuItems }) {
         </div>
       </div>
 
-      {/* Max discount cap + redemption limit */}
+      {/* Max discount cap + redemption limits */}
       <div className="grid sm:grid-cols-2 gap-4">
         {form.offer_type !== 'combo' && form.offer_type !== 'bogo' && (
           <div>
@@ -159,6 +161,15 @@ function OfferForm({ initial, onSave, onCancel, menuItems }) {
           <label className="label">Max Total Uses</label>
           <input className="input" type="number" min="1" placeholder="Unlimited if blank"
             value={form.max_uses} onChange={set('max_uses')} />
+          <p className="text-xs text-gray-400 mt-1">Total redemptions across all customers.</p>
+        </div>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div>
+          <label className="label">Max Uses Per Customer</label>
+          <input className="input" type="number" min="1" placeholder="Unlimited per customer"
+            value={form.max_uses_per_customer} onChange={set('max_uses_per_customer')} />
+          <p className="text-xs text-gray-400 mt-1">E.g. 1 = each customer can use this once only.</p>
         </div>
       </div>
 
@@ -306,17 +317,23 @@ function OfferBadge({ offer }) {
     : '';
   const minLabel = offer.min_order_amount > 0 ? ` · Min ${sym}${offer.min_order_amount}` : '';
 
+  const usesCount = parseInt(offer.uses_count || 0);
+  const maxUses = offer.max_uses ? parseInt(offer.max_uses) : null;
+  const usagePercent = maxUses ? Math.min((usesCount / maxUses) * 100, 100) : null;
+  const nearCap = maxUses && usesCount >= maxUses * 0.8;
+
   return (
     <div className={`card p-4 flex items-start justify-between gap-4 ${!offer.is_active ? 'opacity-50' : ''}`}>
       <div className="flex items-start gap-3">
         <div className="w-12 h-12 rounded-xl bg-orange-100 flex items-center justify-center text-xl flex-shrink-0">
           {offer.offer_type === 'percentage' ? '🏷️' : offer.offer_type === 'fixed' ? '💰' : offer.offer_type === 'bogo' ? '🎯' : offer.offer_type === 'first_order' ? '🌟' : '🎁'}
         </div>
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-bold text-gray-900 text-sm">{offer.name}</p>
             <span className="text-xs bg-brand-100 text-brand-700 font-bold px-2 py-0.5 rounded-full">{label}</span>
             {!offer.is_active && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">Paused</span>}
+            {maxUses && usesCount >= maxUses && <span className="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">Limit reached</span>}
           </div>
           {offer.offer_type === 'combo' && offer.combo_items && (() => {
             const items = typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items;
@@ -333,6 +350,24 @@ function OfferBadge({ offer }) {
               {offer.coupon_code}
             </p>
           )}
+
+          {/* Usage stats */}
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center gap-2 text-xs text-gray-500">
+              <span>{usesCount} use{usesCount !== 1 ? 's' : ''}{maxUses ? ` / ${maxUses} max` : ' (unlimited)'}</span>
+              {offer.max_uses_per_customer && (
+                <span className="text-gray-400">· {offer.max_uses_per_customer}× per customer</span>
+              )}
+            </div>
+            {maxUses && (
+              <div className="w-full bg-gray-100 rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${nearCap ? 'bg-red-400' : 'bg-brand-400'}`}
+                  style={{ width: `${usagePercent}%` }}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex gap-1 flex-shrink-0">

@@ -579,6 +579,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
         );
         offerId = null;
         discountAmount = 0;
+      } else {
+        // Log redemption for per-customer tracking
+        await client.query(
+          `INSERT INTO offer_redemptions (offer_id, order_id, cafe_id, customer_phone, discount_amount)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [offerId, order.id, cafeId, customer_phone || null, discountAmount]
+        );
       }
     } else if (platformOfferId) {
       const upd = await client.query(
@@ -597,6 +604,13 @@ exports.createOrder = asyncHandler(async (req, res) => {
         );
         platformOfferId = null;
         discountAmount  = 0;
+      } else {
+        // Log redemption for per-customer tracking
+        await client.query(
+          `INSERT INTO offer_redemptions (platform_offer_id, order_id, cafe_id, customer_phone, discount_amount)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [platformOfferId, order.id, cafeId, customer_phone || null, discountAmount]
+        );
       }
     }
 

@@ -75,7 +75,7 @@ exports.getMe = asyncHandler(async (req, res) => {
 
 // ─── GET /api/admin/dashboard ────────────────────────────────
 exports.getDashboard = asyncHandler(async (req, res) => {
-  const [cafeStats, ticketStats, recentSignups] = await Promise.all([
+  const [cafeStats, ticketStats, recentSignups, orderStats, cafeList] = await Promise.all([
     db.query(`
       SELECT
         COUNT(*) AS total,
@@ -90,31 +90,78 @@ exports.getDashboard = asyncHandler(async (req, res) => {
       FROM support_tickets
     `),
     db.query(`SELECT id, name, email, created_at FROM cafes ORDER BY created_at DESC LIMIT 5`),
+
+    // Platform-wide order + customer + revenue stats
+    // "visits" = distinct (customer_phone, cafe_id, calendar_day) combos so multiple
+    // orders from the same customer in one sitting count as a single visit.
+    db.query(`
+      SELECT
+        COUNT(*)                                                    AS total_orders,
+        COUNT(*) FILTER (WHERE status = 'paid')                     AS paid_orders,
+        COALESCE(SUM(final_amount) FILTER (WHERE status = 'paid'), 0) AS total_revenue,
+        COUNT(DISTINCT customer_phone) FILTER (WHERE customer_phone IS NOT NULL) AS unique_customers,
+        COUNT(DISTINCT (cafe_id, customer_phone, DATE(created_at AT TIME ZONE 'Asia/Kolkata')))
+          FILTER (WHERE customer_phone IS NOT NULL)                 AS total_visits
+      FROM orders
+    `),
+
+    // Per-café order + visit counts for the café list
+    db.query(`
+      SELECT
+        c.id, c.name, c.slug, c.email, c.is_active, c.created_at,
+        COUNT(o.id)                                                                       AS total_orders,
+        COUNT(o.id) FILTER (WHERE o.status = 'paid')                                     AS paid_orders,
+        COALESCE(SUM(o.final_amount) FILTER (WHERE o.status = 'paid'), 0)                AS total_revenue,
+        COUNT(DISTINCT (o.customer_phone, DATE(o.created_at AT TIME ZONE 'Asia/Kolkata')))
+          FILTER (WHERE o.customer_phone IS NOT NULL)                                     AS unique_visits
+      FROM cafes c
+      LEFT JOIN orders o ON o.cafe_id = c.id
+      GROUP BY c.id, c.name, c.slug, c.email, c.is_active, c.created_at
+      ORDER BY total_orders DESC
+    `),
   ]);
 
   // commission_amount column added in migration 059 — may not exist in all deployments.
-  // Try the real query; fall back to zeros so the dashboard never 500s.
-  let commissionData = { total_commission: 0, this_month_commission: 0, paid_orders: 0 };
+  let commissionData = { total_commission: 0, this_month_commission: 0 };
   try {
     const r = await db.query(`
       SELECT
         COALESCE(SUM(commission_amount), 0)                                                         AS total_commission,
-        COALESCE(SUM(commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS this_month_commission,
-        COUNT(*) FILTER (WHERE status = 'paid')                                                     AS paid_orders
+        COALESCE(SUM(commission_amount) FILTER (WHERE created_at >= DATE_TRUNC('month', NOW())), 0) AS this_month_commission
       FROM orders
     `);
     commissionData = r.rows[0];
   } catch (_) { /* column not yet migrated — return zeros */ }
 
+  const os = orderStats.rows[0];
   ok(res, {
     cafes:          cafeStats.rows[0],
     commission: {
       total:       parseFloat(commissionData.total_commission),
       this_month:  parseFloat(commissionData.this_month_commission),
-      paid_orders: parseInt(commissionData.paid_orders),
+      paid_orders: parseInt(os.paid_orders),
+    },
+    orders: {
+      total:            parseInt(os.total_orders),
+      paid:             parseInt(os.paid_orders),
+      total_revenue:    parseFloat(os.total_revenue),
+      unique_customers: parseInt(os.unique_customers),
+      total_visits:     parseInt(os.total_visits),
     },
     tickets:        ticketStats.rows[0],
     recent_signups: recentSignups.rows,
+    cafe_list:      cafeList.rows.map((c) => ({
+      id:            c.id,
+      name:          c.name,
+      slug:          c.slug,
+      email:         c.email,
+      is_active:     c.is_active,
+      created_at:    c.created_at,
+      total_orders:  parseInt(c.total_orders),
+      paid_orders:   parseInt(c.paid_orders),
+      total_revenue: parseFloat(c.total_revenue),
+      unique_visits: parseInt(c.unique_visits),
+    })),
   });
 });
 

@@ -5,6 +5,17 @@ import { loadReservations } from '../utils/cafeReservationStorage';
 import { loadVisited } from '../utils/visitedCafes';
 import { getNotifications, getUnreadCount, markAllRead, clearNotifications } from '../utils/customerNotifications';
 
+// Count paid orders for a café from localStorage, grouping same-day orders as one visit.
+// Multiple orders placed in one sitting (same day) count as a single visit — matches the
+// backend's distinct(customer_phone, cafe_id, calendar_day) definition.
+function getCafeOrderStats(slug) {
+  const orders = loadOrders(slug);
+  const paid = orders.filter((o) => o.status === 'paid');
+  // Deduplicate by calendar date to get visit count
+  const visitDays = new Set(paid.map((o) => new Date(o.created_at).toLocaleDateString('en-CA')));
+  return { orderCount: paid.length, visitCount: visitDays.size };
+}
+
 function HomeIcon() {
   return (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
@@ -116,7 +127,8 @@ export default function CustomerBottomNav() {
   };
 
   const openVisited = () => {
-    setVisited(loadVisited());
+    const list = loadVisited().map((v) => ({ ...v, ...getCafeOrderStats(v.slug) }));
+    setVisited(list);
     setVisitedOpen(true);
     window.history.pushState({ panel: 'visited' }, '');
   };
@@ -281,7 +293,21 @@ export default function CustomerBottomNav() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-gray-900 truncate">{v.name}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">/{v.slug}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {v.visitCount > 0 ? (
+                          <>
+                            <span className="text-xs text-brand-600 font-medium">
+                              {v.visitCount} visit{v.visitCount !== 1 ? 's' : ''}
+                            </span>
+                            <span className="text-gray-300 text-xs">·</span>
+                            <span className="text-xs text-gray-400">
+                              {v.orderCount} order{v.orderCount !== 1 ? 's' : ''}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-400">/{v.slug}</span>
+                        )}
+                      </div>
                     </div>
                     <svg className="w-5 h-5 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />

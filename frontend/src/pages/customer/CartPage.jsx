@@ -111,7 +111,6 @@ export default function CartPage() {
   // Live open/closed updates — same room MenuPage uses
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
-    socket.emit('join_menu', slug);
     socket.on('connect', () => socket.emit('join_menu', slug));
     socket.on('cafe_status', ({ is_open }) => setCafeOpen(is_open));
     return () => socket.disconnect();
@@ -717,7 +716,7 @@ export default function CartPage() {
             </div>
           )}
 
-          {offerPreview?.applied && discountAmt > 0 && (!hasGst || taxInclusive) && (
+          {offerPreview?.applied && discountAmt > 0 && (
             <div className="flex justify-between text-green-600 font-medium">
               <span>🎉 {offerPreview.offer_name || 'Offer applied'}</span>
               <span>-{c(discountAmt)}</span>
@@ -1092,17 +1091,25 @@ function OffersPanel({ offers, total, offerPreview, couponApplied, couponLoading
   const c = currencyFmt;
   const orderTotal = parseFloat(total) || 0;
 
-  // Currently applied offer (matches by name+funded_by — backend returns these)
+  // Currently applied offer
   const appliedName = offerPreview?.applied ? offerPreview.offer_name : null;
   const appliedFundedBy = offerPreview?.applied ? offerPreview.funded_by : null;
+  const appliedOfferId = offerPreview?.offer_id || null;
+  const appliedPlatformOfferId = offerPreview?.platform_offer_id || null;
   const appliedDiscount = parseFloat(offerPreview?.discount_amount || 0);
 
   // Group offers
   const visibleOffers = (offers || []).filter((o) => o.offer_type !== 'combo');
   const comboCount = (offers || []).filter((o) => o.offer_type === 'combo').length;
 
-  const isApplied = (o) =>
-    appliedName && o.name === appliedName && (o.funded_by || 'owner') === (appliedFundedBy || 'owner');
+  const isApplied = (o) => {
+    if (!offerPreview?.applied) return false;
+    // ID-based match when available (coupon path returns IDs)
+    if (o.funded_by === 'platform' && appliedPlatformOfferId) return o.id === appliedPlatformOfferId;
+    if (o.funded_by !== 'platform' && appliedOfferId) return o.id === appliedOfferId;
+    // Fallback: name + funded_by match (auto-apply path)
+    return o.name === appliedName && (o.funded_by || 'owner') === (appliedFundedBy || 'owner');
+  };
 
   const offerLabel = (o) => {
     if (o.offer_type === 'percentage')   return `${parseFloat(o.discount_value)}% OFF`;
@@ -1182,8 +1189,16 @@ function OffersPanel({ offers, total, offerPreview, couponApplied, couponLoading
                       {applied ? (
                         <span className="text-green-700 font-bold">✓ Applied</span>
                       ) : !eligible ? (
-                        <div className="flex items-center gap-1 text-amber-700 font-medium">
-                          🔒 Add {c(need)} more to use this
+                        <div>
+                          <div className="flex items-center gap-1 text-amber-700 font-medium mb-1">
+                            🔒 Add {c(need)} more to unlock
+                          </div>
+                          <div className="w-full bg-amber-100 rounded-full h-1.5">
+                            <div
+                              className="bg-amber-400 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${Math.min((orderTotal / parseFloat(o.min_order_amount)) * 100, 100)}%` }}
+                            />
+                          </div>
                         </div>
                       ) : hasCode ? (
                         <span className="text-gray-500">Tap "Apply" to use code <span className="font-mono font-bold">{o.coupon_code}</span></span>
