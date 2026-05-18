@@ -11,6 +11,28 @@ const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
 
+// Module-level cache for information_schema column checks — these never change
+// after migrations run, so one DB round-trip per process lifetime is enough.
+let _hasMig016 = null; // address_line2 column exists on cafes
+let _hasParentCafeId = null; // parent_cafe_id column exists on cafes
+
+async function checkHasMig016() {
+  if (_hasMig016 !== null) return _hasMig016;
+  const r = await db.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name='cafes' AND column_name='address_line2' LIMIT 1`
+  );
+  _hasMig016 = r.rows.length > 0;
+  return _hasMig016;
+}
+async function checkHasParentCafeId() {
+  if (_hasParentCafeId !== null) return _hasParentCafeId;
+  const r = await db.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name='cafes' AND column_name='parent_cafe_id' LIMIT 1`
+  );
+  _hasParentCafeId = r.rows.length > 0;
+  return _hasParentCafeId;
+}
+
 // role: 'OWNER' | 'STAFF'
 // staffRole: 'cashier' | 'kitchen' | 'manager' (only when role === 'STAFF')
 // rootCafeId: the brand account's ID — outlets inherit the parent's subscription
@@ -230,6 +252,11 @@ exports.completeSetup = asyncHandler(async (req, res) => {
   const activeConflict = conflict.rows.filter((r) => r.is_active !== false);
   if (activeConflict.length > 0) return fail(res, 'This slug is already taken', 409, 'SLUG_TAKEN');
 
+  if (gst_rate != null) {
+    const rate = parseInt(gst_rate, 10);
+    if (isNaN(rate) || rate < 0 || rate > 100) return fail(res, 'GST rate must be between 0 and 100');
+  }
+
   let gstVerified = false;
   if (gst_number && gst_number.trim()) {
     gstVerified = validateGstin(gst_number).valid;
@@ -353,12 +380,7 @@ exports.register = asyncHandler(async (req, res) => {
   if (activeConflict.length > 0) return fail(res, 'Slug or email already in use', 409, 'SLUG_OR_EMAIL_TAKEN');
 
   const password_hash = await bcrypt.hash(password, 12);
-  // Check if migration 016 (address_line2, state, pincode) has been applied
-  const addrColCheck = await db.query(
-    `SELECT column_name FROM information_schema.columns
-     WHERE table_name = 'cafes' AND column_name = 'address_line2'`
-  );
-  const hasMig016 = addrColCheck.rows.length > 0;
+  const hasMig016 = await checkHasMig016();
 
   const result = hasMig016
     ? await db.query(
@@ -731,12 +753,7 @@ exports.createOutlet = asyncHandler(async (req, res) => {
 // ─── Outlets: list all cafes in the same group (root + outlets) ──
 exports.getOutlets = asyncHandler(async (req, res) => {
   const rootId = req.rootCafeId;
-  // Check if migration 016 has been applied
-  const colCheck = await db.query(
-    `SELECT column_name FROM information_schema.columns
-     WHERE table_name = 'cafes' AND column_name = 'parent_cafe_id'`
-  );
-  if (colCheck.rows.length === 0) {
+  if (!(await checkHasParentCafeId())) {
     // Migration not applied — return just the current café as a single-item list
     return ok(res, { outlets: [{ id: req.cafeId, name: null, slug: req.cafeSlug, parent_cafe_id: null }], root_cafe_id: rootId });
   }

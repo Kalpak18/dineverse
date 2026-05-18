@@ -5,6 +5,10 @@ const AuthContext = createContext(null);
 
 const CAFE_CACHE_KEY = 'dv_cafe_cache';
 
+// Module-level mutex: if multiple tabs/components trigger a refresh simultaneously,
+// they all await the same promise instead of firing parallel refresh requests.
+let _refreshPromise = null;
+
 function readCafeCache() {
   try { return JSON.parse(localStorage.getItem(CAFE_CACHE_KEY) || 'null'); } catch { return null; }
 }
@@ -39,11 +43,15 @@ export function AuthProvider({ children }) {
         setStaffInfo(data.staff || null);
       }
     } catch (error) {
-      // Try to refresh token if access token is expired
+      // Try to refresh token if access token is expired — use mutex to prevent
+      // parallel refresh attempts when multiple hooks call loadStoredAuth at once.
       const refreshToken = localStorage.getItem('dineverse_refresh_token');
       if (refreshToken) {
         try {
-          const { data } = await refreshAuthToken(refreshToken);
+          if (!_refreshPromise) {
+            _refreshPromise = refreshAuthToken(refreshToken).finally(() => { _refreshPromise = null; });
+          }
+          const { data } = await _refreshPromise;
           localStorage.setItem('dineverse_token', data.token);
           localStorage.setItem('dineverse_refresh_token', data.refreshToken);
           // Retry getMe with new token

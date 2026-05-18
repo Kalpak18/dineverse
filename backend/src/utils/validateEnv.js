@@ -54,7 +54,8 @@ module.exports = function validateEnv() {
   const clientUrl = process.env.CLIENT_URL || '';
   if (process.env.NODE_ENV === 'production') {
     if (clientUrl.includes('localhost')) {
-      logger.warn('[STARTUP] CLIENT_URL contains "localhost" in production — CORS and email links will be wrong');
+      logger.error('[STARTUP] CLIENT_URL contains "localhost" in production — CORS and email links will be wrong. Fix CLIENT_URL in environment variables.');
+      process.exit(1);
     }
     if (clientUrl.endsWith('/')) {
       logger.warn('[STARTUP] CLIENT_URL has a trailing slash — email links may break. Remove the trailing slash.');

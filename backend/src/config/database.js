@@ -9,7 +9,7 @@ const pool = new Pool({
   // Kill runaway queries after 15 s — prevents slow queries starving the pool
   statement_timeout: 15000,
   // Return idle connections quickly; reduces memory on hobby/single-instance plans
-  idleTimeoutMillis: 10000,
+  idleTimeoutMillis: 30000,
   // Connection timeout: fail fast rather than queue indefinitely
   connectionTimeoutMillis: 5000,
   // 10 connections per instance. If scaling horizontally use PgBouncer in front.

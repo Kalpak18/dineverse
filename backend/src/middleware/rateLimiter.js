@@ -59,7 +59,6 @@ exports.otpLimiter = rateLimit({
   max: 5,
   store: makeStore('rl:otp:'),
   keyGenerator: otpKeyGenerator,
-  skipFailedRequests: true,
   message: { success: false, message: 'Too many OTP requests. Please wait a few minutes before trying again.', error: 'Too many OTP requests. Please wait a few minutes before trying again.' },
   standardHeaders: true,
   legacyHeaders: false,
