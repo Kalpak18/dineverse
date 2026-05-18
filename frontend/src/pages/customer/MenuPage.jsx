@@ -117,7 +117,8 @@ export default function MenuPage() {
 
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
-    socket.emit('join_menu', slug);
+    // join_menu on connect handles both initial connect and reconnects — no need to
+    // emit separately before connect fires, which would cause a duplicate join.
     socket.on('connect', () => socket.emit('join_menu', slug));
     socket.on('cafe_status', ({ is_open }) => {
       setCafeOpen(is_open);
@@ -132,6 +133,29 @@ export default function MenuPage() {
     const id = setInterval(() => setScheduleTick((t) => t + 1), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  // Refetch menu + cafe status when tab regains focus after >2 min away.
+  // Prevents customers seeing stale prices or sold-out items after returning.
+  useEffect(() => {
+    if (!session) return;
+    let lastVisible = Date.now();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        lastVisible = Date.now();
+      } else if (Date.now() - lastVisible > 2 * 60 * 1000) {
+        Promise.all([getCafeBySlug(slug), getCafeMenu(slug)])
+          .then(([cafeRes, menuRes]) => {
+            const cafeData = cafeRes.data.cafe;
+            setCafe(cafeData);
+            setCafeOpen(cafeData.is_open !== false);
+            setMenu(menuRes.data.menu);
+          })
+          .catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getItemQty = useCallback(
     (itemId) => cartItems

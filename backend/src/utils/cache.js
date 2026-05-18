@@ -4,6 +4,7 @@
 // Redis is lazily connected using REDIS_URL. If Redis is down, falls back
 // to the in-memory store so the app keeps running (with per-process caching).
 
+const logger = require('./logger');
 let redisClient = null;
 const store = new Map();
 
@@ -30,7 +31,7 @@ async function get(key) {
     try {
       const val = await redis.get(`cache:${key}`);
       return val ? JSON.parse(val) : null;
-    } catch { return null; }
+    } catch (err) { logger.debug('cache.get failed for %s: %s', key, err.message); return null; }
   }
   const entry = store.get(key);
   if (!entry) return null;
@@ -43,7 +44,7 @@ async function set(key, value, ttlMs = 60_000) {
   if (redis) {
     try {
       await redis.set(`cache:${key}`, JSON.stringify(value), 'PX', ttlMs);
-    } catch {}
+    } catch (err) { logger.debug('cache.set failed for %s: %s', key, err.message); }
     return;
   }
   store.set(key, { value, expiresAt: Date.now() + ttlMs });
@@ -52,7 +53,7 @@ async function set(key, value, ttlMs = 60_000) {
 async function del(key) {
   const redis = getRedis();
   if (redis) {
-    try { await redis.del(`cache:${key}`); } catch {}
+    try { await redis.del(`cache:${key}`); } catch (err) { logger.debug('cache.del failed for %s: %s', key, err.message); }
     return;
   }
   store.delete(key);
