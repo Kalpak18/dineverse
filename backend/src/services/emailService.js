@@ -1,39 +1,35 @@
 /**
- * Email service using Brevo HTTP API (not SMTP).
- * Render blocks outbound SMTP ports (587/465), but HTTP (443) always works.
- * Free tier: 300 emails/day — no credit card needed.
- *
- * Required env var: BREVO_API_KEY
- * Get it: app.brevo.com → SMTP & API → API Keys → Generate
+ * Email service using Resend HTTP API.
+ * Requires a verified sending domain at resend.com.
+ * Required env var: RESEND_API_KEY
  */
 const https = require('https');
 const logger = require('../utils/logger');
 
 const SENDER_NAME  = 'DineVerse';
-const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL || process.env.SMTP_FROM?.match(/<(.+)>/)?.[1] || 'noreply@dine-verse.com';
+const SENDER_EMAIL = process.env.RESEND_SENDER_EMAIL || 'noreply@dine-verse.com';
 
-function brevoSend(to, subject, html) {
+function resendSend(to, subject, html) {
   return new Promise((resolve, reject) => {
-    const apiKey = process.env.BREVO_API_KEY;
+    const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
-      return reject(new Error('BREVO_API_KEY is not set. Add it in Render → Environment.'));
+      return reject(new Error('RESEND_API_KEY is not set. Add it in Render → Environment.'));
     }
 
     const body = JSON.stringify({
-      sender:      { name: SENDER_NAME, email: SENDER_EMAIL },
-      to:          [{ email: to }],
+      from:    `${SENDER_NAME} <${SENDER_EMAIL}>`,
+      to:      [to],
       subject,
-      htmlContent: html,
+      html,
     });
 
     const req = https.request({
-      hostname: 'api.brevo.com',
-      path:     '/v3/smtp/email',
+      hostname: 'api.resend.com',
+      path:     '/emails',
       method:   'POST',
       headers: {
-        'Content-Type':  'application/json',
-        'Accept':        'application/json',
-        'api-key':       apiKey,
+        'Content-Type':   'application/json',
+        'Authorization':  `Bearer ${apiKey}`,
         'Content-Length': Buffer.byteLength(body),
       },
     }, (res) => {
@@ -43,7 +39,7 @@ function brevoSend(to, subject, html) {
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(data);
         } else {
-          reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+          reject(new Error(`Resend API error ${res.statusCode}: ${data}`));
         }
       });
     });
@@ -65,7 +61,7 @@ exports.sendOtpEmail = async (toEmail, otp) => {
       <p style="color:#6b7280;font-size:13px">This code expires in <strong>10 minutes</strong>. If you didn't request this, ignore this email.</p>
     </div>`;
   try {
-    await brevoSend(toEmail, 'Your DineVerse verification code', html);
+    await resendSend(toEmail, 'Your DineVerse verification code', html);
     logger.info('OTP email sent to %s', toEmail);
   } catch (err) {
     logger.error('OTP email failed: %s', err.message);
@@ -86,7 +82,7 @@ exports.sendPasswordResetEmail = async (toEmail, otp) => {
       <p style="color:#9ca3af;font-size:12px">DineVerse — Café Ordering Platform</p>
     </div>`;
   try {
-    await brevoSend(toEmail, 'Reset your DineVerse password', html);
+    await resendSend(toEmail, 'Reset your DineVerse password', html);
     logger.info('Password reset email sent to %s', toEmail);
   } catch (err) {
     logger.error('Password reset email failed: %s', err.message);
@@ -96,7 +92,7 @@ exports.sendPasswordResetEmail = async (toEmail, otp) => {
 
 exports.sendBroadcastEmail = async (toEmail, subject, htmlBody) => {
   try {
-    await brevoSend(toEmail, subject, htmlBody);
+    await resendSend(toEmail, subject, htmlBody);
   } catch (err) {
     logger.error('Broadcast email failed for %s: %s', toEmail, err.message);
     throw new Error(`Failed to send broadcast email: ${err.message}`);
@@ -143,7 +139,7 @@ exports.sendRiderWelcomeEmail = async (toEmail, riderName) => {
       </p>
     </div>`;
   try {
-    await brevoSend(toEmail, 'Welcome to DineVerse Rider 🛵', html);
+    await resendSend(toEmail, 'Welcome to DineVerse Rider 🛵', html);
     logger.info('Rider welcome email sent to %s', toEmail);
   } catch (err) {
     logger.error('Rider welcome email failed for %s: %s', toEmail, err.message);
@@ -187,7 +183,7 @@ exports.sendRiderInviteEmail = async (toEmail, riderName, cafeName, ownerName) =
       </p>
     </div>`;
   try {
-    await brevoSend(toEmail, `${cafeName} invited you as a delivery rider on DineVerse`, html);
+    await resendSend(toEmail, `${cafeName} invited you as a delivery rider on DineVerse`, html);
     logger.info('Rider invite email sent to %s for cafe %s', toEmail, cafeName);
   } catch (err) {
     logger.error('Rider invite email failed for %s: %s', toEmail, err.message);
@@ -195,4 +191,4 @@ exports.sendRiderInviteEmail = async (toEmail, riderName, cafeName, ownerName) =
 };
 
 // Raw send — used internally by notificationService for alert emails
-exports.brevoSendRaw = brevoSend;
+exports.resendSendRaw = resendSend;

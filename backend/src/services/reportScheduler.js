@@ -7,28 +7,27 @@ const https = require('https');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 
-function brevoSend(to, subject, html) {
+function resendSend(to, subject, html) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      sender:      { name: 'DineVerse', email: process.env.BREVO_SENDER_EMAIL || 'noreply@dine-verse.com' },
-      to:          [{ email: to }],
+      from:    `DineVerse <${process.env.RESEND_SENDER_EMAIL || 'noreply@dine-verse.com'}>`,
+      to:      [to],
       subject,
-      htmlContent: html,
+      html,
     });
     const req = https.request({
-      hostname: 'api.brevo.com',
-      path:     '/v3/smtp/email',
+      hostname: 'api.resend.com',
+      path:     '/emails',
       method:   'POST',
       headers: {
         'Content-Type':   'application/json',
-        'Accept':         'application/json',
-        'api-key':        process.env.BREVO_API_KEY,
+        'Authorization':  `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Length': Buffer.byteLength(body),
       },
     }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
-      res.on('end', () => res.statusCode < 300 ? resolve() : reject(new Error(`Brevo ${res.statusCode}: ${data}`)));
+      res.on('end', () => res.statusCode < 300 ? resolve() : reject(new Error(`Resend ${res.statusCode}: ${data}`)));
     });
     req.on('error', reject);
     req.write(body);
@@ -287,7 +286,7 @@ async function sendReportForCafe(cafe, dateStr) {
     </div>
   </body></html>`;
 
-  await brevoSend(cafe.email, `☀️ ${cafe.name} — Yesterday's Report (${formattedDate})`, html);
+  await resendSend(cafe.email, `☀️ ${cafe.name} — Yesterday's Report (${formattedDate})`, html);
 
   logger.info('[Report] Sent to %s (%s) — Revenue: ₹%d, Orders: %s', cafe.name, cafe.email, revenue, stats.paid_orders);
 }
@@ -338,7 +337,7 @@ async function sendExpiryReminders() {
           </p>
         </div>
       </body></html>`;
-      await brevoSend(cafe.email, `⚠️ Your DineVerse subscription expires in 7 days`, html);
+      await resendSend(cafe.email, `⚠️ Your DineVerse subscription expires in 7 days`, html);
       logger.info('[Expiry] Reminder sent to %s (%s)', cafe.name, cafe.email);
     } catch (err) {
       logger.error('[Expiry] Failed for %s: %s', cafe.name, err.message);
@@ -396,8 +395,8 @@ async function autoCancelExpiredReservations() {
 }
 
 module.exports = function initReportScheduler() {
-  if (!process.env.BREVO_API_KEY) {
-    logger.warn('[Report] BREVO_API_KEY not set — skipping report scheduler');
+  if (!process.env.RESEND_API_KEY) {
+    logger.warn('[Report] RESEND_API_KEY not set — skipping report scheduler');
     return;
   }
   // Run at 08:00 AM IST = 02:30 UTC

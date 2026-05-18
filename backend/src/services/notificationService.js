@@ -17,7 +17,7 @@
  */
 
 const db          = require('../config/database');
-const { brevoSend } = require('./emailService');
+const { resendSendRaw: resendSend } = require('./emailService');
 const logger      = require('../utils/logger');
 
 // ── Email rate-limit: one alert email per café per 5 minutes ────
@@ -67,7 +67,7 @@ async function notify(io, cafeId, cafeEmail, { type, title, body, refId, email =
 
 async function sendAlertEmail(to, title, body) {
   // Import here to avoid circular deps at module load time
-  const { brevoSendRaw } = require('./emailService');
+  const { resendSendRaw } = require('./emailService');
   const html = `
     <div style="font-family:sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff">
       <div style="background:#f97316;padding:16px 24px;border-radius:12px 12px 0 0">
@@ -87,7 +87,7 @@ async function sendAlertEmail(to, title, body) {
       </div>
     </div>`;
 
-  await brevoSendRaw(to, `DineVerse: ${title}`, html);
+  await resendSendRaw(to, `DineVerse: ${title}`, html);
 }
 
 function escHtml(str) {

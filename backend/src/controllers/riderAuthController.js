@@ -65,9 +65,9 @@ exports.sendOtp = asyncHandler(async (req, res) => {
 
   const otp = await createOtp(lower, 'rider_login');
 
-  if (!process.env.BREVO_API_KEY) {
-    logger.warn('⚠  BREVO_API_KEY not set — rider OTP for %s: %s (dev only)', email, otp);
-    return ok(res, { dev: true }, 'DEV: OTP printed to server console (BREVO_API_KEY not set)');
+  if (!process.env.RESEND_API_KEY) {
+    logger.warn('⚠  RESEND_API_KEY not set — rider OTP for %s: %s (dev only)', email, otp);
+    return ok(res, { dev: true }, 'DEV: OTP printed to server console (RESEND_API_KEY not set)');
   }
 
   try {

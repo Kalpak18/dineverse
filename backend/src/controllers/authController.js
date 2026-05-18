@@ -109,10 +109,10 @@ exports.sendOtp = asyncHandler(async (req, res) => {
 
   const otp = await createOtp(email, 'register');
 
-  // Dev fallback: if BREVO_API_KEY is not configured, log OTP to server console
-  if (!process.env.BREVO_API_KEY) {
-    logger.warn('⚠  BREVO_API_KEY not set — OTP for %s: %s (dev only)', email, otp);
-    return ok(res, { dev: true }, 'DEV: OTP printed to server console (BREVO_API_KEY not set)');
+  // Dev fallback: if RESEND_API_KEY is not configured, log OTP to server console
+  if (!process.env.RESEND_API_KEY) {
+    logger.warn('⚠  RESEND_API_KEY not set — OTP for %s: %s (dev only)', email, otp);
+    return ok(res, { dev: true }, 'DEV: OTP printed to server console (RESEND_API_KEY not set)');
   }
 
   try {

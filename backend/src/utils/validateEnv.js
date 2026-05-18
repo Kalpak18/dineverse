@@ -39,9 +39,9 @@ module.exports = function validateEnv() {
     logger.warn('[STARTUP] RAZORPAY_WEBHOOK_SECRET not set — webhooks will be ignored (subscription may not activate on payment failure/retry)');
   }
 
-  // Email: uses Brevo HTTP API (BREVO_API_KEY), not SMTP
-  if (!process.env.BREVO_API_KEY) {
-    logger.warn('[STARTUP] BREVO_API_KEY not set — email OTP verification will fail');
+  // Email: uses Resend HTTP API (RESEND_API_KEY)
+  if (!process.env.RESEND_API_KEY) {
+    logger.warn('[STARTUP] RESEND_API_KEY not set — email OTP verification will fail');
   }
 
   // S3: required for menu image uploads and logo/cover uploads
