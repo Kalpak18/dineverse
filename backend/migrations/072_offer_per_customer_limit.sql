@@ -29,24 +29,5 @@ CREATE INDEX IF NOT EXISTS idx_offer_redemptions_platform_offer_id ON offer_rede
 CREATE INDEX IF NOT EXISTS idx_offer_redemptions_customer_phone ON offer_redemptions(customer_phone);
 CREATE INDEX IF NOT EXISTS idx_offer_redemptions_cafe_id ON offer_redemptions(cafe_id);
 
--- Backfill existing orders into offer_redemptions so the count is accurate.
--- Split into two inserts to respect the CHECK constraint (exactly one of offer_id /
--- platform_offer_id must be non-null per row).
-INSERT INTO offer_redemptions (offer_id, platform_offer_id, order_id, cafe_id, customer_phone, discount_amount, created_at)
-SELECT o.offer_id, NULL::uuid, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
-FROM orders o
-WHERE o.offer_id IS NOT NULL
-  AND o.discount_amount > 0
-  AND o.cafe_id IS NOT NULL
-  AND EXISTS (SELECT 1 FROM offers WHERE id = o.offer_id)
-ON CONFLICT DO NOTHING;
-
-INSERT INTO offer_redemptions (offer_id, platform_offer_id, order_id, cafe_id, customer_phone, discount_amount, created_at)
-SELECT NULL::uuid, o.platform_offer_id, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
-FROM orders o
-WHERE o.platform_offer_id IS NOT NULL
-  AND o.offer_id IS NULL
-  AND o.discount_amount > 0
-  AND o.cafe_id IS NOT NULL
-  AND EXISTS (SELECT 1 FROM platform_offers WHERE id = o.platform_offer_id)
-ON CONFLICT DO NOTHING;
+-- No backfill: per-customer usage tracking starts from this migration forward.
+-- Historical orders are not counted toward per-customer limits.
