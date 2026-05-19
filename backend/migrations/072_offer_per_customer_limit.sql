@@ -33,14 +33,14 @@ CREATE INDEX IF NOT EXISTS idx_offer_redemptions_cafe_id ON offer_redemptions(ca
 -- Split into two inserts to respect the CHECK constraint (exactly one of offer_id /
 -- platform_offer_id must be non-null per row).
 INSERT INTO offer_redemptions (offer_id, platform_offer_id, order_id, cafe_id, customer_phone, discount_amount, created_at)
-SELECT o.offer_id, NULL, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
+SELECT o.offer_id, NULL::uuid, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
 FROM orders o
 JOIN offers ofs ON ofs.id = o.offer_id
 WHERE o.offer_id IS NOT NULL AND o.discount_amount > 0 AND o.cafe_id IS NOT NULL
 ON CONFLICT DO NOTHING;
 
 INSERT INTO offer_redemptions (offer_id, platform_offer_id, order_id, cafe_id, customer_phone, discount_amount, created_at)
-SELECT NULL, o.platform_offer_id, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
+SELECT NULL::uuid, o.platform_offer_id, o.id, o.cafe_id, o.customer_phone, o.discount_amount, o.created_at
 FROM orders o
 JOIN platform_offers po ON po.id = o.platform_offer_id
 WHERE o.platform_offer_id IS NOT NULL AND o.offer_id IS NULL AND o.discount_amount > 0 AND o.cafe_id IS NOT NULL
