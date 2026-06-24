@@ -22,6 +22,10 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     build: {
+      // Source maps shipped alongside the bundle so Sentry can de-minify
+      // production stack traces. They are not referenced by index.html so
+      // browsers don't download them by default — only Sentry fetches them.
+      sourcemap: true,
       // Raise chunk-size warning threshold; our lazy-split chunks are intentionally larger
       chunkSizeWarningLimit: 600,
       rollupOptions: {

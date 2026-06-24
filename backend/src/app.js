@@ -2,6 +2,11 @@ require('dotenv').config();
 const validateEnv = require('./utils/validateEnv');
 validateEnv(); // crash early if config is incomplete
 
+// Sentry MUST initialise before express is imported so its auto-instrumentation
+// can hook into Express's route layer. No-op if SENTRY_DSN is not set.
+const { initSentry, Sentry } = require('./config/sentry');
+initSentry();
+
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const http = require('http');
@@ -186,6 +191,11 @@ app.use(express.json({ limit: '1mb' }));
 app.use((req, res, next) => {
   req.id = req.headers['x-request-id'] || uuidv4();
   res.setHeader('X-Request-ID', req.id);
+  // Attach request id + auth context to the active Sentry scope so any
+  // captured exception during this request carries those tags.
+  if (process.env.SENTRY_DSN) {
+    Sentry.getCurrentScope().setTag('request_id', req.id);
+  }
   next();
 });
 
@@ -193,9 +203,23 @@ app.use((req, res, next) => {
 // which can cause unexpected behavior in controllers expecting a string
 app.use(hpp());
 
-// HTTP request logging (skip auth header value — tokens must not appear in logs)
+// HTTP request logging — emit as JSON in production so log search tools can
+// filter by request_id / status / route directly. Skip 2xx/3xx noise.
 if (process.env.NODE_ENV !== 'test') {
-  app.use(morgan('[:date[clf]] :method :url :status :response-time ms', {
+  morgan.token('id', (req) => req.id || '-');
+  const isProd = process.env.NODE_ENV === 'production';
+  const fmt = isProd
+    ? (tokens, req, res) => JSON.stringify({
+        type: 'http_access',
+        timestamp: new Date().toISOString(),
+        method: tokens.method(req, res),
+        url: tokens.url(req, res),
+        status: Number(tokens.status(req, res)),
+        response_time_ms: Number(tokens['response-time'](req, res)),
+        request_id: tokens.id(req, res),
+      })
+    : '[:date[clf]] :method :url :status :response-time ms (rid=:id)';
+  app.use(morgan(fmt, {
     skip: (_req, res) => res.statusCode < 400, // only log errors in production
   }));
 }
@@ -241,7 +265,7 @@ app.use('/api/loyalty',        require('./routes/loyalty'));
 app.get('/', (_req, res) => res.json({ status: 'ok' }));
 app.get('/health', healthLimiter, async (_req, res) => {
   const start = Date.now();
-  const checks = { db: 'ok', redis: 'ok' };
+  const checks = { db: 'ok', redis: 'ok', migrations: 'ok' };
   let httpStatus = 200;
 
   // DB liveness — fast single-row query, should be <20ms on warm pool
@@ -265,6 +289,22 @@ app.get('/health', healthLimiter, async (_req, res) => {
     // Redis failure degrades real-time but doesn't kill the app — warn only
   }
 
+  // Migration status — set by scripts/startup.js. If migrations failed,
+  // app still serves but /health reports degraded so monitors page on-call.
+  const mig = global.__dineverse_migration_status;
+  if (mig) {
+    if (mig.state === 'failed') {
+      checks.migrations = `failed: ${mig.error || 'unknown'}`;
+      httpStatus = 503;
+    } else if (mig.state === 'running') {
+      checks.migrations = 'running';
+    } else {
+      checks.migrations = mig.state;
+    }
+  } else {
+    checks.migrations = 'not_tracked';
+  }
+
   res.status(httpStatus).json({
     status: httpStatus === 200 ? 'ok' : 'degraded',
     uptime_s: Math.floor(process.uptime()),
@@ -277,13 +317,20 @@ app.get('/health', healthLimiter, async (_req, res) => {
 // 404 handler for unknown API routes
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));
 
+// Sentry's Express error handler — must be registered AFTER all routes
+// but BEFORE our custom handler so it captures every unhandled error.
+// In Sentry SDK v8 this is wired via setupExpressErrorHandler.
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
+
 // Global error handler — catches anything forwarded via next(err)
-app.use((err, _req, res, _next) => {
-  logger.error('Unhandled error: %s', err.stack || err.message);
+app.use((err, req, res, _next) => {
+  logger.error('Unhandled error [%s]: %s', req.id || '-', err.stack || err.message);
   const status = err.status || err.statusCode || 500;
   // Don't leak internal error messages to clients for 5xx
   const message = status < 500 ? err.message : 'Internal server error';
-  res.status(status).json({ success: false, message });
+  res.status(status).json({ success: false, message, request_id: req.id });
 });
 
 // ─── Start Server ─────────────────────────────────────────────

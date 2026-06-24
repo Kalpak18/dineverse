@@ -12,7 +12,11 @@ import { ThemeProvider } from './context/ThemeContext';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import ErrorBoundary from './components/ErrorBoundary';
+import { initSentry } from './utils/sentry';
 import './index.css';
+
+// Initialise Sentry BEFORE React mounts so any render-time error is captured.
+initSentry();
 
 // Global safety net: surface unhandled promise rejections / errors so the
 // app never silently breaks. ErrorBoundary catches React render errors;
@@ -24,6 +28,7 @@ window.addEventListener('unhandledrejection', (e) => {
   if (msg.toLowerCase().includes('cancel')) return;         // user-initiated cancel
   // eslint-disable-next-line no-console
   console.error('[unhandledrejection]', e.reason);
+  // Sentry auto-captures unhandledrejection via its browser integration, no manual call needed.
 });
 window.addEventListener('error', (e) => {
   // eslint-disable-next-line no-console
