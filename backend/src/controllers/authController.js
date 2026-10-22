@@ -47,17 +47,18 @@ const generateRefreshToken = () => {
   return crypto.randomBytes(64).toString('hex');
 };
 
-const storeRefreshToken = async (cafeId, refreshToken) => {
+// staffId is null for owner sessions — refresh re-mints the same principal
+const storeRefreshToken = async (cafeId, refreshToken, staffId = null) => {
   const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
   await db.query(
-    'INSERT INTO refresh_tokens (cafe_id, token, expires_at) VALUES ($1, $2, $3)',
-    [cafeId, refreshToken, expiresAt]
+    'INSERT INTO refresh_tokens (cafe_id, token, expires_at, staff_id) VALUES ($1, $2, $3, $4)',
+    [cafeId, refreshToken, expiresAt, staffId]
   );
 };
 
 const validateRefreshToken = async (refreshToken) => {
   const result = await db.query(
-    'SELECT cafe_id FROM refresh_tokens WHERE token = $1 AND expires_at > NOW() AND revoked = FALSE',
+    'SELECT cafe_id, staff_id FROM refresh_tokens WHERE token = $1 AND expires_at > NOW() AND revoked = FALSE',
     [refreshToken]
   );
   return result.rows[0] || null;
@@ -480,7 +481,7 @@ exports.login = asyncHandler(async (req, res) => {
 
       const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role);
       const refreshToken = generateRefreshToken();
-      await storeRefreshToken(staff.cafe_id, refreshToken);
+      await storeRefreshToken(staff.cafe_id, refreshToken, staff.staff_id);
       return ok(res, {
         token,
         refreshToken,
@@ -911,19 +912,38 @@ exports.refreshToken = asyncHandler(async (req, res) => {
   const cafeData = await validateRefreshToken(refreshToken);
   if (!cafeData) return fail(res, 'Invalid or expired refresh token', 401);
 
-  // Get cafe details for token generation
-  const cafeResult = await db.query(
-    'SELECT slug, COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1 AND is_active = true',
-    [cafeData.cafe_id]
-  );
-  if (cafeResult.rows.length === 0) return fail(res, 'Account not found or deactivated', 401);
+  let newToken;
+  if (cafeData.staff_id) {
+    // Staff session — re-mint STAFF with the current role, and only while
+    // both the staff account and the café are still active.
+    const staffResult = await db.query(
+      `SELECT cs.role AS staff_role, c.slug
+       FROM cafe_staff cs
+       JOIN cafes c ON cs.cafe_id = c.id
+       WHERE cs.id = $1 AND cs.cafe_id = $2 AND cs.is_active = true AND c.is_active = true`,
+      [cafeData.staff_id, cafeData.cafe_id]
+    );
+    if (staffResult.rows.length === 0) {
+      await revokeRefreshToken(refreshToken);
+      return fail(res, 'Account not found or deactivated', 401);
+    }
+    const staff = staffResult.rows[0];
+    newToken = generateToken(cafeData.cafe_id, staff.slug, 'STAFF', cafeData.staff_id, null, staff.staff_role);
+  } else {
+    // Get cafe details for token generation
+    const cafeResult = await db.query(
+      'SELECT slug, COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1 AND is_active = true',
+      [cafeData.cafe_id]
+    );
+    if (cafeResult.rows.length === 0) return fail(res, 'Account not found or deactivated', 401);
 
-  const cafe = cafeResult.rows[0];
-  const newToken = generateToken(cafeData.cafe_id, cafe.slug, 'OWNER', null, null, null, cafe.token_version);
+    const cafe = cafeResult.rows[0];
+    newToken = generateToken(cafeData.cafe_id, cafe.slug, 'OWNER', null, null, null, cafe.token_version);
+  }
 
-  // Optionally rotate refresh token for security
+  // Rotate refresh token, keeping it bound to the same principal
   const newRefreshToken = generateRefreshToken();
-  await storeRefreshToken(cafeData.cafe_id, newRefreshToken);
+  await storeRefreshToken(cafeData.cafe_id, newRefreshToken, cafeData.staff_id);
   await revokeRefreshToken(refreshToken); // Revoke old one
 
   ok(res, { token: newToken, refreshToken: newRefreshToken }, 'Token refreshed successfully');
