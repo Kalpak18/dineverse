@@ -734,6 +734,10 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
+  // Taking payment is a cash-handling action — not for kitchen/waiter staff
+  if (status === 'paid' && req.role === 'STAFF' && !['manager', 'cashier'].includes(req.staffRole)) {
+    return fail(res, 'Not allowed for your role', 403);
+  }
 
   // Acquire a per-order advisory lock so concurrent requests for the same order
   // serialize here instead of both passing the transition check simultaneously.

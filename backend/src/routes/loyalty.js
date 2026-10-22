@@ -3,8 +3,9 @@ const router  = express.Router();
 const ctrl    = require('../controllers/loyaltyController');
 const { authenticate } = require('../middleware/auth');
 const checkSubscription = require('../middleware/checkSubscription');
+const requireRole = require('../middleware/requireRole');
 
-const auth = [authenticate, checkSubscription];
+const auth = [authenticate, checkSubscription, requireRole('manager')];
 
 // Owner
 router.get('/program',          ...auth, ctrl.getProgram);

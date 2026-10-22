@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
+const requireRole = require('../middleware/requireRole');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
   validateOrder, createOrder,
@@ -63,9 +64,9 @@ router.get('/:id/kot/history',               authenticate, checkSubscription, ge
 router.post('/table/:tableNumber/remind',    authenticate, checkSubscription, remindBill);
 
 // Owner chat inbox
-router.get('/messages/conversations',        authenticate, checkSubscription, getConversations);
-router.get('/:id/messages',                  authenticate, checkSubscription, getOwnerMessages);
-router.post('/:id/messages',                 authenticate, checkSubscription, postOwnerMessage);
-router.delete('/:id/messages/:msgId',        authenticate, checkSubscription, deleteOwnerMessage);
+router.get('/messages/conversations',        authenticate, checkSubscription, requireRole('manager', 'cashier'), getConversations);
+router.get('/:id/messages',                  authenticate, checkSubscription, requireRole('manager', 'cashier'), getOwnerMessages);
+router.post('/:id/messages',                 authenticate, checkSubscription, requireRole('manager', 'cashier'), postOwnerMessage);
+router.delete('/:id/messages/:msgId',        authenticate, checkSubscription, requireRole('manager', 'cashier'), deleteOwnerMessage);
 
 module.exports = router;

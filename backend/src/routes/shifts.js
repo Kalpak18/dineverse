@@ -3,8 +3,9 @@ const router  = express.Router();
 const ctrl    = require('../controllers/shiftController');
 const { authenticate } = require('../middleware/auth');
 const checkSubscription = require('../middleware/checkSubscription');
+const requireRole = require('../middleware/requireRole');
 
-const auth = [authenticate, checkSubscription];
+const auth = [authenticate, checkSubscription, requireRole('manager', 'cashier')];
 
 router.post('/open',       ...auth, ctrl.openShift);
 router.post('/close',      ...auth, ctrl.closeShift);

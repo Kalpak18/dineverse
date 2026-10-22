@@ -3,8 +3,9 @@ const router  = express.Router();
 const ctrl    = require('../controllers/modifierController');
 const { authenticate } = require('../middleware/auth');
 const checkSubscription = require('../middleware/checkSubscription');
+const requireRole = require('../middleware/requireRole');
 
-const auth = [authenticate, checkSubscription];
+const auth = [authenticate, checkSubscription, requireRole('manager')];
 
 // ─── Modifier groups ──────────────────────────────────────────
 router.get('/groups',                          ...auth, ctrl.getGroups);

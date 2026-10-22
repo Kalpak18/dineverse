@@ -18,7 +18,7 @@ router.post('/',     authenticate, requireOwner, submitTestimonial);
 router.get('/mine',  authenticate, requireOwner, getMyTestimonial);
 
 // Admin
-router.get('/admin/all',        authenticate, requireAdmin, adminGetTestimonials);
-router.patch('/admin/:id/toggle', authenticate, requireAdmin, adminToggleApproval);
+router.get('/admin/all',        requireAdmin, adminGetTestimonials);
+router.patch('/admin/:id/toggle', requireAdmin, adminToggleApproval);
 
 module.exports = router;
