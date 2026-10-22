@@ -9,7 +9,7 @@ import PasswordInput from '../../components/PasswordInput';
 export default function AdminSetupPage() {
   const navigate = useNavigate();
   const [checking, setChecking] = useState(true);
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', setupSecret: '' });
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
@@ -32,6 +32,7 @@ export default function AdminSetupPage() {
     if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Valid email required';
     if (form.password.length < 8) e.password = 'Password must be at least 8 characters';
     if (form.password !== form.confirm) e.confirm = 'Passwords do not match';
+    if (!form.setupSecret.trim()) e.setupSecret = 'Setup secret is required';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -45,6 +46,7 @@ export default function AdminSetupPage() {
         name: form.name.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
+        setup_secret: form.setupSecret.trim(),
       });
       localStorage.setItem('dineverse_admin_token', data.token);
       toast.success(`Welcome, ${data.admin.name}! Developer console is ready.`);
@@ -127,6 +129,17 @@ export default function AdminSetupPage() {
                 onChange={(e) => { setForm({ ...form, confirm: e.target.value }); setErrors({ ...errors, confirm: undefined }); }}
               />
               {errors.confirm && <p className="text-red-400 text-xs mt-1">{errors.confirm}</p>}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Setup Secret</label>
+              <PasswordInput
+                className={`w-full bg-gray-800 border rounded-xl px-4 py-2.5 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 ${errors.setupSecret ? 'border-red-600' : 'border-gray-700'}`}
+                placeholder="ADMIN_SETUP_SECRET from server env"
+                value={form.setupSecret}
+                onChange={(e) => { setForm({ ...form, setupSecret: e.target.value }); setErrors({ ...errors, setupSecret: undefined }); }}
+              />
+              {errors.setupSecret && <p className="text-red-400 text-xs mt-1">{errors.setupSecret}</p>}
             </div>
 
             <button

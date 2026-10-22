@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
@@ -13,8 +14,17 @@ const generateAdminToken = (adminId) =>
   jwt.sign({ adminId, role: 'ADMIN' }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
 // ─── POST /api/admin/setup (one-time, only when no admins exist) ─
+// Requires ADMIN_SETUP_ENABLED=true AND the ADMIN_SETUP_SECRET value —
+// otherwise, after a DB restore/reset, the first visitor became platform admin.
 exports.setup = asyncHandler(async (req, res) => {
-  // Guard: only allowed when no admin account exists yet — env var not required
+  const expected = process.env.ADMIN_SETUP_SECRET || '';
+  const sent = String(req.body.setup_secret || '');
+  const secretOk = expected.length >= 16 && sent.length === expected.length &&
+    crypto.timingSafeEqual(Buffer.from(sent), Buffer.from(expected));
+  if (process.env.ADMIN_SETUP_ENABLED !== 'true' || !secretOk) {
+    return fail(res, 'Admin setup is disabled', 403);
+  }
+
   const existing = await db.query('SELECT COUNT(*) FROM developers');
   if (parseInt(existing.rows[0].count) > 0) {
     return fail(res, 'Setup already complete. Use /api/admin/login instead.', 409);
@@ -25,11 +35,16 @@ exports.setup = asyncHandler(async (req, res) => {
   if (password.length < 8) return fail(res, 'Password must be at least 8 characters');
 
   const password_hash = await bcrypt.hash(password, 12);
+  // Atomic "only if none exist" — two concurrent setups can't both succeed
   const result = await db.query(
     `INSERT INTO developers (name, email, password_hash)
-     VALUES ($1, $2, $3) RETURNING id, name, email, created_at`,
+     SELECT $1, $2, $3 WHERE NOT EXISTS (SELECT 1 FROM developers)
+     RETURNING id, name, email, created_at`,
     [name, email.toLowerCase(), password_hash]
   );
+  if (result.rows.length === 0) {
+    return fail(res, 'Setup already complete. Use /api/admin/login instead.', 409);
+  }
   const admin = result.rows[0];
   const token = generateAdminToken(admin.id);
   logger.info('Developer admin created: %s', admin.email);
