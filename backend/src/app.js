@@ -56,6 +56,14 @@ const allowedOrigins = clientUrl
   .map((o) => o.trim())
   .filter(Boolean); // Remove empty strings
 
+// Vercel deployments of THIS project only — any stranger can deploy to
+// *.vercel.app. Preview URLs look like dineverse-<hash>-<team>.vercel.app;
+// set VERCEL_PREVIEW_SUFFIX (e.g. "-kalpak18s-projects.vercel.app") to allow them.
+const vercelPreviewSuffix = process.env.VERCEL_PREVIEW_SUFFIX || '';
+const isOwnVercelOrigin = (origin) =>
+  origin === 'https://dineverse.vercel.app' ||
+  (!!vercelPreviewSuffix && /^https:\/\/dineverse-[a-z0-9-]+\.vercel\.app$/.test(origin) && origin.endsWith(vercelPreviewSuffix));
+
 const corsOptions = {
   origin: (origin, cb) => {
     // Allow requests with no origin (mobile apps, Postman, server-to-server)
@@ -64,8 +72,8 @@ const corsOptions = {
     // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) return cb(null, true);
 
-    // Allow all Vercel preview deployments (*.vercel.app)
-    if (origin.endsWith('.vercel.app')) return cb(null, true);
+    // Allow this project's Vercel production + preview deployments
+    if (isOwnVercelOrigin(origin)) return cb(null, true);
 
     // Block everything else
     cb(new Error(`CORS blocked for origin: ${origin}. Allowed origins: ${allowedOrigins.join(', ')}`));
@@ -89,7 +97,7 @@ const io = new Server(server, {
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
       if (allowedOrigins.includes(origin)) return cb(null, true);
-      if (origin.endsWith('.vercel.app')) return cb(null, true);
+      if (isOwnVercelOrigin(origin)) return cb(null, true);
       cb(new Error(`Socket CORS blocked: ${origin}`));
     },
     methods: ['GET', 'POST'],
