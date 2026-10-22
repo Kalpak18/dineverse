@@ -34,10 +34,14 @@ export default async function middleware(req) {
   }
   if (!cafe) return;
 
+  // Café name/city/description are owner-controlled — escape before
+  // splicing into HTML (and keep `</script>` out of the JSON-LD block).
+  const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
   const title = `${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''} | Order Online | DineVerse`;
   const desc = `Order food online from ${cafe.name}${cafe.city ? ` in ${cafe.city}` : ''}. Browse the menu and order in real-time.`;
   const image = cafe.cover_image_url || 'https://www.dine-verse.com/.preview.png';
-  const url = `https://www.dine-verse.com/.cafe/${slug}`;
+  const url = `https://www.dine-verse.com/cafe/${encodeURIComponent(slug)}`;
 
   const ld = JSON.stringify({
     '@context': 'https://schema.org',
@@ -49,7 +53,7 @@ export default async function middleware(req) {
     ...(cafe.description && { description: cafe.description }),
     servesCuisine: 'Various',
     hasMenu: url,
-  });
+  }).replace(/</g, '\\u003c');
 
   // Pull the base HTML shell (Vite builds to dist/index.html → served as /)
   const shellRes = await fetch(new URL('/index.html', req.url));
@@ -57,16 +61,16 @@ export default async function middleware(req) {
 
   const shell = await shellRes.text();
   const meta = `
-    <title>${title}</title>
-    <meta name="description" content="${desc.replace(/"/g, '&quot;')}" />
-    <meta property="og:title" content="${cafe.name} — Order Online | DineVerse" />
-    <meta property="og:description" content="${desc.replace(/"/g, '&quot;')}" />
-    <meta property="og:image" content="${image}" />
-    <meta property="og:url" content="${url}" />
+    <title>${esc(title)}</title>
+    <meta name="description" content="${esc(desc)}" />
+    <meta property="og:title" content="${esc(cafe.name)} — Order Online | DineVerse" />
+    <meta property="og:description" content="${esc(desc)}" />
+    <meta property="og:image" content="${esc(image)}" />
+    <meta property="og:url" content="${esc(url)}" />
     <meta property="og:type" content="restaurant" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="${cafe.name} — Order Online | DineVerse" />
-    <meta name="twitter:image" content="${image}" />
+    <meta name="twitter:title" content="${esc(cafe.name)} — Order Online | DineVerse" />
+    <meta name="twitter:image" content="${esc(image)}" />
     <script type="application/ld+json">${ld}</script>`;
 
   const patched = shell.replace(/<title>[^<]*<\/title>/, meta);

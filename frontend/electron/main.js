@@ -44,9 +44,14 @@ function createWindow() {
     }
   });
 
-  // Open external links in the system browser
+  // Print slips/bills/KOTs open a blank window and document.write() into it —
+  // allow those in-app. Real links go to the system browser, https only:
+  // openExternal on file:, smb: or custom schemes can launch local programs.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (url === 'about:blank' || url === '') return { action: 'allow' };
+    try {
+      if (new URL(url).protocol === 'https:') shell.openExternal(url);
+    } catch { /* malformed URL — ignore */ }
     return { action: 'deny' };
   });
 }
