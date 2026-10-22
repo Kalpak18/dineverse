@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { loadOrders } from '../utils/cafeOrderStorage';
 
 // Dev: Vite proxy sends /api → localhost:5000 (no env var needed)
 // Production: set VITE_API_URL=https://your-api.example.com/api
@@ -153,19 +154,25 @@ export const deleteTable      = (id)           => api.delete(`/tables/${id}`);
 export const getCafeMenu = (slug) => api.get(`/cafes/${slug}/menu`);
 export const getUpsellSuggestions = (slug, itemIds) =>
   api.get(`/cafes/${slug}/menu/suggestions`, { params: { items: itemIds.join(',') } });
+// Customer order endpoints require the secret returned when the order was
+// placed (stored with the order on this device by cafeOrderStorage).
+const orderAuth = (slug, id) => {
+  const token = loadOrders(slug).find((o) => o.id === id)?.customer_token;
+  return token ? { headers: { 'X-Order-Token': token } } : undefined;
+};
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
-export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`);
+export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`, orderAuth(slug, id));
 export const cancelOrder = (slug, id, customer_name, customer_phone) =>
-  api.post(`/orders/cafe/${slug}/orders/${id}/cancel`, { customer_name, customer_phone });
+  api.post(`/orders/cafe/${slug}/orders/${id}/cancel`, { customer_name, customer_phone }, orderAuth(slug, id));
 export const updateDriverLocation = (orderId, token, lat, lng) => api.patch(`/orders/driver/${orderId}/${token}/location`, { lat, lng });
 export const getDriverOrderInfo   = (orderId, token) => api.get(`/orders/driver/${orderId}/${token}/info`);
-export const createOrderPayment = (slug, id) => api.post(`/orders/cafe/${slug}/orders/${id}/pay`);
+export const createOrderPayment = (slug, id) => api.post(`/orders/cafe/${slug}/orders/${id}/pay`, undefined, orderAuth(slug, id));
 export const verifyOrderPayment = (slug, id, data) => api.post(`/orders/cafe/${slug}/orders/${id}/pay/verify`, data);
 
 // ─── Order Chat ───────────────────────────────────────────────
 // Customer-side (public, no auth)
-export const getCustomerMessages  = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/messages`);
-export const postCustomerMessage  = (slug, id, message) => api.post(`/orders/cafe/${slug}/orders/${id}/messages`, { message });
+export const getCustomerMessages  = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/messages`, orderAuth(slug, id));
+export const postCustomerMessage  = (slug, id, message) => api.post(`/orders/cafe/${slug}/orders/${id}/messages`, { message }, orderAuth(slug, id));
 // Owner-side (authenticated)
 export const getConversations    = () => api.get('/orders/messages/conversations');
 export const getOwnerMessages    = (id) => api.get(`/orders/${id}/messages`);
@@ -261,6 +268,7 @@ export const deleteOffer     = (id)         => api.delete(`/offers/${id}`);
 export const getTableBill = (slug, tableNumber, customerName) =>
   api.get(`/orders/cafe/${slug}/table-bill/${encodeURIComponent(tableNumber)}`, {
     params: customerName ? { customer_name: customerName } : undefined,
+    headers: { 'X-Order-Tokens': loadOrders(slug).map((o) => o.customer_token).filter(Boolean).join(',') },
   });
 
 // ─── Reservations ─────────────────────────────────────────────

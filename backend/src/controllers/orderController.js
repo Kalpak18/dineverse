@@ -8,6 +8,11 @@ const asyncHandler = require('../utils/asyncHandler');
 const { applyBestOffer, applyCoupon } = require('./offerController');
 const { notify } = require('../services/notificationService');
 const { sendToOwners } = require('./pushController');
+const { generateOrderToken, hasOrderToken, sentOrderTokens, safeEqual } = require('../utils/orderToken');
+
+// Orders placed before migration 074 have no customer_token — let them
+// through so in-flight customers aren't locked out; they age out in a day.
+const canAccessOrder = (req, storedToken) => !storedToken || hasOrderToken(req, storedToken);
 
 // ─── Schedule helper ────────────────────────────────────────────
 // Returns null (open) or a string reason why orders are blocked.
@@ -441,6 +446,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
     }
 
     // Insert order
+    const customerToken = generateOrderToken();
     let orderResult;
     try {
       orderResult = await client.query(
@@ -453,9 +459,9 @@ exports.createOrder = asyncHandler(async (req, res) => {
             delivery_address, delivery_address2, delivery_city, delivery_zipcode,
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
             delivery_fee, delivery_status, reservation_id,
-            platform_fee, platform_fee_rate)
+            platform_fee, platform_fee_rate, customer_token)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29)
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
@@ -480,19 +486,19 @@ exports.createOrder = asyncHandler(async (req, res) => {
          deliveryFee || 0,
          order_type === 'delivery' ? 'pending' : null,
          reservation_id ? parseInt(reservation_id) : null,
-         platformFee, commissionRate]
+         platformFee, commissionRate, customerToken]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
       if (insertErr.code === '23505' && insertErr.constraint === 'orders_client_order_id_idx') {
         // Idempotent: return the existing order so the client can resume normally
         const existingResult = await db.query(
-          'SELECT id FROM orders WHERE client_order_id = $1 AND cafe_id = $2',
+          'SELECT id, customer_token FROM orders WHERE client_order_id = $1 AND cafe_id = $2',
           [client_order_id, cafeId]
         );
         if (existingResult.rows.length > 0) {
           const existing = await getOrderWithItems(existingResult.rows[0].id);
-          return ok(res, { order: existing }, 'Order already placed', 200);
+          return ok(res, { order: { ...existing, customer_token: existingResult.rows[0].customer_token } }, 'Order already placed', 200);
         }
         return fail(res, 'This order has already been placed', 409);
       }
@@ -648,7 +654,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
     }).catch(() => {});
 
     logger.info('Order #%s placed at café %s table %s', order.order_number, slug, table_number);
-    ok(res, { order: fullOrder }, 'Order placed', 201);
+    // customer_token goes only to the customer — never in socket/owner payloads
+    ok(res, { order: { ...fullOrder, customer_token: customerToken } }, 'Order placed', 201);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err; // re-throw — asyncHandler + global error middleware handles response
@@ -926,7 +933,7 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
             o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
-            o.delivery_token,
+            o.customer_token,
             c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
@@ -934,7 +941,9 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
     [id, slug]
   );
   if (result.rows.length === 0) return fail(res, 'Order not found', 404);
-  ok(res, { order: result.rows[0] });
+  const { customer_token, ...order } = result.rows[0];
+  if (!canAccessOrder(req, customer_token)) return fail(res, 'Order not found', 404);
+  ok(res, { order });
 });
 
 // ─── Public: Driver updates their GPS location ─────────────────
@@ -996,7 +1005,7 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
 
     // Lock the row and verify the caller is the actual customer
     const result = await client.query(
-      `SELECT o.id, o.status, o.cafe_id, o.customer_name, o.customer_phone
+      `SELECT o.id, o.status, o.cafe_id, o.customer_name, o.customer_phone, o.customer_token
        FROM orders o
        JOIN cafes c ON o.cafe_id = c.id
        WHERE o.id = $1 AND c.slug = $2
@@ -1010,12 +1019,16 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
     }
 
     const order = result.rows[0];
-    // Only verify identity when the order has stored customer info.
+    if (order.customer_token && !hasOrderToken(req, order.customer_token)) {
+      await client.query('ROLLBACK');
+      return fail(res, 'Order not found', 404);
+    }
+    // Legacy orders (no token): only verify identity when the order has stored customer info.
     // If the DB has a name, the sent name must match; same for phone.
     // If neither is stored (anonymous order), allow cancel without check.
     const hasStoredName  = !!order.customer_name?.trim();
     const hasStoredPhone = !!order.customer_phone?.trim();
-    if (hasStoredName || hasStoredPhone) {
+    if (!order.customer_token && (hasStoredName || hasStoredPhone)) {
       const nameMatch  = hasStoredName  && customer_name  && order.customer_name.trim().toLowerCase() === customer_name.trim().toLowerCase();
       const phoneMatch = hasStoredPhone && customer_phone && order.customer_phone.trim() === customer_phone.trim();
       if (!nameMatch && !phoneMatch) {
@@ -1091,7 +1104,7 @@ exports.getTableBill = asyncHandler(async (req, res) => {
     `SELECT id, order_number,
             COALESCE(daily_order_number, order_number) AS daily_order_number,
             status, total_amount, discount_amount, tip_amount, final_amount,
-            notes, created_at
+            notes, created_at, customer_name, customer_token
      FROM orders
      WHERE cafe_id = $1
        AND table_number = $2
@@ -1104,10 +1117,21 @@ exports.getTableBill = asyncHandler(async (req, res) => {
     return ok(res, { orders: [], combined_total: 0, cafe_name: cafeName });
   }
 
-  // Require customer_name to prevent arbitrary table enumeration
+  // Caller must hold the token of at least one order at this table —
+  // otherwise anyone could enumerate tables and harvest order IDs.
+  const tokens = sentOrderTokens(req);
+  const anyOrderHasToken = ordersResult.rows.some((o) => o.customer_token);
+  if (anyOrderHasToken) {
+    const holdsOne = ordersResult.rows.some(
+      (o) => o.customer_token && tokens.some((t) => safeEqual(t, o.customer_token))
+    );
+    if (!holdsOne) return fail(res, 'Table bill not found', 404);
+  }
+
+  // Legacy (all orders pre-token): require a matching customer_name
   const { customer_name } = req.query;
   const anyOrderHasName = ordersResult.rows.some((o) => !!o.customer_name?.trim());
-  if (anyOrderHasName) {
+  if (!anyOrderHasToken && anyOrderHasName) {
     if (!customer_name?.trim()) return fail(res, 'customer_name is required to view this bill', 400);
     const nameMatch = ordersResult.rows.some(
       (o) => o.customer_name && o.customer_name.trim().toLowerCase() === customer_name.trim().toLowerCase()
@@ -1127,7 +1151,7 @@ exports.getTableBill = asyncHandler(async (req, res) => {
     itemsByOrder[item.order_id].push(item);
   }
 
-  const orders = ordersResult.rows.map((o) => ({ ...o, items: itemsByOrder[o.id] || [] }));
+  const orders = ordersResult.rows.map(({ customer_token, customer_name: _name, ...o }) => ({ ...o, items: itemsByOrder[o.id] || [] }));
   const combinedTotal = orders.reduce((sum, o) => sum + parseFloat(o.final_amount || o.total_amount), 0);
   const combinedTip   = orders.reduce((sum, o) => sum + parseFloat(o.tip_amount || 0), 0);
 
@@ -1194,7 +1218,7 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT o.id, o.status, o.final_amount, o.total_amount, o.payment_verified,
             o.payment_order_id, o.platform_fee, o.platform_discount_amount,
-            o.customer_name, o.order_number,
+            o.customer_name, o.order_number, o.customer_token,
             COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
             c.name AS cafe_name, c.email AS cafe_email,
             c.logo_url AS cafe_logo_url, c.currency AS cafe_currency,
@@ -1207,6 +1231,7 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
 
   if (result.rows.length === 0) return fail(res, 'Order not found', 404);
   const order = result.rows[0];
+  if (!canAccessOrder(req, order.customer_token)) return fail(res, 'Order not found', 404);
 
   if (order.payment_verified) return fail(res, 'Order already paid', 409);
   if (['cancelled', 'paid'].includes(order.status)) {

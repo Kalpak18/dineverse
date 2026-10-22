@@ -1,6 +1,10 @@
 const db = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { hasOrderToken } = require('../utils/orderToken');
+
+// Legacy orders (pre-migration 074) have no token — see orderController
+const canAccessOrder = (req, storedToken) => !storedToken || hasOrderToken(req, storedToken);
 
 // ─── Owner: all conversations (orders with ≥1 message) ───────
 exports.getConversations = asyncHandler(async (req, res) => {
@@ -50,12 +54,14 @@ async function fetchMessages(orderId) {
 exports.getCustomerMessages = asyncHandler(async (req, res) => {
   const { slug, id } = req.params;
   const check = await db.query(
-    `SELECT o.id FROM orders o
+    `SELECT o.id, o.customer_token FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
     [id, slug]
   );
-  if (check.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (check.rows.length === 0 || !canAccessOrder(req, check.rows[0].customer_token)) {
+    return fail(res, 'Order not found', 404);
+  }
 
   // Record that customer has read the chat — enables seen receipts for owner
   await db.query(
@@ -74,12 +80,14 @@ exports.postCustomerMessage = asyncHandler(async (req, res) => {
   if (message.trim().length > 1000) return fail(res, 'Message too long');
 
   const orderRes = await db.query(
-    `SELECT o.id, o.cafe_id FROM orders o
+    `SELECT o.id, o.cafe_id, o.customer_token FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
      WHERE o.id = $1 AND c.slug = $2`,
     [id, slug]
   );
-  if (orderRes.rows.length === 0) return fail(res, 'Order not found', 404);
+  if (orderRes.rows.length === 0 || !canAccessOrder(req, orderRes.rows[0].customer_token)) {
+    return fail(res, 'Order not found', 404);
+  }
   const { cafe_id } = orderRes.rows[0];
 
   const result = await db.query(
