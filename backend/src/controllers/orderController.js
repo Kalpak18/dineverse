@@ -355,7 +355,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
         menu_item_id: i.menu_item_id,
         quantity: i.quantity,
         unit_price: unitPrice + modifierTotal,
-        item_name: i.item_name || menuItem.name,
+        item_name: menuItem.name, // never the client-sent name — kitchen + bill show this
         variant_id: i.variant_id || null,
         variant_name: variantName,
         selected_modifiers: selectedModifiers,
