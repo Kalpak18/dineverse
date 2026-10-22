@@ -266,9 +266,20 @@ exports.webhookHandler = asyncHandler(async (req, res) => {
   // ── Commission payment safety net ────────────────────────────
   // If the owner dismissed the Razorpay modal before calling /commission/verify
   // (or the verify API call failed due to network), the webhook auto-settles.
-  if (notes.type === 'commission_payment' && notes.cafe_id) {
-    const cafeId = notes.cafe_id;
+  if (notes.type === 'commission_payment') {
+    let cafeId;
     try {
+      // Trust only the server-created order's notes, never the payment's
+      cafeId = await commissionOrderCafeId(razorpay_order_id);
+      if (!cafeId) {
+        logger.warn('Webhook: payment %s claims commission but order %s is not one', razorpay_payment_id, razorpay_order_id);
+        return res.status(200).json({ ok: true, ignored: 'not_commission_order' });
+      }
+      const owedPaise = await commissionOwedPaise(cafeId);
+      if (parseInt(payment.amount, 10) < owedPaise) {
+        logger.warn('Webhook commission underpaid: cafe %s paid %s < owed %s', cafeId, payment.amount, owedPaise);
+        return res.status(200).json({ ok: true, ignored: 'underpaid' });
+      }
       // Idempotency: skip if this payment_id was already used to settle commission
       const already = await db.query(
         `SELECT 1 FROM orders
@@ -701,6 +712,29 @@ exports.createCommissionPayment = asyncHandler(async (req, res) => {
   });
 });
 
+// Amount (paise) a café currently owes in cash commission.
+async function commissionOwedPaise(cafeId) {
+  const owedRes = await db.query(
+    `SELECT
+       COALESCE(SUM(commission_amount), 0)        AS gross_owed,
+       COALESCE(SUM(platform_discount_amount), 0) AS discount_credit
+     FROM orders
+     WHERE cafe_id = $1 AND commission_status = 'cash_due' AND status = 'paid'`,
+    [cafeId]
+  );
+  return Math.round(
+    Math.max(0, parseFloat(owedRes.rows[0].gross_owed) - parseFloat(owedRes.rows[0].discount_credit)) * 100
+  );
+}
+
+// The Razorpay *order* notes are set server-side in createCommissionPayment;
+// payment notes come from the browser checkout and must not be trusted.
+// Returns the café id the commission order was created for, or null.
+async function commissionOrderCafeId(razorpayOrderId) {
+  const rpOrder = await razorpay.orders.fetch(razorpayOrderId);
+  return rpOrder?.notes?.type === 'commission_payment' && rpOrder.notes.cafe_id ? rpOrder.notes.cafe_id : null;
+}
+
 // ─── POST /api/payments/commission/verify ─────────────────────
 // Verifies the HMAC signature from Razorpay and marks all pending
 // cash_due orders for this café as collected.
@@ -735,18 +769,24 @@ exports.verifyCommissionPayment = asyncHandler(async (req, res) => {
   if (rzpPayment.status !== 'captured' && rzpPayment.status !== 'authorized') {
     return fail(res, `Payment not captured (status: ${rzpPayment.status})`, 400);
   }
+  // The payment must belong to a commission order created for THIS café —
+  // otherwise a food payment (or another café's commission) could settle it.
+  if (rzpPayment.order_id !== razorpay_order_id) {
+    return fail(res, 'Invalid payment', 400);
+  }
+  let orderCafeId;
+  try {
+    orderCafeId = await commissionOrderCafeId(razorpay_order_id);
+  } catch (err) {
+    logger.error('Razorpay orders.fetch failed in verifyCommissionPayment: %s', err.message);
+    return fail(res, 'Could not verify payment with Razorpay. Please contact support.', 503);
+  }
+  if (orderCafeId !== cafeId) {
+    logger.warn('Commission verify: order %s is not a commission order for café %s', razorpay_order_id, cafeId);
+    return fail(res, 'This payment is not a commission payment', 400);
+  }
   // Re-compute owed amount and confirm the payment covers it (in paise)
-  const owedRes = await db.query(
-    `SELECT
-       COALESCE(SUM(commission_amount), 0)        AS gross_owed,
-       COALESCE(SUM(platform_discount_amount), 0) AS discount_credit
-     FROM orders
-     WHERE cafe_id = $1 AND commission_status = 'cash_due' AND status = 'paid'`,
-    [cafeId]
-  );
-  const owedPaise = Math.round(
-    Math.max(0, parseFloat(owedRes.rows[0].gross_owed) - parseFloat(owedRes.rows[0].discount_credit)) * 100
-  );
+  const owedPaise = await commissionOwedPaise(cafeId);
   if (parseInt(rzpPayment.amount, 10) < owedPaise) {
     return fail(res, 'Payment amount does not cover the commission balance', 400);
   }
