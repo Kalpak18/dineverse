@@ -9,7 +9,7 @@ import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/st
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
-function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function itemDetails(item) {
   const parts = [];
   if (item?.variant_name) parts.push(`Variant: ${item.variant_name}`);
@@ -35,7 +35,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 
   const itemRows = itemsToPrint.map((i) => {
     const details = itemDetails(i);
-    return `<tr><td class="qty">${i.quantity}</td><td class="item">${esc(i.item_name)}${details ? `<div class="mods">${esc(details)}</div>` : ''}</td></tr>`;
+    return `<tr><td class="qty">${esc(i.quantity)}</td><td class="item">${esc(i.item_name)}${details ? `<div class="mods">${esc(details)}</div>` : ''}</td></tr>`;
   }).join('');
 
   const html = `<!DOCTYPE html>
@@ -61,17 +61,17 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 </style>
 </head>
 <body>
-  <div class="cafe-name">${cafeName || 'Kitchen'}</div>
+  <div class="cafe-name">${esc(cafeName || 'Kitchen')}</div>
   <div class="token-box">
     <div class="token-label">Serving Slip · Ready for Service</div>
     <div class="token-num">${isTakeaway ? `TK ${num}` : isDelivery ? `D ${num}` : `#${num}`}</div>
-    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ TABLE ${order.table_number}`}</div>
+    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ TABLE ${esc(order.table_number)}`}</div>
   </div>
-  <div class="meta">${order.customer_name} · ${dateStr} ${timeStr}</div>
+  <div class="meta">${esc(order.customer_name)} · ${dateStr} ${timeStr}</div>
   <hr class="sep-solid"/>
   <table><tbody>${itemRows}</tbody></table>
   <hr class="sep"/>
-  ${order.notes ? `<div class="notes">📝 ${order.notes}</div>` : ''}
+  ${order.notes ? `<div class="notes">📝 ${esc(order.notes)}</div>` : ''}
   <script>window.onload=function(){window.focus();}; function doPrint(){window.print();window.onafterprint=function(){window.close();};};<\/script>
   <div style="text-align:center;margin-top:10px;">
     <button onclick="doPrint()" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;">🖨 PRINT</button>
