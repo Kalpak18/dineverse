@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
+import { ownerSocketAuth } from '../../utils/socketAuth';
 import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill,
   getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -208,7 +209,7 @@ export default function OrdersPage() {
   // Connect socket + page-level listener for incoming customer messages
   useEffect(() => {
     if (!cafe?.id) return;
-    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    const socket = io(SOCKET_URL, { auth: ownerSocketAuth, transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));

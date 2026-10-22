@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
+import { ownerSocketAuth } from '../../utils/socketAuth';
 import { getConversations, getOwnerMessages, postOwnerMessage, deleteOwnerMessage } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
@@ -104,7 +105,7 @@ export default function MessagesPage() {
   // ── Socket ────────────────────────────────────────────────────
   useEffect(() => {
     if (!cafe?.id) return;
-    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    const socket = io(SOCKET_URL, { auth: ownerSocketAuth, transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('connect', () => socket.emit('join_cafe', cafe.id));

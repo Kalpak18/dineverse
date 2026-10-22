@@ -3,6 +3,7 @@ import { getWaitlist, updateWaitlistEntry, deleteWaitlistEntry } from '../../ser
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
+import { ownerSocketAuth } from '../../utils/socketAuth';
 import { useAuth } from '../../context/AuthContext';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -43,7 +44,7 @@ export default function WaitlistPage() {
   // Live updates via socket
   useEffect(() => {
     if (!cafe?.id) return;
-    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    const socket = io(SOCKET_URL, { auth: ownerSocketAuth, transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
     socket.on('waitlist_update', () => load());

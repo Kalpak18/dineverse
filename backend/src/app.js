@@ -122,8 +122,17 @@ io.on('connection', (socket) => {
   logger.debug('Socket connected: %s', socket.id);
 
   socket.on('join_cafe', (cafeId) => {
-    // Only authenticated staff whose token matches this café (or ADMIN) may join privileged room
-    if (socket.user && String(socket.user.cafeId) !== String(cafeId) && socket.user.role !== 'ADMIN') {
+    // The café room carries live orders with customer PII. Require an
+    // OWNER/STAFF token for this exact café (or ADMIN) — anonymous sockets
+    // and riders (whose tokens also carry cafeId) are refused.
+    const u = socket.user;
+    const allowed = u && (
+      u.role === 'ADMIN' ||
+      ((u.role === 'OWNER' || u.role === 'STAFF') && String(u.cafeId) === String(cafeId))
+    );
+    if (!allowed) {
+      logger.debug('Socket %s denied cafe:%s', socket.id, cafeId);
+      socket.emit('join_denied', { room: 'cafe' });
       return;
     }
     socket.join(`cafe:${cafeId}`);

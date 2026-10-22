@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { io } from 'socket.io-client';
+import { ownerSocketAuth } from '../../utils/socketAuth';
 import { fmtCurrency } from '../../utils/formatters';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
@@ -578,7 +579,7 @@ function LiveView({ cafeId, cafeCurrency }) {
 
   useEffect(() => {
     if (!cafeId) return;
-    const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
+    const socket = io(SOCKET_URL, { auth: ownerSocketAuth, transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.on('connect', () => socket.emit('join_cafe', cafeId));
     if (socket.connected) socket.emit('join_cafe', cafeId);
