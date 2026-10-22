@@ -108,6 +108,7 @@ export default function ExplorePage() {
   const [cafes, setCafes] = useState([]);
   const [suggestions, setSuggestions] = useState([]); // shown in dropdown while typing
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState(false); // API failed — don't pretend there are no cafés
   const [locLoading, setLocLoading] = useState(true);
   const [committed, setCommitted] = useState(false); // true after Enter/click — shows result pane
   const [userLat, setUserLat] = useState(null);
@@ -129,13 +130,16 @@ export default function ExplorePage() {
       if (forCommit) {
         setCafes(data.cafes);
         setSuggestions([]);
+        setFetchError(false);
       } else {
         setSuggestions(data.cafes.slice(0, 6));
       }
     } catch {
       if (abortRef.current !== token) return;
-      if (forCommit) setCafes([]);
-      else setSuggestions([]);
+      if (forCommit) {
+        setCafes([]);
+        setFetchError(true);
+      } else setSuggestions([]);
     } finally {
       if (abortRef.current === token) setLoading(false);
     }
@@ -369,7 +373,19 @@ export default function ExplorePage() {
         {/* Results pane — shown after Enter or "See all" click */}
         {committed && !loading && (
           <>
-            {cafes.length === 0 ? (
+            {fetchError ? (
+              <div className="text-center py-20">
+                <p className="text-5xl mb-4">⚠️</p>
+                <h2 className="text-xl font-bold text-gray-800 mb-2">Couldn't load cafés</h2>
+                <p className="text-gray-500 text-sm mb-4">Something went wrong on our side. Please try again in a moment.</p>
+                <button
+                  onClick={() => fetchCafes(query.trim(), userLat, userLng, true)}
+                  className="px-4 py-2 rounded-lg bg-brand-500 text-white text-sm font-semibold"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : cafes.length === 0 ? (
               <div className="text-center py-20">
                 <p className="text-5xl mb-4">😕</p>
                 <h2 className="text-xl font-bold text-gray-800 mb-2">

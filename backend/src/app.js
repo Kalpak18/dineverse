@@ -263,17 +263,25 @@ app.use('/api/loyalty',        require('./routes/loyalty'));
 
 // Root + health check — Render/load balancers + uptime monitors hit both
 app.get('/', (_req, res) => res.json({ status: 'ok' }));
-app.get('/health', healthLimiter, async (_req, res) => {
+// /health is liveness only and never touches Postgres. Render polls it every
+// ~30s; a DB query here keeps Neon's compute awake 24/7 and burns the quota.
+// /health/ready adds the DB check — point external uptime monitors at it with
+// a sparse interval. Error details go to logs, never the public response.
+async function healthHandler(req, res) {
+  const deep = req.path === '/health/ready';
   const start = Date.now();
-  const checks = { db: 'ok', redis: 'ok', migrations: 'ok' };
+  const checks = { db: deep ? 'ok' : 'skipped', redis: 'ok', migrations: 'ok' };
   let httpStatus = 200;
 
   // DB liveness — fast single-row query, should be <20ms on warm pool
-  try {
-    await db.query('SELECT 1');
-  } catch (err) {
-    checks.db = `error: ${err.message}`;
-    httpStatus = 503;
+  if (deep) {
+    try {
+      await db.query('SELECT 1');
+    } catch (err) {
+      logger.error('health_db_failed', { error: err.message });
+      checks.db = 'error';
+      httpStatus = 503;
+    }
   }
 
   // Redis liveness — ping pub client if adapter is active
@@ -285,7 +293,8 @@ app.get('/health', healthLimiter, async (_req, res) => {
       checks.redis = 'not_configured';
     }
   } catch (err) {
-    checks.redis = `error: ${err.message}`;
+    logger.warn('health_redis_failed', { error: err.message });
+    checks.redis = 'error';
     // Redis failure degrades real-time but doesn't kill the app — warn only
   }
 
@@ -294,7 +303,7 @@ app.get('/health', healthLimiter, async (_req, res) => {
   const mig = global.__dineverse_migration_status;
   if (mig) {
     if (mig.state === 'failed') {
-      checks.migrations = `failed: ${mig.error || 'unknown'}`;
+      checks.migrations = 'failed';
       httpStatus = 503;
     } else if (mig.state === 'running') {
       checks.migrations = 'running';
@@ -312,7 +321,9 @@ app.get('/health', healthLimiter, async (_req, res) => {
     checks,
     timestamp: new Date().toISOString(),
   });
-});
+}
+app.get('/health', healthLimiter, healthHandler);
+app.get('/health/ready', healthLimiter, healthHandler);
 
 // 404 handler for unknown API routes
 app.use((_req, res) => res.status(404).json({ success: false, message: 'Route not found' }));

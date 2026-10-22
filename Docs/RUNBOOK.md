@@ -35,8 +35,8 @@ What to do when things break. Keep this file short and current — if a section 
 1. Sign up at uptimerobot.com (free: 50 monitors, 5-min intervals).
 2. Add monitor:
    - **Type:** HTTPS
-   - **URL:** `https://dineverse.onrender.com/health`
-   - **Interval:** 5 minutes
+   - **URL:** `https://dineverse.onrender.com/health/ready` (checks the DB; plain `/health` is liveness only)
+   - **Interval:** 30 minutes on Neon's free plan — every DB check wakes Neon for ~5 min of billed compute, so a 5-min interval keeps it awake 24/7. 5 minutes is fine once on a paid plan.
    - **Keyword (optional):** `"status":"ok"` — alerts if degraded even if 200
 3. Alert contacts: add your email + WhatsApp/SMS (free tier allows 2).
 4. Optional: enable status page (public.uptimerobot.com) for transparency.
@@ -64,7 +64,7 @@ Without this rule, backups accumulate forever and cost grows linearly.
 
 ### Symptom: API is returning 500s / app is down
 
-1. **Check `/health`** — `curl https://dineverse.onrender.com/health | jq`
+1. **Check `/health/ready`** — `curl https://dineverse.onrender.com/health/ready | jq` (error details are in Render logs: `health_db_failed`)
    - `checks.db: error` → DB is down. See "DB down" below.
    - `checks.migrations: failed` → A migration failed. See "Migration failed" below.
    - `checks.redis: error` → Real-time degraded but app should still serve. See "Redis down".

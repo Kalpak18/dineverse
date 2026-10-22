@@ -413,8 +413,9 @@ module.exports = function initReportScheduler() {
     );
   }, { timezone: 'UTC' });
 
-  // Run reservation auto-cancel every 5 minutes
-  cron.schedule('*/5 * * * *', () => {
+  // Run reservation auto-cancel hourly. Every 5 min matched Neon's idle-suspend
+  // window exactly, so the DB compute never slept and burned the quota.
+  cron.schedule('0 * * * *', () => {
     autoCancelExpiredReservations().catch((err) =>
       logger.error('[Reservation] Auto-cancel error: %s', err.message)
     );
