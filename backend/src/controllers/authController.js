@@ -68,8 +68,12 @@ const revokeRefreshToken = async (refreshToken) => {
   await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE token = $1', [refreshToken]);
 };
 
-const revokeAllRefreshTokens = async (cafeId) => {
-  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE cafe_id = $1', [cafeId]);
+const revokeOwnerRefreshTokens = async (cafeId) => {
+  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE cafe_id = $1 AND staff_id IS NULL', [cafeId]);
+};
+
+const revokeStaffRefreshTokens = async (staffId) => {
+  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE staff_id = $1', [staffId]);
 };
 
 const isValidEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
@@ -462,6 +466,7 @@ exports.login = asyncHandler(async (req, res) => {
     // 2. Check staff accounts — match by email
     const staffResult = await db.query(
       `SELECT cs.id AS staff_id, cs.name, cs.email, cs.password_hash, cs.role AS staff_role,
+              COALESCE(cs.token_version, 1) AS token_version,
               c.id AS cafe_id, c.slug, c.name AS cafe_name
        FROM cafe_staff cs
        JOIN cafes c ON cs.cafe_id = c.id
@@ -479,7 +484,7 @@ exports.login = asyncHandler(async (req, res) => {
       const isValid = await bcrypt.compare(password, staff.password_hash);
       if (!isValid) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
 
-      const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role);
+      const token = generateToken(staff.cafe_id, staff.slug, 'STAFF', staff.staff_id, null, staff.staff_role, staff.token_version);
       const refreshToken = generateRefreshToken();
       await storeRefreshToken(staff.cafe_id, refreshToken, staff.staff_id);
       return ok(res, {
@@ -782,7 +787,8 @@ exports.switchOutlet = asyncHandler(async (req, res) => {
   if (target.rows.length === 0) return fail(res, 'Outlet not found or not authorized', 404);
 
   const outlet = target.rows[0];
-  const token = generateToken(outlet.id, outlet.slug, 'OWNER', null, rootId);
+  const rootRes = await db.query('SELECT COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1', [rootId]);
+  const token = generateToken(outlet.id, outlet.slug, 'OWNER', null, rootId, null, rootRes.rows[0]?.token_version || 1);
   ok(res, { token, cafe_id: outlet.id, slug: outlet.slug, name: outlet.name });
 });
 
@@ -833,17 +839,24 @@ exports.resetPassword = asyncHandler(async (req, res) => {
   const password_hash = await bcrypt.hash(password, 12);
 
   // Try owner table first, then staff
+  // Bumping token_version + revoking refresh tokens logs out every existing
+  // session — the point of a reset is often a leaked password.
   const updateOwner = await db.query(
-    'UPDATE cafes SET password_hash = $1 WHERE email = $2 AND is_active = true RETURNING id',
+    `UPDATE cafes SET password_hash = $1, token_version = COALESCE(token_version, 1) + 1
+     WHERE email = $2 AND is_active = true RETURNING id`,
     [password_hash, email.toLowerCase()]
   );
 
-  if (updateOwner.rowCount === 0) {
+  if (updateOwner.rowCount > 0) {
+    await revokeOwnerRefreshTokens(updateOwner.rows[0].id);
+  } else {
     const updateStaff = await db.query(
-      'UPDATE cafe_staff SET password_hash = $1 WHERE email = $2 AND is_active = true RETURNING id',
+      `UPDATE cafe_staff SET password_hash = $1, token_version = COALESCE(token_version, 1) + 1
+       WHERE email = $2 AND is_active = true RETURNING id`,
       [password_hash, email.toLowerCase()]
     );
     if (updateStaff.rowCount === 0) return fail(res, 'Account not found', 404);
+    await revokeStaffRefreshTokens(updateStaff.rows[0].id);
   }
 
   logger.info('Password reset for: %s', email);
@@ -917,7 +930,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
     // Staff session — re-mint STAFF with the current role, and only while
     // both the staff account and the café are still active.
     const staffResult = await db.query(
-      `SELECT cs.role AS staff_role, c.slug
+      `SELECT cs.role AS staff_role, COALESCE(cs.token_version, 1) AS token_version, c.slug
        FROM cafe_staff cs
        JOIN cafes c ON cs.cafe_id = c.id
        WHERE cs.id = $1 AND cs.cafe_id = $2 AND cs.is_active = true AND c.is_active = true`,
@@ -928,7 +941,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
       return fail(res, 'Account not found or deactivated', 401);
     }
     const staff = staffResult.rows[0];
-    newToken = generateToken(cafeData.cafe_id, staff.slug, 'STAFF', cafeData.staff_id, null, staff.staff_role);
+    newToken = generateToken(cafeData.cafe_id, staff.slug, 'STAFF', cafeData.staff_id, null, staff.staff_role, staff.token_version);
   } else {
     // Get cafe details for token generation
     const cafeResult = await db.query(

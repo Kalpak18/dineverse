@@ -64,6 +64,10 @@ exports.updateStaff = asyncHandler(async (req, res) => {
     [name || null, role || null, is_active != null ? is_active : null, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Staff member not found', 404);
+  // Deactivation: authenticate already rejects inactive staff; also kill refresh
+  if (result.rows[0].is_active === false) {
+    await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE staff_id = $1', [id]);
+  }
   ok(res, { staff: result.rows[0] });
 });
 
@@ -76,10 +80,13 @@ exports.resetStaffPassword = asyncHandler(async (req, res) => {
   }
   const password_hash = await bcrypt.hash(new_password, 12);
   const result = await db.query(
-    'UPDATE cafe_staff SET password_hash = $1 WHERE id = $2 AND cafe_id = $3 RETURNING id, name',
+    `UPDATE cafe_staff SET password_hash = $1, token_version = COALESCE(token_version, 1) + 1
+     WHERE id = $2 AND cafe_id = $3 RETURNING id, name`,
     [password_hash, id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Staff member not found', 404);
+  // Log out the staff member's existing sessions
+  await db.query('UPDATE refresh_tokens SET revoked = TRUE WHERE staff_id = $1', [id]);
   ok(res, {}, `Password reset for ${result.rows[0].name}`);
 });
 
