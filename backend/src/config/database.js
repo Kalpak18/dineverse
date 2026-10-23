@@ -16,6 +16,15 @@ const pool = new Pool({
   max: parseInt(process.env.DB_POOL_MAX || '10'),
 });
 
+// All date logic ("today", reservations, offer windows) is Indian local time.
+// Migration 078 sets this as the database default; this covers connections
+// where that couldn't be applied.
+const DB_TIMEZONE = process.env.DB_TIMEZONE || 'Asia/Kolkata';
+pool.on('connect', (client) => {
+  client.query('SELECT set_config($1, $2, false)', ['timezone', DB_TIMEZONE])
+    .catch((err) => logger.warn('Could not set session timezone: %s', err.message));
+});
+
 pool.on('error', (err) => {
   logger.error('Unexpected PostgreSQL client error: %s', err.message);
 });

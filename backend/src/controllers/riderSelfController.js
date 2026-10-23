@@ -195,7 +195,7 @@ exports.getProfile = asyncHandler(async (req, res) => {
 
   // Reset today_* if earnings_date is not today
   const rider = r.rows[0];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = require('../utils/localDate').localDate();
   if (rider.earnings_date && rider.earnings_date.toISOString?.().slice(0, 10) !== today) {
     rider.today_deliveries = 0;
     rider.today_earnings   = 0;

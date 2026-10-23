@@ -1,13 +1,14 @@
 const db = require('../config/database');
 const { ok } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { localDate } = require('../utils/localDate');
 
 exports.getAnalytics = asyncHandler(async (req, res) => {
   const { period = 'daily', from, to } = req.query;
 
   // Compute date range
   const now = new Date();
-  const today = now.toISOString().split('T')[0];
+  const today = localDate(now);
   let startDate, endDate;
 
   if (from && to) {
@@ -16,13 +17,11 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
   } else {
     endDate = today;
     if (period === 'weekly') {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 6);
-      startDate = d.toISOString().split('T')[0];
+      startDate = localDate(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000));
     } else if (period === 'monthly') {
-      startDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      startDate = `${today.slice(0, 7)}-01`;
     } else if (period === 'yearly') {
-      startDate = `${now.getFullYear()}-01-01`;
+      startDate = `${today.slice(0, 4)}-01-01`;
     } else {
       startDate = today; // daily
     }
@@ -234,7 +233,7 @@ exports.getAnalytics = asyncHandler(async (req, res) => {
 // Owner: export orders for date range as CSV
 exports.exportOrdersCSV = asyncHandler(async (req, res) => {
   const { from, to } = req.query;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDate();
   const startDate = from || today;
   const endDate   = to   || today;
 

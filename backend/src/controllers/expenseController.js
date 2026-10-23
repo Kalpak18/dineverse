@@ -1,4 +1,5 @@
 const { body, validationResult } = require('express-validator');
+const { localDate } = require('../utils/localDate');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
@@ -47,7 +48,7 @@ exports.createExpense = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { name, amount, expense_date, category, notes } = req.body;
-  const date = expense_date || new Date().toISOString().split('T')[0];
+  const date = expense_date || localDate();
 
   const result = await db.query(
     `INSERT INTO expenses (cafe_id, name, amount, expense_date, category, notes)
