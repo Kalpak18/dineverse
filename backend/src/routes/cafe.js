@@ -1,8 +1,8 @@
 const router = require('express').Router();
-const { getCafeBySlug, getCafeMenu, exploreCafes, getAvailableTables, toggleCafeOpen, getNearbyCafes, getUpsellSuggestions } = require('../controllers/cafeController');
+const { getCafeBySlug, getCafeMenu, exploreCafes, getAvailableTables, toggleCafeOpen, updateSchedule, getNearbyCafes, getUpsellSuggestions } = require('../controllers/cafeController');
 const { getPublicTables } = require('../controllers/tableController');
 const { authenticate } = require('../middleware/auth');
-const requireOwner = require('../middleware/requireOwner');
+const requireRole = require('../middleware/requireRole');
 const db = require('../config/database');
 const asyncHandler = require('../utils/asyncHandler');
 
@@ -29,6 +29,7 @@ router.get('/:slug/tables', getPublicTables);
 router.get('/:slug/available-tables', getAvailableTables);
 
 // Owner: toggle open/closed
-router.post('/toggle-open', authenticate, requireOwner, toggleCafeOpen);
+router.post('/toggle-open', authenticate, requireRole('manager'), toggleCafeOpen);
+router.patch('/schedule',    authenticate, requireRole('manager'), updateSchedule); // managers run the schedule; other settings stay owner-only
 
 module.exports = router;

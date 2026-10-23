@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
-const requireOwner = require('../middleware/requireOwner');
+const requireRole = require('../middleware/requireRole');
 const checkSubscription = require('../middleware/checkSubscription');
 const {
   getAreas, createArea, updateArea, deleteArea,
@@ -8,7 +8,7 @@ const {
   getLiveTables,
 } = require('../controllers/tableController');
 
-router.use(authenticate, checkSubscription, requireOwner);
+router.use(authenticate, checkSubscription, requireRole('manager'));
 
 // Live floor view
 router.get('/live',           getLiveTables);

@@ -87,18 +87,27 @@ const STAFF_DEFAULT = {
   manager: '/owner/dashboard',
   waiter:  '/owner/waiter',
 };
+// Must match OwnerLayout's nav roles and the backend's requireRole guards
 const STAFF_ALLOWED = {
   kitchen: ['/owner/kitchen', '/owner/help', '/owner/profile'],
   waiter:  ['/owner/waiter',  '/owner/help', '/owner/profile'],
-  cashier: ['/owner/orders', '/owner/billing', '/owner/messages', '/owner/shift', '/owner/help', '/owner/profile'],
-  manager: null,
+  cashier: ['/owner/orders', '/owner/messages', '/owner/kitchen', '/owner/reservations',
+            '/owner/waitlist', '/owner/shift', '/owner/help', '/owner/profile'],
+  manager: null, // everything except STAFF_BLOCKED
+};
+const STAFF_BLOCKED = {
+  manager: ['/owner/staff', '/owner/billing'],
 };
 
 // ─── Guards ───────────────────────────────────────────────────────────────────
 function StaffGuard({ children }) {
   const { role, staffRole } = useAuth();
   const location = useLocation();
-  if (role !== 'STAFF' || staffRole === 'manager') return children;
+  if (role !== 'STAFF') return children;
+  const blocked = STAFF_BLOCKED[staffRole] || [];
+  if (blocked.some((p) => location.pathname.startsWith(p))) {
+    return <Navigate to={STAFF_DEFAULT[staffRole] || '/owner/orders'} replace />;
+  }
   const allowed = STAFF_ALLOWED[staffRole];
   if (!allowed) return children;
   const ok = allowed.some((p) => location.pathname.startsWith(p));

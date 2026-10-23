@@ -1,10 +1,10 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
-const requireOwner = require('../middleware/requireOwner');
+const requireRole = require('../middleware/requireRole');
 const checkSubscription = require('../middleware/checkSubscription');
 const { getCustomers, getCustomerOrders } = require('../controllers/customerController');
 
-router.use(authenticate, requireOwner, checkSubscription);
+router.use(authenticate, requireRole('manager'), checkSubscription);
 
 router.get('/',        getCustomers);
 router.get('/orders',  getCustomerOrders);

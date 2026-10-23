@@ -300,3 +300,27 @@ exports.toggleCafeOpen = asyncHandler(async (req, res) => {
   req.io.to(`menu:${slug}`).emit('cafe_status', { is_open });
   ok(res, { is_open });
 });
+
+// Owner/manager: opening hours + timezone only (PATCH /auth/me is owner-only
+// because it covers every café setting).
+exports.updateSchedule = asyncHandler(async (req, res) => {
+  const { opening_hours, timezone } = req.body;
+  if (opening_hours != null && (typeof opening_hours !== 'object' || Array.isArray(opening_hours))) {
+    return fail(res, 'opening_hours must be an object', 400);
+  }
+  if (timezone != null) {
+    try { new Intl.DateTimeFormat('en', { timeZone: timezone }); } catch { return fail(res, 'Invalid timezone', 400); }
+  }
+  const result = await db.query(
+    `UPDATE cafes
+     SET opening_hours = COALESCE($1::jsonb, opening_hours),
+         timezone      = COALESCE($2, timezone)
+     WHERE id = $3
+     RETURNING id, slug, opening_hours, timezone`,
+    [opening_hours ? JSON.stringify(opening_hours) : null, timezone || null, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Café not found', 404);
+  await cache.del(`cafe:${result.rows[0].slug}`);
+  const { slug, ...cafe } = result.rows[0];
+  ok(res, { cafe }, 'Schedule saved');
+});

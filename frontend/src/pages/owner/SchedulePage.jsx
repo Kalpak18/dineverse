@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { updateProfile } from '../../services/api';
+import { updateSchedule } from '../../services/api';
 import { getWeekSchedule, defaultSchedule, formatTime } from '../../utils/scheduleUtils';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
@@ -67,13 +67,7 @@ export default function SchedulePage() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { data } = await updateProfile({
-        // pass through required fields so validation passes
-        name: cafe?.name,
-        phone: cafe?.phone,
-        opening_hours: schedule,
-        timezone,
-      });
+      const { data } = await updateSchedule({ opening_hours: schedule, timezone });
       if (data?.cafe) updateCafe(data.cafe);
       toast.success('Schedule saved');
     } catch (err) {

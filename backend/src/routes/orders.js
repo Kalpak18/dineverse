@@ -1,6 +1,5 @@
 const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
-const requireOwner = require('../middleware/requireOwner');
 const checkSubscription = require('../middleware/checkSubscription');
 const requireRole = require('../middleware/requireRole');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
@@ -45,7 +44,7 @@ router.get('/cafe/:slug/orders/:id/messages',  getCustomerMessages);
 router.post('/cafe/:slug/orders/:id/messages', publicLimiter, postCustomerMessage);
 
 // Owner stats
-router.get('/stats', authenticate, checkSubscription, requireOwner, getDashboardStats);
+router.get('/stats', authenticate, checkSubscription, requireRole('manager'), getDashboardStats);
 
 // All features available to every café — no premium gate
 router.get('/',                              authenticate, checkSubscription, getOrders);

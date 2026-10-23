@@ -99,6 +99,7 @@ export const loginCafe = (data) => api.post('/auth/login', data); // data: { ide
 export const checkSlugAvailability = (slug) => api.get('/auth/check-slug', { params: { slug } });
 export const getMe = () => api.get('/auth/me');
 export const updateProfile = (data) => api.patch('/auth/me', data);
+export const updateSchedule = (data) => api.patch('/cafes/schedule', data);
 export const deleteCafe = (data) => api.delete('/auth/me', { data });
 export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
 export const resetPassword = (email, otp, password) => api.post('/auth/reset-password', { email, otp, password });
