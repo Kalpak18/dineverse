@@ -5,7 +5,7 @@ const checkSubscription = require('../middleware/checkSubscription');
 const requireRole = require('../middleware/requireRole');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
-  validateOrder, createOrder,
+  validateOrder, createOrder, getDeliveryQuote,
   getOrders, getOrderById, updateOrderStatus,
   getDashboardStats,
   getOrderStatus, customerCancelOrder,
@@ -28,6 +28,7 @@ router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 
 // Public: customer places order
 router.post('/cafe/:slug/orders', orderLimiter, validateOrder, createOrder);
+router.post('/cafe/:slug/delivery-quote', publicLimiter, getDeliveryQuote);
 router.get('/cafe/:slug/orders/:id/status', getOrderStatus);
 router.post('/cafe/:slug/orders/:id/cancel', publicLimiter, customerCancelOrder);
 

@@ -214,6 +214,7 @@ const orderAuth = (slug, id) => {
   return token ? { headers: { 'X-Order-Token': token } } : undefined;
 };
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
+export const getDeliveryQuote = (slug, data) => api.post(`/orders/cafe/${slug}/delivery-quote`, data);
 export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`, orderAuth(slug, id));
 export const cancelOrder = (slug, id, customer_name, customer_phone) =>
   api.post(`/orders/cafe/${slug}/orders/${id}/cancel`, { customer_name, customer_phone }, orderAuth(slug, id));

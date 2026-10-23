@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions, getPublicOffers } from '../../services/api';
+import { placeOrder, getDeliveryQuote, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions, getPublicOffers } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -70,11 +70,17 @@ export default function CartPage() {
     delivery_phone:        session?.customer_phone || '',
     delivery_instructions: '',
   });
+  // Server-computed delivery fee + the exact point it was measured to.
+  // source: 'gps' (customer's location) | 'address' (geocoded typed address)
+  const [deliveryQuote, setDeliveryQuote] = useState(null);
+  const [quoting, setQuoting] = useState(false);
 
   const isDelivery = session?.order_type === 'delivery';
   const deliveryFeeBase  = Math.max(0, parseFloat(session?.delivery_fee_base  ?? 0) || 0);
   const deliveryEstMins  = parseInt(session?.delivery_est_mins || 30);
   const deliveryMinOrder = Math.max(0, parseFloat(session?.delivery_min_order ?? 0) || 0);
+  // Until quoted, show the base fee; the per-km part depends on distance
+  const deliveryFee = deliveryQuote ? deliveryQuote.delivery_fee : deliveryFeeBase;
 
   const TIP_OPTIONS = [0, 10, 20, 50];
   const [cafeOpen, setCafeOpen] = useState(session?.is_open !== false);
@@ -129,17 +135,17 @@ export default function CartPage() {
       // Prices include GST — extract tax: tax = total × rate / (100 + rate)
       taxableAmt = total / (1 + gstRate / 100);
       totalTax   = total - taxableAmt;
-      grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
+      grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFee : 0);
     } else {
       // Prices are pre-tax — add GST on top
       taxableAmt = total - discountAmt; // base after discount
       totalTax   = taxableAmt * gstRate / 100;
-      grandTotal = taxableAmt + totalTax + tip + (isDelivery ? deliveryFeeBase : 0);
+      grandTotal = taxableAmt + totalTax + tip + (isDelivery ? deliveryFee : 0);
     }
   } else {
     taxableAmt = total;
     totalTax   = 0;
-    grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFeeBase : 0);
+    grandTotal = total - discountAmt + tip + (isDelivery ? deliveryFee : 0);
   }
 
   // Platform charge — transparent DineVerse service fee added on top
@@ -309,6 +315,35 @@ export default function CartPage() {
     );
   }
 
+  const fetchQuote = async (location, source) => {
+    setQuoting(true);
+    try {
+      const { data } = await getDeliveryQuote(slug, location);
+      const q = { ...data, source };
+      setDeliveryQuote(q);
+      return q;
+    } catch (err) {
+      setDeliveryQuote(null);
+      toast.error(getApiError(err));
+      return null;
+    } finally {
+      setQuoting(false);
+    }
+  };
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) { toast.error('Location is not available on this device'); return; }
+    setQuoting(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => fetchQuote({ delivery_lat: pos.coords.latitude, delivery_lng: pos.coords.longitude }, 'gps'),
+      () => { setQuoting(false); toast.error('Could not get your location — enter your full address instead'); },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
+  // Typed-address quotes go stale when the address changes; GPS quotes don't
+  const clearAddressQuote = () => setDeliveryQuote((q) => (q?.source === 'address' ? null : q));
+
   const handlePlaceOrder = async () => {
     if (submittingRef.current) return;
     setOrderError(null);
@@ -319,6 +354,21 @@ export default function CartPage() {
       if (deliveryMinOrder > 0 && total < deliveryMinOrder) {
         toast.error(`Minimum order for delivery is ${c(deliveryMinOrder)}`);
         return;
+      }
+      if (!deliveryQuote) {
+        // Price the delivery from the typed address before charging anything
+        const q = await fetchQuote({
+          delivery_address:  deliveryForm.delivery_address.trim(),
+          delivery_address2: deliveryForm.delivery_address2.trim() || undefined,
+          delivery_city:     deliveryForm.delivery_city.trim() || undefined,
+          delivery_zipcode:  deliveryForm.delivery_zipcode.trim() || undefined,
+        }, 'address');
+        if (!q) return;
+        if (q.delivery_fee !== deliveryFee) {
+          // Total on screen changed — let the customer see it before ordering
+          toast(`Delivery fee is ${c(q.delivery_fee)}${q.distance_km != null ? ` (${q.distance_km} km)` : ''}. Check the total and tap Place Order again.`, { icon: '🛵' });
+          return;
+        }
       }
     }
     submittingRef.current = true;
@@ -357,6 +407,10 @@ export default function CartPage() {
         delivery_zipcode:      deliveryForm.delivery_zipcode.trim() || undefined,
         delivery_phone:        deliveryForm.delivery_phone.trim(),
         delivery_instructions: deliveryForm.delivery_instructions.trim() || undefined,
+        ...(deliveryQuote?.delivery_lat != null && {
+          delivery_lat: deliveryQuote.delivery_lat,
+          delivery_lng: deliveryQuote.delivery_lng,
+        }),
       }),
     };
 
@@ -553,30 +607,38 @@ export default function CartPage() {
                 : <span>✓ Met</span>}
             </div>
           )}
+          <button
+            type="button"
+            onClick={handleUseMyLocation}
+            disabled={quoting}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-brand-300 text-brand-700 text-sm font-semibold bg-brand-50 disabled:opacity-60"
+          >
+            📍 {quoting ? 'Checking location…' : deliveryQuote?.source === 'gps' ? 'Using your current location ✓' : 'Use my current location'}
+          </button>
           <input
             className="input"
             placeholder="Street address *"
             value={deliveryForm.delivery_address}
-            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_address: e.target.value }))}
+            onChange={(e) => { setDeliveryForm((f) => ({ ...f, delivery_address: e.target.value })); clearAddressQuote(); }}
           />
           <input
             className="input"
             placeholder="Apartment, floor, landmark (optional)"
             value={deliveryForm.delivery_address2}
-            onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_address2: e.target.value }))}
+            onChange={(e) => { setDeliveryForm((f) => ({ ...f, delivery_address2: e.target.value })); clearAddressQuote(); }}
           />
           <div className="flex flex-col sm:flex-row gap-2">
             <input
               className="input flex-1"
               placeholder="City"
               value={deliveryForm.delivery_city}
-              onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_city: e.target.value }))}
+              onChange={(e) => { setDeliveryForm((f) => ({ ...f, delivery_city: e.target.value })); clearAddressQuote(); }}
             />
             <input
               className="input sm:w-32"
               placeholder="Pincode"
               value={deliveryForm.delivery_zipcode}
-              onChange={(e) => setDeliveryForm((f) => ({ ...f, delivery_zipcode: e.target.value }))}
+              onChange={(e) => { setDeliveryForm((f) => ({ ...f, delivery_zipcode: e.target.value })); clearAddressQuote(); }}
             />
           </div>
           <input
@@ -733,7 +795,10 @@ export default function CartPage() {
           {isDelivery && (
             <div className="flex justify-between text-gray-600">
               <span>🛵 Delivery fee</span>
-              <span>{deliveryFeeBase > 0 ? c(deliveryFeeBase) : 'Free'}</span>
+              <span>
+                {deliveryQuote?.distance_km != null && <span className="text-xs text-gray-400 mr-1">{deliveryQuote.distance_km} km ·</span>}
+                {deliveryFee > 0 ? c(deliveryFee) : 'Free'}
+              </span>
             </div>
           )}
 
@@ -1027,10 +1092,10 @@ export default function CartPage() {
                     <span>{c(tip)}</span>
                   </div>
                 )}
-                {isDelivery && deliveryFeeBase > 0 && (
+                {isDelivery && deliveryFee > 0 && (
                   <div className="flex justify-between text-xs text-gray-400">
                     <span>Delivery fee</span>
-                    <span>{c(deliveryFeeBase)}</span>
+                    <span>{c(deliveryFee)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-gray-900 pt-1 border-t border-gray-200">

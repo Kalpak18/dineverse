@@ -10,6 +10,7 @@ const { notify } = require('../services/notificationService');
 const { sendToOwners } = require('./pushController');
 const { generateOrderToken, hasOrderToken, sentOrderTokens, safeEqual } = require('../utils/orderToken');
 const { refundPrepaidOrder } = require('../services/refundService');
+const { geocodeAddress } = require('../services/geocodingService');
 
 // Orders placed before migration 074 have no customer_token — let them
 // through so in-flight customers aren't locked out; they age out in a day.
@@ -69,6 +70,63 @@ function haversineKm(lat1, lng1, lat2, lng2) {
     Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
+
+// Where a delivery goes and what it costs. GPS coordinates from the customer
+// win; otherwise the typed address is geocoded. When the café has a location,
+// a delivery location is mandatory — without it the radius check and per-km
+// fee used to be silently skipped. Returns { error } or { fee, distanceKm, lat, lng }.
+async function resolveDelivery(cafe, body) {
+  const base = parseFloat(cafe.delivery_fee_base) || 0;
+  const lat = parseFloat(body.delivery_lat);
+  const lng = parseFloat(body.delivery_lng);
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+
+  if (!cafe.latitude || !cafe.longitude) {
+    // Café hasn't set its location — can't measure distance; flat fee
+    return { fee: base, distanceKm: null, lat: hasCoords ? lat : null, lng: hasCoords ? lng : null };
+  }
+
+  let point = hasCoords ? { lat, lng } : null;
+  if (!point) {
+    const g = await geocodeAddress([
+      body.delivery_address, body.delivery_address2, body.delivery_city, body.delivery_zipcode, 'India',
+    ]);
+    if (g) point = { lat: g.latitude, lng: g.longitude };
+  }
+  if (!point) {
+    return { error: "We couldn't find that address on the map. Tap \"Use my current location\" or add your area, city and PIN code." };
+  }
+
+  const distKm = haversineKm(parseFloat(cafe.latitude), parseFloat(cafe.longitude), point.lat, point.lng);
+  if (distKm > parseFloat(cafe.delivery_radius_km)) {
+    return { error: `Delivery is only available within ${parseFloat(cafe.delivery_radius_km)} km of this café (you're about ${distKm.toFixed(1)} km away)` };
+  }
+  const fee = parseFloat((base + (parseFloat(cafe.delivery_fee_per_km) || 0) * distKm).toFixed(2));
+  return { fee, distanceKm: parseFloat(distKm.toFixed(2)), lat: point.lat, lng: point.lng };
+}
+
+// ─── Public: delivery fee quote for the cart ──────────────────
+// The cart shows this fee before the order is placed, then sends the returned
+// lat/lng with the order so createOrder computes the identical fee.
+exports.getDeliveryQuote = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const cafeRes = await db.query(
+    `SELECT latitude, longitude,
+            COALESCE(delivery_enabled, false)   AS delivery_enabled,
+            COALESCE(delivery_radius_km, 5)     AS delivery_radius_km,
+            COALESCE(delivery_fee_base, 0)      AS delivery_fee_base,
+            COALESCE(delivery_fee_per_km, 0)    AS delivery_fee_per_km
+     FROM cafes WHERE slug = $1 AND is_active = true`,
+    [slug]
+  );
+  if (cafeRes.rows.length === 0) return fail(res, 'Café not found', 404);
+  if (!cafeRes.rows[0].delivery_enabled) return fail(res, 'This café does not offer delivery', 400);
+
+  const r = await resolveDelivery(cafeRes.rows[0], req.body || {});
+  if (r.error) return fail(res, r.error, 400);
+  ok(res, { delivery_fee: r.fee, distance_km: r.distanceKm, delivery_lat: r.lat, delivery_lng: r.lng });
+});
 
 exports.validateOrder = [
   body('customer_name').trim().notEmpty().withMessage('Your name is required'),
@@ -149,28 +207,21 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     // Delivery-specific validation
     let deliveryFee = 0;
+    let deliveryLat = null;
+    let deliveryLng = null;
     if (order_type === 'delivery') {
       if (!cafe.delivery_enabled) {
         await client.query('ROLLBACK');
         return fail(res, 'This café does not offer delivery', 400);
       }
-      // Validate customer is within delivery radius if café has coordinates and customer provided coords
-      if (cafe.latitude && cafe.longitude && delivery_lat && delivery_lng) {
-        const distKm = haversineKm(
-          parseFloat(cafe.latitude), parseFloat(cafe.longitude),
-          parseFloat(delivery_lat), parseFloat(delivery_lng)
-        );
-        if (distKm > parseFloat(cafe.delivery_radius_km)) {
-          await client.query('ROLLBACK');
-          return fail(res, `Delivery is only available within ${cafe.delivery_radius_km} km of this café`, 400);
-        }
-        // Calculate delivery fee: base + per_km * distance
-        deliveryFee = parseFloat(cafe.delivery_fee_base) +
-          parseFloat(cafe.delivery_fee_per_km) * distKm;
-        deliveryFee = parseFloat(deliveryFee.toFixed(2));
-      } else {
-        deliveryFee = parseFloat(cafe.delivery_fee_base) || 0;
+      const delivery = await resolveDelivery(cafe, req.body);
+      if (delivery.error) {
+        await client.query('ROLLBACK');
+        return fail(res, delivery.error, 400);
       }
+      deliveryFee = delivery.fee;
+      deliveryLat = delivery.lat;
+      deliveryLng = delivery.lng;
     }
 
     // Validate all items belong to this café and are available — multi-tenant scoped
@@ -364,6 +415,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
       });
     }
 
+    // Delivery minimum is on the item subtotal (before discounts, tax, fees)
+    if (order_type === 'delivery' && total < parseFloat(cafe.delivery_min_order || 0)) {
+      await client.query('ROLLBACK');
+      return fail(res, `Minimum order for delivery is ₹${parseFloat(cafe.delivery_min_order)}`, 400);
+    }
+
     // Apply best active offer or coupon code
     let offerId         = null;
     let platformOfferId = null;
@@ -481,8 +538,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
          order_type === 'delivery' ? (delivery_city || null) : null,
          order_type === 'delivery' ? (delivery_zipcode || null) : null,
          order_type === 'delivery' ? (delivery_phone || null) : null,
-         order_type === 'delivery' ? (delivery_lat || null) : null,
-         order_type === 'delivery' ? (delivery_lng || null) : null,
+         order_type === 'delivery' ? deliveryLat : null,
+         order_type === 'delivery' ? deliveryLng : null,
          order_type === 'delivery' ? (delivery_instructions || null) : null,
          deliveryFee || 0,
          order_type === 'delivery' ? 'pending' : null,
