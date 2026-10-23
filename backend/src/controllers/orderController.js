@@ -845,17 +845,20 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   if (status === 'paid' && fromStatus !== 'paid') {
     db.query(
-      `SELECT customer_phone, final_amount, platform_fee, razorpay_transfer_id, payment_mode
+      `SELECT customer_phone, final_amount, platform_fee, payment_verified, payment_mode
        FROM orders WHERE id = $1`, [id]
     ).then(async (fullOrder) => {
       if (!fullOrder.rows.length) return;
-      const { customer_phone, final_amount, platform_fee,
-              razorpay_transfer_id: transferId,
+      const { customer_phone, final_amount, platform_fee, payment_verified,
               payment_mode: dbPaymentMode } = fullOrder.rows[0];
 
       const commissionAmount = parseFloat(platform_fee || 0);
       const resolvedMode     = payment_mode || dbPaymentMode || 'cash';
-      const commissionStatus = transferId ? 'auto_deducted' : 'cash_due';
+      // Prepaid through DineVerse's Razorpay: the platform already holds the
+      // commission (Route pays the café only the net). Only money the café
+      // collected itself (cash/UPI/card at the counter) leaves commission due.
+      // Keying this off razorpay_transfer_id billed prepaid orders twice.
+      const commissionStatus = payment_verified ? 'auto_deducted' : 'cash_due';
 
       await db.query(
         `UPDATE orders
@@ -867,8 +870,8 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
       ).catch((e) => logger.warn('commission write failed: %s', e.message));
 
       logger.info(
-        'Order %s paid: ₹%s commission (%s%) — status=%s mode=%s',
-        id, commissionAmount, commissionRate, commissionStatus, resolvedMode
+        'Order %s paid: ₹%s commission — status=%s mode=%s',
+        id, commissionAmount, commissionStatus, resolvedMode
       );
 
       require('./loyaltyController').earnPoints(req.cafeId, id, customer_phone, final_amount);
@@ -1360,6 +1363,7 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   // Fetch and lock the order row — prevents duplicate payment processing under concurrent requests
   const payClient = await db.pool.connect();
   let updatedOrder;
+  let customerPhone;
   let cafeId;
   try {
     await payClient.query('BEGIN');
@@ -1419,11 +1423,12 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
        WHERE id = $2
        RETURNING id, order_number,
                  COALESCE(daily_order_number, order_number) AS daily_order_number,
-                 customer_name, table_number, order_type, status,
+                 customer_name, customer_phone, table_number, order_type, status,
                  total_amount, final_amount, platform_fee, platform_discount_amount, updated_at`,
       [razorpay_payment_id, id]
     );
-    updatedOrder = updated.rows[0];
+    // customer_phone is for loyalty only — never broadcast it to socket rooms
+    ({ customer_phone: customerPhone, ...updatedOrder } = updated.rows[0]);
 
     await payClient.query('COMMIT');
   } catch (err) {
@@ -1440,56 +1445,24 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     [id, 'pending']
   ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
 
-  // Razorpay Route transfer — send (amount − commission) to the café's linked account.
-  // Fire-and-forget: a failed transfer is logged and retried by admin; it never blocks
-  // the customer-facing payment confirmation.
-  (async () => {
-    try {
-      const cafeRow = await db.query(
-        `SELECT razorpay_account_id, razorpay_route_enabled FROM cafes WHERE id = $1`,
-        [cafeId]
-      );
-      const cafe = cafeRow.rows[0];
-      if (!cafe?.razorpay_route_enabled || !cafe?.razorpay_account_id) return; // no linked account yet
-
-      // Use the order's stored platform_fee — this is what the customer was charged
-      // and what's recorded in commission accounting. Recomputing from rate × final
-      // would double-count because final_amount already includes the platform fee.
-      const finalAmt       = parseFloat(updatedOrder.final_amount) || 0;
-      const platformFee    = parseFloat(updatedOrder.platform_fee || 0);
-      const platformCredit = parseFloat(updatedOrder.platform_discount_amount || 0);
-      const netPaise       = Math.round((finalAmt - platformFee + platformCredit) * 100);
-
-      if (netPaise <= 0) return;
-
-      // Transfer from this specific Razorpay payment to the café's linked account
-      const transfer = await razorpay.payments.transfer(razorpay_payment_id, {
-        transfers: [{
-          account:  cafe.razorpay_account_id,
-          amount:   netPaise,
-          currency: 'INR',
-          notes:    { order_id: id, cafe_id: cafeId, commission_rate: rate },
-        }],
-      });
-
-      const transferId = transfer?.items?.[0]?.id || null;
+  // Razorpay Route: the café's share is attached as a transfer when the
+  // Razorpay order is created (createOrderPayment), so Razorpay pays it out on
+  // capture. Do NOT create another transfer here — that would pay the café
+  // twice. Just record the transfer id for reconciliation (fire-and-forget).
+  razorpay.payments.fetchTransfer(razorpay_payment_id)
+    .then(async (t) => {
+      const transferId = t?.items?.[0]?.id;
       if (transferId) {
-        await db.query(
-          `UPDATE orders SET razorpay_transfer_id = $1 WHERE id = $2`,
-          [transferId, id]
-        );
-        logger.info('Razorpay transfer %s: order %s → café %s net ₹%d', transferId, id, cafeId, netPaise / 100);
+        await db.query('UPDATE orders SET razorpay_transfer_id = $1 WHERE id = $2', [transferId, id]);
+        logger.info('Razorpay Route transfer %s recorded for order %s', transferId, id);
       }
-    } catch (transferErr) {
-      // Log but never surface to customer — commission collected manually by admin
-      logger.error('Razorpay transfer failed for order %s: %s', id, transferErr.message);
-    }
-  })();
+    })
+    .catch((err) => logger.warn('Could not fetch Route transfer for payment %s: %s', razorpay_payment_id, err.message));
 
   // Credit loyalty points (fire-and-forget)
   require('./loyaltyController').earnPoints(
     cafeId, id,
-    updatedOrder.customer_phone || null,
+    customerPhone || null,
     updatedOrder.final_amount
   );
 

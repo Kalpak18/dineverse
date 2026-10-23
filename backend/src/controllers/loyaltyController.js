@@ -152,24 +152,40 @@ exports.earnPoints = async (cafeId, orderId, customerPhone, orderAmount) => {
     const earned = Math.floor(parseFloat(orderAmount) * ppr);
     if (earned <= 0) return;
 
-    await db.query(
-      `INSERT INTO customer_points (cafe_id, customer_phone, points_balance, total_earned, last_activity)
-       VALUES ($1,$2,$3,$3,NOW())
-       ON CONFLICT (cafe_id, customer_phone) DO UPDATE SET
-         points_balance = customer_points.points_balance + $3,
-         total_earned   = customer_points.total_earned + $3,
-         last_activity  = NOW()`,
-      [cafeId, customerPhone, earned]
-    );
-    await db.query(
-      `INSERT INTO loyalty_transactions (cafe_id, customer_phone, order_id, type, points, order_amount)
-       VALUES ($1,$2,$3,'earn',$4,$5)`,
-      [cafeId, customerPhone, orderId, earned, orderAmount]
-    );
-    await db.query(
-      `UPDATE orders SET loyalty_points_earned = $1 WHERE id = $2`,
-      [earned, orderId]
-    );
+    // Called on payment verify AND when the order is marked paid — the earn
+    // row is inserted first and is unique per order (migration 076), so the
+    // balance only moves once.
+    const client = await db.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const ins = await client.query(
+        `INSERT INTO loyalty_transactions (cafe_id, customer_phone, order_id, type, points, order_amount)
+         VALUES ($1,$2,$3,'earn',$4,$5)
+         ON CONFLICT (order_id) WHERE type = 'earn' DO NOTHING
+         RETURNING id`,
+        [cafeId, customerPhone, orderId, earned, orderAmount]
+      );
+      if (ins.rows.length === 0) { await client.query('ROLLBACK'); return; }
+      await client.query(
+        `INSERT INTO customer_points (cafe_id, customer_phone, points_balance, total_earned, last_activity)
+         VALUES ($1,$2,$3,$3,NOW())
+         ON CONFLICT (cafe_id, customer_phone) DO UPDATE SET
+           points_balance = customer_points.points_balance + $3,
+           total_earned   = customer_points.total_earned + $3,
+           last_activity  = NOW()`,
+        [cafeId, customerPhone, earned]
+      );
+      await client.query(
+        `UPDATE orders SET loyalty_points_earned = $1 WHERE id = $2`,
+        [earned, orderId]
+      );
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   } catch (e) {
     require('../utils/logger').warn('Failed to earn loyalty points: %s', e.message);
   }
