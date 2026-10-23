@@ -17,14 +17,68 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401 → clear token and logout.
+// ─── Session refresh ──────────────────────────────────────────
+// Access tokens are short-lived; the refresh token renews them. Single-flight
+// so parallel 401s (or a timer + a 401) share one /auth/refresh call — the
+// refresh token is single-use, so a second concurrent call would fail.
+let refreshPromise = null;
+
+export function clearSession() {
+  ['dineverse_token', 'dineverse_refresh_token', 'dineverse_role', 'dineverse_staff_role', 'dv_cafe_cache']
+    .forEach((k) => localStorage.removeItem(k));
+  window.dispatchEvent(new Event('auth:logout'));
+}
+
+// Resolves with the new access token. Rejects with { authFailed: true } only
+// when the server rejected the refresh token — network/5xx errors (e.g. a
+// Render cold start) reject without it and must NOT log the user out.
+export function refreshSession() {
+  if (refreshPromise) return refreshPromise;
+  const sent = localStorage.getItem('dineverse_refresh_token');
+  if (!sent) return Promise.reject({ authFailed: true });
+  refreshPromise = axios
+    .post(`${api.defaults.baseURL}/auth/refresh`, { refreshToken: sent }, { timeout: 20000 })
+    .then(({ data }) => {
+      localStorage.setItem('dineverse_token', data.token);
+      localStorage.setItem('dineverse_refresh_token', data.refreshToken);
+      return data.token;
+    })
+    .catch((err) => {
+      const status = err.response?.status;
+      if (status === 401 || status === 400) {
+        // Another tab may have rotated the token first — use theirs
+        if (localStorage.getItem('dineverse_refresh_token') !== sent) {
+          return localStorage.getItem('dineverse_token');
+        }
+        throw { authFailed: true };
+      }
+      throw err;
+    })
+    .finally(() => { refreshPromise = null; });
+  return refreshPromise;
+}
+
+const AUTH_ENDPOINTS = ['/auth/login', '/auth/refresh', '/auth/register', '/auth/create-account'];
+
+// On 401 → try the refresh token once, then retry the request. Log out only
+// if the refresh token itself is rejected.
 // On network error (no response) → retry GET requests once (safe, idempotent).
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      localStorage.removeItem('dineverse_token');
-      window.dispatchEvent(new Event('auth:logout'));
+  async (err) => {
+    const cfg = err.config;
+    if (err.response?.status === 401 && cfg && !cfg._authRetry &&
+        localStorage.getItem('dineverse_token') &&
+        !AUTH_ENDPOINTS.some((p) => cfg.url?.startsWith(p))) {
+      cfg._authRetry = true;
+      try {
+        const token = await refreshSession();
+        cfg.headers.Authorization = `Bearer ${token}`;
+        return api(cfg);
+      } catch (refreshErr) {
+        if (refreshErr?.authFailed) clearSession();
+        return Promise.reject(err);
+      }
     }
     // Single retry for GET requests on network failure (no response received)
     if (!err.response && err.config && !err.config._retry && err.config.method === 'get') {
@@ -42,7 +96,6 @@ export const createOwnerAccount = (data) => api.post('/auth/create-account', dat
 export const completeCafeSetup = (data) => api.post('/auth/complete-setup', data);
 export const registerCafe = (data) => api.post('/auth/register', data);
 export const loginCafe = (data) => api.post('/auth/login', data); // data: { identifier, password }
-export const refreshAuthToken = (refreshToken) => api.post('/auth/refresh', { refreshToken });
 export const checkSlugAvailability = (slug) => api.get('/auth/check-slug', { params: { slug } });
 export const getMe = () => api.get('/auth/me');
 export const updateProfile = (data) => api.patch('/auth/me', data);

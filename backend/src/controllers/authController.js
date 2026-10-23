@@ -56,6 +56,26 @@ const storeRefreshToken = async (cafeId, refreshToken, staffId = null) => {
   );
 };
 
+// Mint an owner access + refresh token for cafeId (a brand or one of its
+// outlets). The refresh token is bound to that café so a refresh keeps the
+// owner on the same outlet; the version comes from the root café so outlet
+// sessions die with the owner's password. Returns null if inactive.
+const issueOwnerSession = async (cafeId) => {
+  const r = await db.query(
+    `SELECT c.slug, root.id AS root_id, COALESCE(root.token_version, 1) AS token_version
+     FROM cafes c
+     JOIN cafes root ON root.id = COALESCE(c.parent_cafe_id, c.id)
+     WHERE c.id = $1 AND c.is_active = true AND root.is_active = true`,
+    [cafeId]
+  );
+  if (r.rows.length === 0) return null;
+  const { slug, root_id, token_version } = r.rows[0];
+  const token = generateToken(cafeId, slug, 'OWNER', null, root_id, null, token_version);
+  const refreshToken = generateRefreshToken();
+  await storeRefreshToken(cafeId, refreshToken);
+  return { token, refreshToken };
+};
+
 const validateRefreshToken = async (refreshToken) => {
   const result = await db.query(
     'SELECT cafe_id, staff_id FROM refresh_tokens WHERE token = $1 AND expires_at > NOW() AND revoked = FALSE',
@@ -216,9 +236,9 @@ exports.createAccount = asyncHandler(async (req, res) => {
   );
 
   const cafe = result.rows[0];
-  const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+  const { token, refreshToken } = await issueOwnerSession(cafe.id);
   logger.info('Owner account created: %s (%s)', cafe.email, cafe.id);
-  ok(res, { token, cafe, role: 'OWNER' }, 'Account created successfully', 201);
+  ok(res, { token, refreshToken, cafe, role: 'OWNER' }, 'Account created successfully', 201);
 });
 
 exports.validateCompleteSetup = [
@@ -326,9 +346,9 @@ exports.completeSetup = asyncHandler(async (req, res) => {
   }
 
   const cafe = result.rows[0];
-  const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+  const { token, refreshToken } = await issueOwnerSession(cafe.id);
   logger.info('Cafe setup completed: %s (%s)', cafe.name, cafe.slug);
-  ok(res, { token, cafe, role: 'OWNER' }, 'Cafe setup completed successfully');
+  ok(res, { token, refreshToken, cafe, role: 'OWNER' }, 'Cafe setup completed successfully');
 });
 
 // ─── Register ─────────────────────────────────────────────────
@@ -417,9 +437,9 @@ exports.register = asyncHandler(async (req, res) => {
     [cafe.id, 'Table 1', 'Table 2']
   ).catch(() => {});
 
-  const token = generateToken(cafe.id, cafe.slug, 'OWNER');
+  const { token, refreshToken } = await issueOwnerSession(cafe.id);
   logger.info('New café registered: %s (%s)', cafe.name, cafe.slug);
-  ok(res, { token, cafe }, 'Café registered successfully', 201);
+  ok(res, { token, refreshToken, cafe }, 'Café registered successfully', 201);
 });
 
 // ─── Login ────────────────────────────────────────────────────
@@ -457,9 +477,9 @@ exports.login = asyncHandler(async (req, res) => {
       if (!isValid) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
 
       const { password_hash, token_version, ...cafeData } = cafe;
-      const token = generateToken(cafe.id, cafe.slug, 'OWNER', null, null, null, token_version);
-      const refreshToken = generateRefreshToken();
-      await storeRefreshToken(cafe.id, refreshToken);
+      const session = await issueOwnerSession(cafe.id);
+      if (!session) return fail(res, 'Invalid credentials', 401, 'INVALID_CREDENTIALS');
+      const { token, refreshToken } = session;
       return ok(res, { token, refreshToken, cafe: cafeData, role: 'OWNER' }, 'Login successful');
     }
 
@@ -787,9 +807,9 @@ exports.switchOutlet = asyncHandler(async (req, res) => {
   if (target.rows.length === 0) return fail(res, 'Outlet not found or not authorized', 404);
 
   const outlet = target.rows[0];
-  const rootRes = await db.query('SELECT COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1', [rootId]);
-  const token = generateToken(outlet.id, outlet.slug, 'OWNER', null, rootId, null, rootRes.rows[0]?.token_version || 1);
-  ok(res, { token, cafe_id: outlet.id, slug: outlet.slug, name: outlet.name });
+  const session = await issueOwnerSession(outlet.id);
+  if (!session) return fail(res, 'Outlet not found or not authorized', 404);
+  ok(res, { ...session, cafe_id: outlet.id, slug: outlet.slug, name: outlet.name });
 });
 
 // ─── Forgot Password — send reset OTP via email (Brevo SMTP) ──
@@ -926,6 +946,7 @@ exports.refreshToken = asyncHandler(async (req, res) => {
   if (!cafeData) return fail(res, 'Invalid or expired refresh token', 401);
 
   let newToken;
+  let newRefreshToken;
   if (cafeData.staff_id) {
     // Staff session — re-mint STAFF with the current role, and only while
     // both the staff account and the café are still active.
@@ -942,22 +963,16 @@ exports.refreshToken = asyncHandler(async (req, res) => {
     }
     const staff = staffResult.rows[0];
     newToken = generateToken(cafeData.cafe_id, staff.slug, 'STAFF', cafeData.staff_id, null, staff.staff_role, staff.token_version);
+    newRefreshToken = generateRefreshToken();
+    await storeRefreshToken(cafeData.cafe_id, newRefreshToken, cafeData.staff_id);
   } else {
-    // Get cafe details for token generation
-    const cafeResult = await db.query(
-      'SELECT slug, COALESCE(token_version, 1) AS token_version FROM cafes WHERE id = $1 AND is_active = true',
-      [cafeData.cafe_id]
-    );
-    if (cafeResult.rows.length === 0) return fail(res, 'Account not found or deactivated', 401);
-
-    const cafe = cafeResult.rows[0];
-    newToken = generateToken(cafeData.cafe_id, cafe.slug, 'OWNER', null, null, null, cafe.token_version);
+    // Same café (outlet stays outlet), current root version
+    const session = await issueOwnerSession(cafeData.cafe_id);
+    if (!session) return fail(res, 'Account not found or deactivated', 401);
+    ({ token: newToken, refreshToken: newRefreshToken } = session);
   }
 
-  // Rotate refresh token, keeping it bound to the same principal
-  const newRefreshToken = generateRefreshToken();
-  await storeRefreshToken(cafeData.cafe_id, newRefreshToken, cafeData.staff_id);
-  await revokeRefreshToken(refreshToken); // Revoke old one
+  await revokeRefreshToken(refreshToken); // Rotate: old one is single-use
 
   ok(res, { token: newToken, refreshToken: newRefreshToken }, 'Token refreshed successfully');
 });

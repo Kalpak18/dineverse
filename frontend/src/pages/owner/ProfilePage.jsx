@@ -241,6 +241,7 @@ export default function ProfilePage() {
     try {
       const { data } = await switchOutlet(id);
       localStorage.setItem('dineverse_token', data.token);
+      if (data.refreshToken) localStorage.setItem('dineverse_refresh_token', data.refreshToken);
       updateCafe({ id: data.cafe_id, slug: data.slug, name: data.name });
       window.location.href = '/owner/dashboard';
     } catch {

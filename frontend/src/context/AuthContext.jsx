@@ -1,13 +1,20 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { loginCafe, registerCafe, createOwnerAccount, completeCafeSetup, getMe, refreshAuthToken } from '../services/api';
+import { loginCafe, registerCafe, createOwnerAccount, completeCafeSetup, getMe, refreshSession, clearSession } from '../services/api';
 
 const AuthContext = createContext(null);
 
 const CAFE_CACHE_KEY = 'dv_cafe_cache';
 
-// Module-level mutex: if multiple tabs/components trigger a refresh simultaneously,
-// they all await the same promise instead of firing parallel refresh requests.
-let _refreshPromise = null;
+// Renew the access token this long before it expires, so idle screens (KDS,
+// waiter tablet) never present an expired token on socket reconnect.
+const REFRESH_AHEAD_MS = 5 * 60 * 1000;
+
+function tokenExpiresAt(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+    return payload.exp * 1000;
+  } catch { return 0; }
+}
 
 function readCafeCache() {
   try { return JSON.parse(localStorage.getItem(CAFE_CACHE_KEY) || 'null'); } catch { return null; }
@@ -27,62 +34,37 @@ export function AuthProvider({ children }) {
   const [staffInfo, setStaffInfo] = useState(null);   // { id, name, email }
   const [loading,   setLoading]   = useState(true);   // always true until getMe() confirms the token
 
+  const applyMe = (data) => {
+    setCafe(data.cafe);
+    writeCafeCache(data.cafe);
+    const storedRole = localStorage.getItem('dineverse_role') || 'OWNER';
+    setRole(storedRole);
+    if (storedRole === 'STAFF') {
+      const sr = data.staffRole || localStorage.getItem('dineverse_staff_role') || null;
+      setStaffRole(sr);
+      setStaffInfo(data.staff || null);
+    }
+  };
+
   const loadStoredAuth = useCallback(async () => {
     const token = localStorage.getItem('dineverse_token');
     if (!token) { setLoading(false); return; }
 
     try {
+      // An expired access token is renewed by the api.js 401 interceptor
       const { data } = await getMe();
-      setCafe(data.cafe);
-      writeCafeCache(data.cafe);
-      const storedRole = localStorage.getItem('dineverse_role') || 'OWNER';
-      setRole(storedRole);
-      if (storedRole === 'STAFF') {
-        const sr = data.staffRole || localStorage.getItem('dineverse_staff_role') || null;
-        setStaffRole(sr);
-        setStaffInfo(data.staff || null);
-      }
+      applyMe(data);
     } catch (error) {
-      // Try to refresh token if access token is expired — use mutex to prevent
-      // parallel refresh attempts when multiple hooks call loadStoredAuth at once.
-      const refreshToken = localStorage.getItem('dineverse_refresh_token');
-      if (refreshToken) {
-        try {
-          if (!_refreshPromise) {
-            _refreshPromise = refreshAuthToken(refreshToken).finally(() => { _refreshPromise = null; });
-          }
-          const { data } = await _refreshPromise;
-          localStorage.setItem('dineverse_token', data.token);
-          localStorage.setItem('dineverse_refresh_token', data.refreshToken);
-          // Retry getMe with new token
-          const { data: meData } = await getMe();
-          setCafe(meData.cafe);
-          writeCafeCache(meData.cafe);
-          const storedRole = localStorage.getItem('dineverse_role') || 'OWNER';
-          setRole(storedRole);
-          if (storedRole === 'STAFF') {
-            const sr = meData.staffRole || localStorage.getItem('dineverse_staff_role') || null;
-            setStaffRole(sr);
-            setStaffInfo(meData.staff || null);
-          }
-        } catch (refreshError) {
-          // Refresh failed, logout
-          localStorage.removeItem('dineverse_token');
-          localStorage.removeItem('dineverse_refresh_token');
-          localStorage.removeItem('dineverse_role');
-          localStorage.removeItem('dineverse_staff_role');
-          clearCafeCache();
-          setCafe(null);
-          setRole(null);
-        }
-      } else {
-        // No refresh token, logout
-        localStorage.removeItem('dineverse_token');
-        localStorage.removeItem('dineverse_role');
-        localStorage.removeItem('dineverse_staff_role');
+      if (error.response?.status === 401) {
+        // Refresh token rejected too — api.js already cleared the session
         clearCafeCache();
         setCafe(null);
         setRole(null);
+      } else {
+        // Network error, timeout or 5xx (e.g. Render cold start): stay logged
+        // in on the cached café rather than dropping an owner mid-shift.
+        const sr = localStorage.getItem('dineverse_staff_role');
+        if (sr) setStaffRole(sr);
       }
     } finally {
       setLoading(false);
@@ -101,6 +83,31 @@ export function AuthProvider({ children }) {
     window.addEventListener('auth:logout', handleLogout);
     return () => window.removeEventListener('auth:logout', handleLogout);
   }, [loadStoredAuth]);
+
+  // Proactive renewal while logged in — checked every minute and whenever the
+  // tab becomes visible or the network comes back (sleeping tablets).
+  useEffect(() => {
+    if (!cafe) return;
+    const check = () => {
+      const token = localStorage.getItem('dineverse_token');
+      if (!token || !localStorage.getItem('dineverse_refresh_token')) return;
+      if (tokenExpiresAt(token) - Date.now() < REFRESH_AHEAD_MS) {
+        refreshSession().catch((err) => {
+          if (err?.authFailed) clearSession();
+        });
+      }
+    };
+    check();
+    const id = setInterval(check, 60 * 1000);
+    const onVisible = () => { if (document.visibilityState === 'visible') check(); };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', check);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', check);
+    };
+  }, [cafe]);
 
   const login = async (identifier, password) => {
     const { data } = await loginCafe({ identifier, password });
@@ -126,6 +133,7 @@ export function AuthProvider({ children }) {
   const createAccount = async ({ email, password, emailVerifiedToken }) => {
     const { data } = await createOwnerAccount({ email, password, emailVerifiedToken });
     localStorage.setItem('dineverse_token', data.token);
+    if (data.refreshToken) localStorage.setItem('dineverse_refresh_token', data.refreshToken);
     localStorage.setItem('dineverse_role', data.role || 'OWNER');
     setCafe(data.cafe);
     writeCafeCache(data.cafe);
@@ -139,6 +147,7 @@ export function AuthProvider({ children }) {
   const completeSetup = async (formData) => {
     const { data } = await completeCafeSetup(formData);
     localStorage.setItem('dineverse_token', data.token);
+    if (data.refreshToken) localStorage.setItem('dineverse_refresh_token', data.refreshToken);
     localStorage.setItem('dineverse_role', data.role || 'OWNER');
     setCafe(data.cafe);
     writeCafeCache(data.cafe);
@@ -151,6 +160,7 @@ export function AuthProvider({ children }) {
   const register = async (formData) => {
     const { data } = await registerCafe(formData);
     localStorage.setItem('dineverse_token', data.token);
+    if (data.refreshToken) localStorage.setItem('dineverse_refresh_token', data.refreshToken);
     localStorage.setItem('dineverse_role', 'OWNER');
     setCafe(data.cafe);
     writeCafeCache(data.cafe);

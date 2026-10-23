@@ -93,6 +93,7 @@ function OwnerLayoutInner() {
     try {
       const { data } = await switchOutlet(id);
       localStorage.setItem('dineverse_token', data.token);
+      if (data.refreshToken) localStorage.setItem('dineverse_refresh_token', data.refreshToken);
       window.location.href = '/owner/dashboard';
     } catch {
       toast.error('Could not switch outlet');
