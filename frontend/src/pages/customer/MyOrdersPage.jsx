@@ -200,8 +200,21 @@ export default function MyOrdersPage() {
 
   const handleReorder = (order) => {
     clearCart();
-    (order.items || []).forEach((oi) => {
-      const item = { id: oi.menu_item_id, name: oi.item_name, price: oi.unit_price };
+    (order.items || []).filter((oi) => oi.item_status !== 'cancelled').forEach((oi) => {
+      // Same cart-line shape MenuPage builds, so variant + add-ons are kept
+      const mods = Array.isArray(oi.selected_modifiers) ? oi.selected_modifiers : [];
+      const hasOptions = oi.variant_id || mods.length > 0;
+      const unitPrice = parseFloat(oi.unit_price);
+      const item = hasOptions
+        ? {
+            id: `${oi.menu_item_id}:${oi.variant_id || 'base'}:${mods.map((m) => m.option_id).join(',')}`,
+            menu_item_id: oi.menu_item_id,
+            name: `${oi.item_name}${oi.variant_name ? ` (${oi.variant_name})` : ''}`,
+            price: unitPrice, unit_price: unitPrice,
+            variant_id: oi.variant_id || null, variant_name: oi.variant_name || null,
+            selected_modifiers: mods, modifier_total: parseFloat(oi.modifier_total || 0),
+          }
+        : { id: oi.menu_item_id, name: oi.item_name, price: unitPrice };
       for (let q = 0; q < (oi.quantity || 1); q++) addItem(item);
     });
     toast.success('Items added to cart — review before ordering');
