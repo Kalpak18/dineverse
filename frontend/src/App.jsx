@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation, Link } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import { useAdminAuth } from './context/AdminAuthContext';
 
@@ -158,11 +158,12 @@ export default function App() {
   return (
     <>
       <InstallBanner />
+      {/* Always mounted (not a catch-all route) so Electron deep links work on
+          every page and the real 404 route below can match */}
+      <ElectronBridge />
       {/* Single Suspense boundary: shows a spinner while any lazy chunk loads */}
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>
-          <Route path="*" element={<ElectronBridge />} />
-
           {/* Landing + public */}
           <Route path="/"        element={<LandingPage />} />
           <Route path="/explore" element={<ExplorePage />} />
@@ -258,8 +259,9 @@ export default function App() {
           </Route>
 
           <Route path="*" element={
-            <div className="flex items-center justify-center min-h-screen">
+            <div className="flex flex-col items-center justify-center min-h-screen gap-3">
               <p className="text-gray-500 text-lg">Page not found</p>
+              <Link to="/" className="text-brand-600 font-semibold text-sm">Go to home</Link>
             </div>
           } />
         </Routes>
