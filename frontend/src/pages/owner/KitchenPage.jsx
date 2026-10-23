@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
+import { getKitchenOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useAuth } from '../../context/AuthContext';
-import { useSocketIO } from '../../hooks/useSocketIO';
+import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/useSocketIO';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { getApiError } from '../../utils/apiError';
@@ -79,9 +79,11 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width:380,height=580,toolbar=0,menubar=0,scrollbars=0');
-  if (w) { w.document.write(html); w.document.close(); }
-  else alert('Pop-up blocked. Allow pop-ups to print serving slips.');
+  const w = window.open('', '_blank', 'width=380,height=580,toolbar=0,menubar=0,scrollbars=0');
+  if (!w) return false; // caller shows a toast — alert() would freeze the KDS
+  w.document.write(html);
+  w.document.close();
+  return true;
 }
 
 const OVERDUE_MS = 20 * 60 * 1000;       // 20 min = overdue
@@ -824,7 +826,11 @@ function usePersisted(key, defaultVal) {
     try { const s = localStorage.getItem(key); return s !== null ? JSON.parse(s) : defaultVal; }
     catch { return defaultVal; }
   });
-  const set = (v) => { setVal(v); try { localStorage.setItem(key, JSON.stringify(v)); } catch {} };
+  const set = (v) => setVal((prev) => {
+    const next = typeof v === 'function' ? v(prev) : v; // supports set((s) => !s)
+    try { localStorage.setItem(key, JSON.stringify(next)); } catch {}
+    return next;
+  });
   return [val, set];
 }
 
@@ -839,7 +845,7 @@ export default function KitchenPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [soundEnabled, setSoundEnabled]   = usePersisted('kds_sound', true);
+  const [soundEnabled, setSoundEnabled]   = usePersisted(SOUND_PREF_KEY, true); // shared with the bell menu
   const [fullscreen, setFullscreen]       = useState(false);
   const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined');
   const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified');
@@ -864,28 +870,11 @@ export default function KitchenPage() {
   const [pinnedIds, setPinnedIds]          = useState(null); // null = no pin (show all matching)
   const now = useTimer();
 
-  const playChime = useCallback(() => {
-    if (!soundEnabled) return;
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [0, 150, 300].forEach((delay) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = 880;
-        gain.gain.setValueAtTime(0.3, ctx.currentTime + delay / 1000);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay / 1000 + 0.3);
-        osc.start(ctx.currentTime + delay / 1000);
-        osc.stop(ctx.currentTime + delay / 1000 + 0.3);
-      });
-    } catch { /* audio unavailable */ }
-  }, [soundEnabled]);
-
   const fetchOrders = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
-      const { data } = await getOrders({ limit: 100 });
+      // Dedicated feed: every active order (no page limit) with veg/prep fields
+      const { data } = await getKitchenOrders();
       setOrders(data.orders.filter((o) => KITCHEN_STATUSES.includes(o.status)));
       if (isRefresh) toast('Orders refreshed', { icon: '✓', style: { background: '#1f2937', color: '#fff' } });
     } catch (err) { toast.error(`Couldn't load orders: ${getApiError(err)}`); }
@@ -903,7 +892,7 @@ export default function KitchenPage() {
           const exists = prev.find((o) => o.id === order.id);
           return exists ? prev.map((o) => o.id === order.id ? { ...o, ...order } : o) : [order, ...prev];
         });
-        playChime();
+        playNotificationSound(); // shared player: honours mute, one sound per order
         toast('New order!', { icon: '🔔', style: { background: '#1f2937', color: '#fff' } });
       }
     },
@@ -912,8 +901,18 @@ export default function KitchenPage() {
         if (!KITCHEN_STATUSES.includes(updated.status)) return prev.filter((o) => o.id !== updated.id);
         return prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o);
       });
-    }
+    },
+    undefined,
+    // Orders placed during a Wi-Fi blip never arrive as events — refetch
+    { onReconnect: () => fetchOrders() }
   );
+
+  // One serving slip per order when it becomes ready — never one per item
+  const printReadySlip = (order) => {
+    if (!printKitchenToken(order, cafe?.name)) {
+      toast.error('Pop-up blocked — allow pop-ups for this site to print serving slips');
+    }
+  };
 
   const handleAdvance = async (order) => {
     const next = kitchenNext(order.status, order.order_type);
@@ -925,10 +924,12 @@ export default function KitchenPage() {
       } else {
         setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: next } : o));
       }
+      if (next === 'ready') printReadySlip(order);
     } catch (err) { toast.error(`Couldn't update order: ${getApiError(err)}`); }
   };
 
   const handleItemUpdate = async (orderId, itemId, status) => {
+    const prevStatus = orders.find((o) => o.id === orderId)?.status;
     try {
       const { data } = await updateItemStatus(orderId, itemId, status);
       setOrders((prev) => {
@@ -936,16 +937,16 @@ export default function KitchenPage() {
         return prev.map((o) => (o.id === orderId ? data.order : o));
       });
 
-      // When item starts cooking, prompt kitchen for prep time
+      // Server starts the ETA from the item's default prep time; only ask when
+      // the menu item has none
       if (status === 'preparing') {
         const item = (data.order.items || []).find((i) => i.id === itemId);
-        const defaultMins = item?.default_prep_mins || null;
-        setPrepInput({ orderId, itemId, defaultMins });
+        if (!item?.prep_duration_mins) setPrepInput({ orderId, itemId, defaultMins: null });
       }
 
-      // Print serving slip when item is marked ready
-      if (status === 'ready' && data.order.kitchen_mode === 'individual') {
-        printKitchenToken(data.order, cafe?.name, [itemId]);
+      // One slip when the last item makes the whole order ready
+      if (status === 'ready' && data.order.status === 'ready' && prevStatus !== 'ready') {
+        printReadySlip(data.order);
       }
     } catch (err) {
       toast.error('Failed to update item status');
@@ -989,6 +990,7 @@ export default function KitchenPage() {
       await Promise.all(toAdvance.map(async (order) => {
         const next = kitchenNext(order.status, order.order_type);
         await updateOrderStatus(order.id, next);
+        if (next === 'ready') printReadySlip(order);
         setOrders((prev) =>
           KITCHEN_STATUSES.includes(next)
             ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
@@ -1066,7 +1068,9 @@ export default function KitchenPage() {
         if (!KITCHEN_STATUSES.includes(last.data.order.status)) return prev.filter((o) => o.id !== orderId);
         return prev.map((o) => (o.id === orderId ? last.data.order : o));
       });
-      printKitchenToken(last.data.order, cafe?.name, Array.from(selected));
+      if (!printKitchenToken(last.data.order, cafe?.name, Array.from(selected))) {
+        toast.error('Pop-up blocked — allow pop-ups for this site to print serving slips');
+      }
       setSelectedItems((prev) => ({ ...prev, [orderId]: new Set() }));
       toast.success(`${selected.size} item${selected.size > 1 ? 's' : ''} served`);
     } catch (err) {

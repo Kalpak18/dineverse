@@ -18,7 +18,7 @@ function getAudioContext() {
  * One socket per mounted component; it is disconnected on unmount (or when
  * cafeId changes) so navigating between owner pages doesn't pile up sockets.
  */
-export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation) {
+export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation, { onReconnect } = {}) {
   const socketRef = useRef(null);
   const onNewOrderRef = useRef(onNewOrder);
   const onOrderUpdatedRef = useRef(onOrderUpdated);
@@ -27,6 +27,8 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
   onNewOrderRef.current = onNewOrder;
   onOrderUpdatedRef.current = onOrderUpdated;
   onNewReservationRef.current = onNewReservation;
+  const onReconnectRef = useRef(onReconnect);
+  onReconnectRef.current = onReconnect;
 
   useEffect(() => {
     if (!cafeId) return;
@@ -59,8 +61,12 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
       if (onNewReservationRef.current) onNewReservationRef.current(reservation);
     };
 
+    // Events emitted while the socket was down are lost — let the page refetch
+    let connectedOnce = socket.connected;
     const handleConnect = () => {
       socket.emit('join_cafe', cafeId); // rejoin room on reconnect
+      if (connectedOnce && onReconnectRef.current) onReconnectRef.current();
+      connectedOnce = true;
     };
 
     const handleConnectError = (error) => {
@@ -127,8 +133,19 @@ export const SOUND_TUNES = {
 };
 
 const TUNE_KEY = 'dv_sound_tune';
+// Single on/off preference for every new-order sound (bell menu + KDS toggle)
+export const SOUND_PREF_KEY = 'dv_sound';
+let lastPlayedAt = 0;
 
-export function playNotificationSound(tuneId) {
+// Several listeners hear the same new order (page hook, notification bell(s),
+// KDS); the debounce makes that one sound. preview bypasses mute + debounce
+// for the tune picker in Profile.
+export function playNotificationSound(tuneId, { preview = false } = {}) {
+  if (!preview) {
+    if (localStorage.getItem(SOUND_PREF_KEY) === 'false') return;
+    if (Date.now() - lastPlayedAt < 1500) return;
+    lastPlayedAt = Date.now();
+  }
   try {
     const ctx = getAudioContext();
     const id = tuneId || localStorage.getItem(TUNE_KEY) || 'classic';

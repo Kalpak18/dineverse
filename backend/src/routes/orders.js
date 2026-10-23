@@ -4,7 +4,7 @@ const checkSubscription = require('../middleware/checkSubscription');
 const requireRole = require('../middleware/requireRole');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
-  validateOrder, createOrder, getDeliveryQuote,
+  validateOrder, createOrder, getDeliveryQuote, getKitchenOrders,
   getOrders, getOrderById, updateOrderStatus,
   getDashboardStats,
   getOrderStatus, customerCancelOrder,
@@ -48,6 +48,7 @@ router.get('/stats', authenticate, checkSubscription, requireRole('manager'), ge
 
 // All features available to every café — no premium gate
 router.get('/',                              authenticate, checkSubscription, getOrders);
+router.get('/kitchen',                       authenticate, checkSubscription, getKitchenOrders);
 router.get('/:id',                           authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status',                  authenticate, checkSubscription, updateOrderStatus);
 router.patch('/:id/kitchen-mode',            authenticate, checkSubscription, setKitchenMode);

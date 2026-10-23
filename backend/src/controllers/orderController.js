@@ -777,6 +777,48 @@ exports.getOrders = asyncHandler(async (req, res) => {
   });
 });
 
+// ─── Owner/Staff: kitchen display feed ────────────────────────
+// Every active order (no page limit — on a busy day the generic list's limit
+// pushed live orders off the screen), with the item fields the KDS needs.
+const KITCHEN_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
+exports.getKitchenOrders = asyncHandler(async (req, res) => {
+  const ordersResult = await db.query(
+    `SELECT o.id, o.order_number,
+            COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
+            o.customer_name, o.table_number,
+            o.order_type, o.status, o.kitchen_mode, o.accepted,
+            o.total_amount, o.final_amount, o.payment_verified,
+            o.notes, o.created_at, o.updated_at
+     FROM orders o
+     WHERE o.cafe_id = $1 AND o.status = ANY($2)
+     ORDER BY o.created_at ASC
+     LIMIT 1000`,
+    [req.cafeId, KITCHEN_STATUSES]
+  );
+  const orderIds = ordersResult.rows.map((o) => o.id);
+  const itemsResult = orderIds.length > 0
+    ? await db.query(
+        `SELECT oi.id, oi.order_id, oi.menu_item_id, oi.item_name, oi.quantity, oi.unit_price, oi.subtotal,
+                oi.variant_id, oi.variant_name, oi.selected_modifiers, oi.modifier_total,
+                oi.item_status, oi.accepted, oi.cancellation_reason,
+                COALESCE(oi.sort_order, 0) AS sort_order,
+                oi.preparing_at, oi.ready_at, oi.served_at, oi.cancelled_at,
+                oi.prep_started_at, oi.prep_duration_mins,
+                mi.is_veg, mi.default_prep_mins
+         FROM order_items oi
+         LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+         WHERE oi.order_id = ANY($1)
+         ORDER BY oi.sort_order ASC, oi.id ASC`,
+        [orderIds]
+      )
+    : { rows: [] };
+  const itemsByOrderId = {};
+  for (const item of itemsResult.rows) {
+    (itemsByOrderId[item.order_id] ||= []).push(item);
+  }
+  ok(res, { orders: ordersResult.rows.map((o) => ({ ...o, items: itemsByOrderId[o.id] || [] })) });
+});
+
 // ─── Owner/Staff: get single order ────────────────────────────
 exports.getOrderById = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -882,6 +924,25 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     return fail(res, 'Order not found', 404);
   }
   const fromStatus = result.rows[0].prev_status;
+
+  // Move items forward with the order (never backwards, never cancelled ones),
+  // so a Ready order doesn't still show its items as Pending on the KDS.
+  const ITEM_STATUS_FOR = { preparing: 'preparing', ready: 'ready', served: 'served', paid: 'served' };
+  const itemStatus = ITEM_STATUS_FOR[status];
+  if (itemStatus) {
+    await client.query(
+      `UPDATE order_items SET
+         item_status  = $1,
+         preparing_at = COALESCE(preparing_at, NOW()),
+         ready_at     = CASE WHEN $1 IN ('ready', 'served') THEN COALESCE(ready_at, NOW()) ELSE ready_at END,
+         served_at    = CASE WHEN $1 = 'served' THEN COALESCE(served_at, NOW()) ELSE served_at END
+       WHERE order_id = $2
+         AND item_status <> 'cancelled'
+         AND array_position(ARRAY['pending','preparing','ready','served']::text[], item_status::text)
+           < array_position(ARRAY['pending','preparing','ready','served']::text[], $1::text)`,
+      [itemStatus, id]
+    );
+  }
 
   await client.query('COMMIT');
 
@@ -1602,7 +1663,8 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   );
   if (orderCheck.rows.length === 0) return fail(res, 'Order not found', 404);
   const order = orderCheck.rows[0];
-  if (order.kitchen_mode !== 'individual') return fail(res, 'Order is not in individual mode');
+  // Items can be ticked in either kitchen mode — order-level advances cascade
+  // to items (updateOrderStatus), so both stay in sync.
   if (['paid', 'cancelled'].includes(order.status)) return fail(res, 'Order is already completed');
 
   // Fetch current item status to enforce forward-only transitions
@@ -1625,8 +1687,15 @@ exports.updateItemStatus = asyncHandler(async (req, res) => {
   // Set the relevant timestamp column alongside item_status
   const tsMap = { preparing: 'preparing_at', ready: 'ready_at', served: 'served_at' };
   const tsCol = tsMap[status];
+  // Starting to cook starts the ETA timer from the item's default prep time,
+  // so the kitchen isn't prompted for every item (it can still override).
+  const prepClause = status === 'preparing'
+    ? `, prep_started_at = NOW(),
+         prep_duration_mins = COALESCE(prep_duration_mins,
+           (SELECT default_prep_mins FROM menu_items WHERE id = order_items.menu_item_id))`
+    : '';
   const itemResult = await db.query(
-    `UPDATE order_items SET item_status = $1${tsCol ? `, ${tsCol} = NOW()` : ''}
+    `UPDATE order_items SET item_status = $1${tsCol ? `, ${tsCol} = NOW()` : ''}${prepClause}
      WHERE id = $2 AND order_id = $3 RETURNING id`,
     [status, itemId, id]
   );

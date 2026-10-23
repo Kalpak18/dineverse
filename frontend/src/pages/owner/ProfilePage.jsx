@@ -456,7 +456,7 @@ export default function ProfilePage() {
                     onClick={() => {
                       setSelectedTune(id);
                       localStorage.setItem('dv_sound_tune', id);
-                      playNotificationSound(id);
+                      playNotificationSound(id, { preview: true });
                     }}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${
                       selectedTune === id

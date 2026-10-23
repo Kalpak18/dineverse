@@ -253,6 +253,7 @@ export const getPresignedUrl = (contentType, size, uploadType) =>
 
 // ─── Orders (Owner) ───────────────────────────────────────────
 export const getOrders = (params) => api.get('/orders', { params });
+export const getKitchenOrders = () => api.get('/orders/kitchen');
 export const getOrderById = (id) => api.get(`/orders/${id}`);
 export const updateOrderStatus = (id, status, cash_received = null, cancellation_reason = null, payment_mode = null) =>
   api.patch(`/orders/${id}/status`, {

@@ -399,6 +399,14 @@ server.on('error', (err) => {
 // ─── Graceful Shutdown ────────────────────────────────────────
 const gracefulShutdown = (signal) => {
   logger.info('%s received — shutting down gracefully', signal);
+  // Drop realtime connections now: open WebSockets kept server.close() waiting
+  // (up to the 30 s timeout) while KDS screens stayed attached to this dying
+  // instance during a deploy and missed new orders. A transport close makes
+  // clients reconnect at once — to the new instance — and refetch.
+  // (Not io.disconnectSockets(): a server-initiated disconnect stops clients
+  // from auto-reconnecting.)
+  io.engine.close();
+  server.closeIdleConnections?.();
   server.close(async () => {
     try {
       await db.pool.end();
