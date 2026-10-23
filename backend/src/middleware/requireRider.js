@@ -28,7 +28,7 @@ module.exports = async function requireRider(req, res, next) {
       `SELECT cr.id, cr.cafe_id, COALESCE(cr.token_version, 1) AS token_version,
               c.delivery_enabled
        FROM cafe_riders cr
-       JOIN cafes c ON c.id = cr.cafe_id
+       LEFT JOIN cafes c ON c.id = cr.cafe_id  -- self-registered riders have no café
        WHERE cr.id = $1 AND cr.is_active = true`,
       [decoded.riderId]
     );
@@ -39,7 +39,7 @@ module.exports = async function requireRider(req, res, next) {
     if ((decoded.tv ?? 1) !== dbVer) {
       return res.status(401).json({ success: false, message: 'Session expired — please log in again' });
     }
-    if (!r.rows[0].delivery_enabled) {
+    if (r.rows[0].cafe_id && !r.rows[0].delivery_enabled) {
       return res.status(403).json({ success: false, message: 'Café delivery is disabled' });
     }
 

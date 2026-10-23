@@ -54,7 +54,7 @@ exports.getMyJobs = asyncHandler(async (req, res) => {
        AND o.order_type = 'delivery'
        AND o.delivery_status = ANY($2)
        AND c.delivery_enabled = true
-       AND ($3::int IS NULL OR o.cafe_id = $3)
+       AND ($3::uuid IS NULL OR o.cafe_id = $3)
      ORDER BY o.created_at ASC`,
     [req.riderId, ACTIVE_STATES, req.cafeId || null]
   );
@@ -77,11 +77,13 @@ exports.getJob = asyncHandler(async (req, res) => {
      FROM orders o
      JOIN cafes c ON c.id = o.cafe_id
      WHERE o.id = $1 AND o.rider_id = $2
-       AND ($3::int IS NULL OR o.cafe_id = $3)`,
+       AND ($3::uuid IS NULL OR o.cafe_id = $3)`,
     [id, req.riderId, req.cafeId || null]
   );
   if (!result.rows.length) return fail(res, 'Job not found', 404);
-  ok(res, { job: result.rows[0] });
+  // o.* — drop secrets that would let the rider act as the customer
+  const { customer_token, ...job } = result.rows[0];
+  ok(res, { job });
 });
 
 // ─── PATCH /api/rider/jobs/:id/status ─────────────────────────
@@ -96,7 +98,7 @@ exports.updateJobStatus = asyncHandler(async (req, res) => {
   const cur = await db.query(
     `SELECT id, delivery_status, cafe_id FROM orders
      WHERE id = $1 AND rider_id = $2
-       AND ($3::int IS NULL OR cafe_id = $3)`,
+       AND ($3::uuid IS NULL OR cafe_id = $3)`,
     [id, req.riderId, req.cafeId || null]
   );
   if (!cur.rows.length) return fail(res, 'Job not found or not assigned to you', 404);
@@ -149,7 +151,7 @@ exports.pingLocation = asyncHandler(async (req, res) => {
      WHERE rider_id = $3
        AND order_type = 'delivery'
        AND delivery_status = ANY($4)
-       AND ($5::int IS NULL OR cafe_id = $5)
+       AND ($5::uuid IS NULL OR cafe_id = $5)
      RETURNING id`,
     [lat, lng, req.riderId, ACTIVE_STATES, req.cafeId || null]
   );

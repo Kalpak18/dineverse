@@ -41,7 +41,7 @@ exports.sendOtp = asyncHandler(async (req, res) => {
   const r = await db.query(
     `SELECT cr.id, cr.cafe_id, cr.is_active, c.delivery_enabled
      FROM cafe_riders cr
-     JOIN cafes c ON c.id = cr.cafe_id
+     LEFT JOIN cafes c ON c.id = cr.cafe_id  -- self-registered riders have no café
      WHERE LOWER(cr.email) = $1 AND cr.is_active = true
      LIMIT 1`,
     [lower]
@@ -50,7 +50,7 @@ exports.sendOtp = asyncHandler(async (req, res) => {
     // Don't leak which emails exist — generic message
     return fail(res, 'No active rider account found for this email. Ask your café to add you.', 404);
   }
-  if (!r.rows[0].delivery_enabled) {
+  if (r.rows[0].cafe_id && !r.rows[0].delivery_enabled) {
     return fail(res, 'Your café has not enabled delivery yet. Ask the owner to enable it from Profile → Delivery.', 403);
   }
 
@@ -92,14 +92,14 @@ exports.verifyOtp = asyncHandler(async (req, res) => {
   const r = await db.query(
     `SELECT cr.*, c.delivery_enabled, c.name AS cafe_name, c.slug AS cafe_slug
      FROM cafe_riders cr
-     JOIN cafes c ON c.id = cr.cafe_id
+     LEFT JOIN cafes c ON c.id = cr.cafe_id  -- self-registered riders have no café
      WHERE LOWER(cr.email) = $1 AND cr.is_active = true
      LIMIT 1`,
     [lower]
   );
   if (!r.rows.length) return fail(res, 'Rider account not found', 404);
   const rider = r.rows[0];
-  if (!rider.delivery_enabled) {
+  if (rider.cafe_id && !rider.delivery_enabled) {
     return fail(res, 'Your café has not enabled delivery yet.', 403);
   }
 
@@ -126,7 +126,7 @@ exports.getMe = asyncHandler(async (req, res) => {
     `SELECT cr.id, cr.name, cr.phone, cr.email, cr.cafe_id,
             c.name AS cafe_name, c.slug AS cafe_slug, c.delivery_enabled
      FROM cafe_riders cr
-     JOIN cafes c ON c.id = cr.cafe_id
+     LEFT JOIN cafes c ON c.id = cr.cafe_id  -- self-registered riders have no café
      WHERE cr.id = $1 AND cr.is_active = true`,
     [req.riderId]
   );
