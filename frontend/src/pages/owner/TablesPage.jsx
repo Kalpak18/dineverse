@@ -10,10 +10,10 @@ import toast from 'react-hot-toast';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { ownerSocketAuth } from '../../utils/socketAuth';
 import { fmtCurrency } from '../../utils/formatters';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 
 function QRModal({ table, slug, onClose }) {
   const canvasRef = useRef(null);
@@ -584,7 +584,7 @@ function LiveView({ cafeId, cafeCurrency }) {
     socket.on('connect', () => socket.emit('join_cafe', cafeId));
     if (socket.connected) socket.emit('join_cafe', cafeId);
     // Refresh on any order event
-    socket.on('order_update',    load);
+    socket.on('order_updated',   load);
     socket.on('new_order',       load);
     socket.on('waitlist_update', load);
     return () => socket.disconnect();

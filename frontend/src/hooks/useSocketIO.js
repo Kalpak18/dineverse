@@ -15,8 +15,8 @@ function getAudioContext() {
 /**
  * useSocketIO — persistent Socket.io connection hook
  * Handles auto-reconnection, room management, and event listeners.
- * Socket is created once and kept alive for the session. Only the room
- * membership and listeners change if cafeId changes.
+ * One socket per mounted component; it is disconnected on unmount (or when
+ * cafeId changes) so navigating between owner pages doesn't pile up sockets.
  */
 export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation) {
   const socketRef = useRef(null);
@@ -74,12 +74,13 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
     socket.on('connect_error', handleConnectError);
 
     return () => {
-      socket.emit('leave_cafe', cafeId); // leave room before joining a new one
       socket.off('new_order', handleNewOrder);
       socket.off('order_updated', handleOrderUpdated);
       socket.off('new_reservation', handleNewReservation);
       socket.off('connect', handleConnect);
       socket.off('connect_error', handleConnectError);
+      socket.disconnect(); // also leaves every room server-side
+      socketRef.current = null;
     };
   }, [cafeId]);
 }

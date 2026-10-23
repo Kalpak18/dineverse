@@ -3,10 +3,10 @@ import { getWaitlist, updateWaitlistEntry, deleteWaitlistEntry } from '../../ser
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 import { io } from 'socket.io-client';
+import SOCKET_URL from '../../utils/socketUrl';
 import { ownerSocketAuth } from '../../utils/socketAuth';
 import { useAuth } from '../../context/AuthContext';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || '';
 
 const STATUS_LABELS = {
   waiting:   { label: 'Waiting',   color: 'bg-amber-100 text-amber-700' },
@@ -47,6 +47,7 @@ export default function WaitlistPage() {
     const socket = io(SOCKET_URL, { auth: ownerSocketAuth, transports: ['polling', 'websocket'], reconnection: true });
     socketRef.current = socket;
     socket.emit('join_cafe', cafe.id);
+    socket.on('connect', () => socket.emit('join_cafe', cafe.id)); // rejoin after reconnect
     socket.on('waitlist_update', () => load());
     return () => socket.disconnect();
   }, [cafe?.id, load]);
