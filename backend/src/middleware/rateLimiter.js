@@ -32,6 +32,9 @@ function makeStore(prefix) {
   return new RedisStore({ sendCommand: (...args) => client.call(...args), prefix });
 }
 
+// The integration test suite logs in far more often than any limit allows
+const skipInTest = () => process.env.NODE_ENV === 'test';
+
 function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
@@ -43,6 +46,7 @@ function otpKeyGenerator(req) {
 
 // Strict limiter for login/register (brute-force protection)
 exports.authLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 15 * 60 * 1000,
   max: 5,
   store: makeStore('rl:auth:'),
@@ -55,6 +59,7 @@ exports.authLimiter = rateLimit({
 // Keyed by email (not IP) so shared NATs don't block unrelated users.
 // A separate per-email 60s cooldown is enforced in authController (otpStore.checkSendCooldown).
 exports.otpLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 5 * 60 * 1000,
   max: 5,
   store: makeStore('rl:otp:'),
@@ -66,6 +71,7 @@ exports.otpLimiter = rateLimit({
 
 // General API limiter
 exports.apiLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   max: 200,
   store: makeStore('rl:api:'),
@@ -77,6 +83,7 @@ exports.apiLimiter = rateLimit({
 // Public order creation limiter — keyed by IP + café slug so limits are
 // per-café, preventing one busy café from exhausting quota for others.
 exports.orderLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   max: 30,
   store: makeStore('rl:order:'),
@@ -89,6 +96,7 @@ exports.orderLimiter = rateLimit({
 // Public action limiter — cancel, payment, customer chat: 10 req/min per IP.
 // Prevents order-cancel floods, payment-endpoint probing, and chat spam.
 exports.publicLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   max: 10,
   store: makeStore('rl:pub:'),
@@ -100,6 +108,7 @@ exports.publicLimiter = rateLimit({
 // Health check limiter: Render pings about every 30s, so 30/min is plenty.
 // Prevents external actors from hammering /health to probe infrastructure state.
 exports.healthLimiter = rateLimit({
+  skip: skipInTest,
   windowMs: 60 * 1000,
   max: 30,
   store: makeStore('rl:health:'),
