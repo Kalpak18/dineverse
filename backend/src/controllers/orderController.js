@@ -9,6 +9,7 @@ const { applyBestOffer, applyCoupon } = require('./offerController');
 const { notify } = require('../services/notificationService');
 const { sendToOwners } = require('./pushController');
 const { generateOrderToken, hasOrderToken, sentOrderTokens, safeEqual } = require('../utils/orderToken');
+const { refundPrepaidOrder } = require('../services/refundService');
 
 // Orders placed before migration 074 have no customer_token — let them
 // through so in-flight customers aren't locked out; they age out in a day.
@@ -843,6 +844,10 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
+  if (status === 'cancelled' && isPrepaid) {
+    refundPrepaidOrder(id, cancellation_reason || 'Cancelled by café');
+  }
+
   if (status === 'paid' && fromStatus !== 'paid') {
     db.query(
       `SELECT customer_phone, final_amount, platform_fee, payment_verified, payment_mode
@@ -940,7 +945,7 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
             o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
-            o.customer_token,
+            o.customer_token, o.refund_status,
             c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
@@ -1086,6 +1091,7 @@ exports.customerCancelOrder = asyncHandler(async (req, res) => {
       req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
     }
 
+    refundPrepaidOrder(id, 'Cancelled by customer');
     logger.info('Order #%s cancelled by customer', updatedOrder.order_number);
     ok(res, { order: updatedOrder }, 'Order cancelled');
   } catch (err) {
@@ -1394,6 +1400,19 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
       await payClient.query('ROLLBACK');
       return fail(res, 'Order ID mismatch', 400);
     }
+    // Cancelled while the customer was paying: record the payment but do NOT
+    // revive the order (it used to jump back to 'confirmed') — refund it.
+    if (order.status === 'cancelled') {
+      await payClient.query(
+        `UPDATE orders SET payment_id = $1, payment_verified = true, payment_mode = 'online', updated_at = NOW()
+         WHERE id = $2`,
+        [razorpay_payment_id, id]
+      );
+      await payClient.query('COMMIT');
+      refundPrepaidOrder(id, 'Paid after cancellation');
+      logger.warn('Payment %s arrived for cancelled order %s — refunding', razorpay_payment_id, id);
+      return fail(res, 'This order was cancelled, so your payment is being refunded automatically.', 409);
+    }
 
     // Verify the actual amount charged matches the order total — prevents underpayment
     try {
@@ -1699,6 +1718,7 @@ exports.rejectOrder = asyncHandler(async (req, res) => {
      VALUES ($1, $2, $3, 'staff', $4, $5)`,
     [id, orderData.status, 'cancelled', req.staffId || req.cafeId, 'Staff']
   );
+  refundPrepaidOrder(id, `Rejected: ${reason.trim()}`);
 
   const fullOrder = await getOrderWithItems(id, cafeId);
   if (req.io) {

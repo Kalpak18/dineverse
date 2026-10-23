@@ -670,6 +670,14 @@ export default function OrderConfirmation() {
                 </div>
               )}
 
+              {order.status === 'cancelled' && order.refund_status && (
+                <p className="mt-2 text-sm text-gray-600 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2">
+                  {order.refund_status === 'failed'
+                    ? 'Refund could not be started automatically — the café will refund you.'
+                    : 'Your payment is being refunded to the original method (usually 5–7 working days).'}
+                </p>
+              )}
+
               {/* Delivery status bar — only for delivery orders */}
               {order.order_type === 'delivery' && (
                 <>

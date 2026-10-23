@@ -547,6 +547,14 @@ function OrderCard({ order, slug, cafeInfo, socketRef, onCancel, onDismiss, onRe
           </div>
         )}
 
+        {order.status === 'cancelled' && order.refund_status && (
+          <p className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">
+            {order.refund_status === 'failed'
+              ? 'Refund could not be started automatically — the café will refund you.'
+              : 'Your payment is being refunded to the original method (usually 5–7 working days).'}
+          </p>
+        )}
+
         {/* Ready banner */}
         {isReady && (
           <div className="mt-2.5 bg-teal-50 border border-teal-200 rounded-xl px-3 py-2 text-xs text-teal-800 font-medium">
