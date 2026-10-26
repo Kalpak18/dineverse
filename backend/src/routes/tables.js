@@ -5,7 +5,7 @@ const checkSubscription = require('../middleware/checkSubscription');
 const {
   getAreas, createArea, updateArea, deleteArea,
   createTable, updateTable, deleteTable,
-  getLiveTables,
+  getLiveTables, rotateTableQr,
 } = require('../controllers/tableController');
 
 router.use(authenticate, checkSubscription, requireRole('manager'));
@@ -23,5 +23,6 @@ router.delete('/areas/:id',   deleteArea);
 router.post('/',         createTable);
 router.patch('/:id',     updateTable);
 router.delete('/:id',    deleteTable);
+router.post('/:id/rotate-qr', rotateTableQr);
 
 module.exports = router;

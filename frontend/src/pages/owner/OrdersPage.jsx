@@ -16,6 +16,7 @@ import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/st
 import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatters';
 import { printBill } from '../../utils/printBill';
 import { printKot, printFullKot } from '../../utils/printKot';
+import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
 
 const QUICK_REASONS = [
   'Item(s) out of stock',
@@ -273,6 +274,8 @@ export default function OrdersPage() {
     orders.forEach((o) => {
       if (o.status === 'cancelled' || o.status === 'paid') return;
       if (o.order_type === 'takeaway') return;
+      // Not on any table's bill until the table is confirmed (QR scan or staff)
+      if (o.table_verified === false) return;
       if (new Date(o.created_at).toDateString() !== todayStr) return;
 
       if (!tableMap[o.table_number]) {
@@ -876,6 +879,19 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
           )}
         </div>
       </div>
+
+      {/* Table confirmation — unverified dine-in orders stay off table bills */}
+      {order.order_type !== 'takeaway' && order.order_type !== 'delivery' && !['paid', 'cancelled'].includes(order.status) && (
+        <div className="px-4 pb-2 flex items-center justify-between gap-2 flex-wrap">
+          <TableStatusBadge order={order} />
+          <TableConfirmButton
+            order={order}
+            className="ml-auto"
+            onDone={({ order_ids, table_number }) => order_ids.forEach((id) =>
+              onOrderUpdated({ id, table_number, table_verified: true }))}
+          />
+        </div>
+      )}
 
       {/* Per-item status rows — individual mode */}
       {isIndividual && (

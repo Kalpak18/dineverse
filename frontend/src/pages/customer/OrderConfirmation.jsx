@@ -523,6 +523,9 @@ export default function OrderConfirmation() {
                 <div>
                   <span className="text-gray-400">Table</span>
                   <p className="font-medium">{order.table_number}</p>
+                  {order.order_type === 'dine-in' && order.table_verified === false && (
+                    <p className="text-[11px] text-amber-700 mt-0.5">Staff will confirm your table</p>
+                  )}
                 </div>
                 <div>
                   <span className="text-gray-400">Time</span>

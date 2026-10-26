@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAreas, createArea, updateArea, deleteArea,
   createTable, updateTable, deleteTable,
-  getLiveTables,
+  getLiveTables, rotateTableQr,
 } from '../../services/api';
+import { getApiError } from '../../utils/apiError';
 import { useAuth } from '../../context/AuthContext';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -15,9 +16,29 @@ import { ownerSocketAuth } from '../../utils/socketAuth';
 import { fmtCurrency } from '../../utils/formatters';
 
 
-function QRModal({ table, slug, onClose }) {
+// The QR carries the table's secret token (t=). Orders placed through it are
+// "verified" for this table; a typed table number is held for staff to confirm.
+const tableQrUrl = (slug, table) =>
+  `${window.location.origin}/cafe/${slug}?table=${encodeURIComponent(table.label)}&t=${table.qr_token}`;
+
+function QRModal({ table, slug, onClose, onRotated }) {
   const canvasRef = useRef(null);
-  const url = `${window.location.origin}/cafe/${slug}?table=${encodeURIComponent(table.label)}`;
+  const [rotating, setRotating] = useState(false);
+  const url = tableQrUrl(slug, table);
+
+  const handleRotate = async () => {
+    if (!window.confirm(`Make a new QR code for ${table.label}? The old printed code will stop confirming the table.`)) return;
+    setRotating(true);
+    try {
+      const { data } = await rotateTableQr(table.id);
+      onRotated(data.table);
+      toast.success('New QR code — print it and replace the old one');
+    } catch (err) {
+      toast.error(getApiError(err));
+    } finally {
+      setRotating(false);
+    }
+  };
 
   useEffect(() => {
     if (canvasRef.current) {
@@ -45,9 +66,13 @@ function QRModal({ table, slug, onClose }) {
           <canvas ref={canvasRef} className="rounded-xl" />
         </div>
         <div className="flex gap-2">
-          <button onClick={handleDownload} className="btn-primary flex-1 text-sm">⬇ Download</button>
-          <button onClick={onClose} className="btn-secondary flex-1 text-sm">Close</button>
+          <button onClick={handleDownload} className="btn-primary flex-1 text-sm min-h-[44px]">⬇ Download</button>
+          <button onClick={onClose} className="btn-secondary flex-1 text-sm min-h-[44px]">Close</button>
         </div>
+        <button onClick={handleRotate} disabled={rotating}
+          className="w-full text-xs text-gray-500 underline min-h-[36px] disabled:opacity-50">
+          {rotating ? 'Generating…' : 'QR code photographed or shared? Make a new one'}
+        </button>
       </div>
     </div>
   );
@@ -90,7 +115,7 @@ export default function TablesPage() {
     try {
       const zip = new JSZip();
       await Promise.all(allTables.map(async (table) => {
-        const url = `${window.location.origin}/cafe/${cafe?.slug}?table=${encodeURIComponent(table.label)}`;
+        const url = tableQrUrl(cafe?.slug, table);
         const canvas = document.createElement('canvas');
         await QRCode.toCanvas(canvas, url, { width: 512, margin: 2 });
         const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
@@ -382,7 +407,8 @@ export default function TablesPage() {
                       <button
                         onClick={() => setQrTable(table)}
                         title="Show QR code"
-                        className="text-gray-400 hover:text-brand-500 transition-colors"
+                        aria-label={`Show QR code for ${table.label}`}
+                        className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-400 hover:text-brand-500 transition-colors"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 3h.01M5 8H3m2 0V6m0 2v2M5 20H3m2 0v-2m0 2h2M12 8h.01M5 12h.01" /></svg>
                       </button>
@@ -426,7 +452,8 @@ export default function TablesPage() {
       )}
 
       {qrTable && (
-        <QRModal table={qrTable} slug={cafe?.slug} onClose={() => setQrTable(null)} />
+        <QRModal table={qrTable} slug={cafe?.slug} onClose={() => setQrTable(null)}
+          onRotated={(t) => { setQrTable(t); load(); }} />
       )}
       </>)}
     </div>

@@ -16,6 +16,28 @@ const { geocodeAddress } = require('../services/geocodingService');
 // through so in-flight customers aren't locked out; they age out in a day.
 const canAccessOrder = (req, storedToken) => !storedToken || hasOrderToken(req, storedToken);
 
+// Same label the customer app builds when a table is picked by hand
+// ("5" → "Table 5"; area prefix unless it's the default area).
+function canonicalTableLabel(label, areaName) {
+  const t = String(label || '').trim();
+  const normalized = /^\d+$/.test(t) ? `Table ${t}` : /^t\d+$/i.test(t) ? `Table ${t.slice(1)}` : t;
+  if (areaName && areaName !== 'General' && !normalized.startsWith(areaName)) return `${areaName} — ${normalized}`;
+  return normalized;
+}
+
+// A table's secret QR token → { id, label } (null if unknown/inactive)
+async function tableFromQrToken(q, cafeId, token) {
+  if (typeof token !== 'string' || !/^[a-f0-9]{32,128}$/i.test(token.trim())) return null;
+  const r = await q.query(
+    `SELECT t.id, t.label, a.name AS area_name
+     FROM cafe_tables t LEFT JOIN areas a ON a.id = t.area_id
+     WHERE t.qr_token = $1 AND t.cafe_id = $2 AND t.is_active = true`,
+    [token.trim(), cafeId]
+  );
+  if (!r.rows.length) return null;
+  return { id: r.rows[0].id, label: canonicalTableLabel(r.rows[0].label, r.rows[0].area_name) };
+}
+
 // ─── Schedule helper ────────────────────────────────────────────
 // Returns null (open) or a string reason why orders are blocked.
 // opening_hours is the JSONB value from DB; tz is IANA timezone string.
@@ -136,6 +158,7 @@ exports.validateOrder = [
   body('table_number')
     .if(body('order_type').not().equals('takeaway'))
     .if(body('order_type').not().equals('delivery'))
+    .if((_, { req }) => !req.body.table_token) // a table QR scan names the table itself
     .trim().notEmpty().withMessage('Table number is required for dine-in orders'),
   body('customer_phone').optional().trim().isLength({ max: 20 }),
   body('client_order_id').optional().trim().isLength({ max: 64 }),
@@ -164,7 +187,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
   } = req.body;
   const tip = Math.max(0, Math.min(parseFloat(tip_amount) || 0, 10000));
-  const tableNum = (order_type === 'takeaway' || order_type === 'delivery') ? (order_type === 'delivery' ? 'Delivery' : 'Takeaway') : (table_number || '');
+  // Dine-in table is provisional (typed by the customer) until resolved from a
+  // table QR token below — only then is the order allowed onto a table bill.
+  let tableNum = (order_type === 'takeaway' || order_type === 'delivery') ? (order_type === 'delivery' ? 'Delivery' : 'Takeaway') : (table_number || '');
+  const isDineIn = order_type !== 'takeaway' && order_type !== 'delivery';
 
   const client = await db.pool.connect();
   try {
@@ -503,6 +529,33 @@ exports.createOrder = asyncHandler(async (req, res) => {
       }
     }
 
+    // Verified table: only from the table's secret QR token. Otherwise the
+    // typed table is kept for staff but the order is held off table bills.
+    let tableId = null;
+    let tableVerified = !isDineIn;
+    let partyId = null;
+    let partySecret = null;
+    if (isDineIn) {
+      const qrTable = await tableFromQrToken(client, cafeId, req.body.table_token);
+      if (qrTable) {
+        tableId = qrTable.id;
+        tableNum = qrTable.label;
+        tableVerified = true;
+      }
+      // Party = this device's orders, identified by a server-issued secret
+      if (typeof req.body.party_secret === 'string' && req.body.party_secret) {
+        const p = await client.query('SELECT id, secret FROM dining_parties WHERE secret = $1 AND cafe_id = $2', [req.body.party_secret, cafeId]);
+        if (p.rows.length) ({ id: partyId, secret: partySecret } = p.rows[0]);
+      }
+      if (!partyId) {
+        const p = await client.query(
+          'INSERT INTO dining_parties (cafe_id, secret) VALUES ($1, $2) RETURNING id, secret',
+          [cafeId, generateOrderToken()]
+        );
+        ({ id: partyId, secret: partySecret } = p.rows[0]);
+      }
+    }
+
     // Insert order
     const customerToken = generateOrderToken();
     let orderResult;
@@ -517,9 +570,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
             delivery_address, delivery_address2, delivery_city, delivery_zipcode,
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
             delivery_fee, delivery_status, reservation_id,
-            platform_fee, platform_fee_rate, customer_token)
+            platform_fee, platform_fee_rate, customer_token,
+            table_id, table_verified, party_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30)
+                 $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
+                 $31,$32,$33)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
@@ -544,19 +599,23 @@ exports.createOrder = asyncHandler(async (req, res) => {
          deliveryFee || 0,
          order_type === 'delivery' ? 'pending' : null,
          reservation_id ? parseInt(reservation_id) : null,
-         platformFee, commissionRate, customerToken]
+         platformFee, commissionRate, customerToken,
+         tableId, tableVerified, partyId]
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
       if (insertErr.code === '23505' && insertErr.constraint === 'orders_client_order_id_idx') {
         // Idempotent: return the existing order so the client can resume normally
         const existingResult = await db.query(
-          'SELECT id, customer_token FROM orders WHERE client_order_id = $1 AND cafe_id = $2',
+          `SELECT o.id, o.customer_token, p.secret AS party_secret
+           FROM orders o LEFT JOIN dining_parties p ON p.id = o.party_id
+           WHERE o.client_order_id = $1 AND o.cafe_id = $2`,
           [client_order_id, cafeId]
         );
         if (existingResult.rows.length > 0) {
-          const existing = await getOrderWithItems(existingResult.rows[0].id);
-          return ok(res, { order: { ...existing, customer_token: existingResult.rows[0].customer_token } }, 'Order already placed', 200);
+          const { id: existingId, customer_token: existingToken, party_secret: existingParty } = existingResult.rows[0];
+          const existing = await getOrderWithItems(existingId);
+          return ok(res, { order: { ...existing, customer_token: existingToken }, party_secret: existingParty }, 'Order already placed', 200);
         }
         return fail(res, 'This order has already been placed', 409);
       }
@@ -713,7 +772,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
     logger.info('Order #%s placed at café %s table %s', order.order_number, slug, table_number);
     // customer_token goes only to the customer — never in socket/owner payloads
-    ok(res, { order: { ...fullOrder, customer_token: customerToken } }, 'Order placed', 201);
+    ok(res, { order: { ...fullOrder, customer_token: customerToken }, party_secret: partySecret }, 'Order placed', 201);
   } catch (err) {
     await client.query('ROLLBACK');
     throw err; // re-throw — asyncHandler + global error middleware handles response
@@ -745,7 +804,8 @@ exports.getOrders = asyncHandler(async (req, res) => {
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
               o.payment_verified, o.cancellation_reason,
-              o.notes, o.created_at, o.updated_at
+              o.notes, o.created_at, o.updated_at,
+              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
        FROM orders o ${whereClause}
        ORDER BY o.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -788,7 +848,8 @@ exports.getKitchenOrders = asyncHandler(async (req, res) => {
             o.customer_name, o.table_number,
             o.order_type, o.status, o.kitchen_mode, o.accepted,
             o.total_amount, o.final_amount, o.payment_verified,
-            o.notes, o.created_at, o.updated_at
+            o.notes, o.created_at, o.updated_at,
+            o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
      FROM orders o
      WHERE o.cafe_id = $1 AND o.status = ANY($2)
      ORDER BY o.created_at ASC
@@ -1090,7 +1151,7 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
             o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
-            o.customer_token, o.refund_status,
+            o.customer_token, o.refund_status, o.table_verified,
             c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
@@ -1266,6 +1327,7 @@ exports.getTableBill = asyncHandler(async (req, res) => {
      FROM orders
      WHERE cafe_id = $1
        AND table_number = $2
+       AND table_verified = true  -- unconfirmed orders never reach a table bill
        AND status NOT IN ('cancelled', 'paid')
      ORDER BY created_at ASC`,
     [cafeId, tableNumber]
@@ -1344,7 +1406,8 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
               o.delivery_phone, o.delivery_instructions, o.delivery_status,
               o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason,
-              o.kitchen_mode, o.accepted
+              o.kitchen_mode, o.accepted,
+              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
        FROM orders o WHERE o.id = $1${cafeFilter}`,
       params
     ),
@@ -2121,6 +2184,7 @@ exports.remindBill = asyncHandler(async (req, res) => {
   const result = await db.query(
     `SELECT id FROM orders
      WHERE cafe_id = $1 AND table_number = $2
+       AND table_verified = true
        AND status IN ('served', 'ready', 'preparing', 'confirmed')
      ORDER BY created_at ASC`,
     [cafeId, tableNumber]
@@ -2134,4 +2198,106 @@ exports.remindBill = asyncHandler(async (req, res) => {
   });
 
   ok(res, { notified: result.rows.length }, 'Reminder sent');
+});
+
+// ─── Table moves / confirmation ───────────────────────────────
+// Moves the given open dine-in orders to a table, marks them verified and
+// records where they came from (the KDS shows "Table 6 → 9" for a while).
+async function moveOrdersToTable(client, cafeId, orderIds, table) {
+  const r = await client.query(
+    `UPDATE orders SET
+       moved_from_table = CASE WHEN table_number IS DISTINCT FROM $3 THEN table_number ELSE moved_from_table END,
+       moved_at         = CASE WHEN table_number IS DISTINCT FROM $3 THEN NOW() ELSE moved_at END,
+       table_number     = $3,
+       table_id         = $4,
+       table_verified   = true,
+       updated_at       = NOW()
+     WHERE cafe_id = $1 AND id = ANY($2)
+       AND order_type NOT IN ('takeaway', 'delivery')
+       AND status NOT IN ('paid', 'cancelled')
+     RETURNING id`,
+    [cafeId, orderIds, table.label, table.id]
+  );
+  return r.rows.map((x) => x.id);
+}
+
+function emitTableChange(req, cafeId, ids, tableLabel) {
+  if (!req.io) return;
+  for (const id of ids) {
+    const payload = { id, table_number: tableLabel, table_verified: true };
+    req.io.to(`cafe:${cafeId}`).emit('order_updated', payload);
+    req.io.to(`order:${id}`).emit('order_updated', payload);
+  }
+}
+
+// Staff: confirm an order's table or move it (the whole party by default).
+// body: { table_id }  — staff choose from the café's own tables.
+exports.setOrderTable = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { table_id, scope = 'party' } = req.body;
+  if (!table_id) return fail(res, 'table_id is required', 400);
+
+  const t = await db.query(
+    `SELECT t.id, t.label, a.name AS area_name FROM cafe_tables t
+     LEFT JOIN areas a ON a.id = t.area_id
+     WHERE t.id = $1 AND t.cafe_id = $2 AND t.is_active = true`,
+    [table_id, req.cafeId]
+  );
+  if (!t.rows.length) return fail(res, 'Table not found', 404);
+  const table = { id: t.rows[0].id, label: canonicalTableLabel(t.rows[0].label, t.rows[0].area_name) };
+
+  const o = await db.query('SELECT id, party_id FROM orders WHERE id = $1 AND cafe_id = $2', [id, req.cafeId]);
+  if (!o.rows.length) return fail(res, 'Order not found', 404);
+  let orderIds = [id];
+  if (scope === 'party' && o.rows[0].party_id) {
+    const p = await db.query(
+      `SELECT id FROM orders WHERE cafe_id = $1 AND party_id = $2 AND status NOT IN ('paid', 'cancelled')`,
+      [req.cafeId, o.rows[0].party_id]
+    );
+    orderIds = p.rows.map((r) => r.id);
+  }
+
+  const moved = await moveOrdersToTable(db, req.cafeId, orderIds, table);
+  if (!moved.length) return fail(res, 'Only open dine-in orders can be moved', 400);
+  emitTableChange(req, req.cafeId, moved, table.label);
+  logger.info('Staff %s set table %s for orders %s', req.staffId || req.cafeId, table.label, moved.join(','));
+  ok(res, { table_number: table.label, order_ids: moved });
+});
+
+// Customer: "I moved to this table". Needs BOTH proofs — the order secrets
+// (X-Order-Tokens, held only by the device that placed them) and the new
+// table's QR token (only obtainable by scanning the QR on that table).
+// Moves only those orders; nobody else's.
+exports.customerMoveTable = asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  const cafeRes = await db.query('SELECT id FROM cafes WHERE slug = $1 AND is_active = true', [slug]);
+  if (!cafeRes.rows.length) return fail(res, 'Café not found', 404);
+  const cafeId = cafeRes.rows[0].id;
+
+  const table = await tableFromQrToken(db, cafeId, req.body.table_token);
+  if (!table) return fail(res, 'Please scan the QR code on your new table', 400);
+
+  const tokens = sentOrderTokens(req);
+  if (!tokens.length) return fail(res, 'No orders to move', 400);
+  const mine = await db.query(
+    `SELECT id FROM orders
+     WHERE cafe_id = $1 AND customer_token = ANY($2)
+       AND order_type NOT IN ('takeaway', 'delivery') AND status NOT IN ('paid', 'cancelled')`,
+    [cafeId, tokens]
+  );
+  if (!mine.rows.length) return fail(res, 'No open orders to move', 404);
+
+  const moved = await moveOrdersToTable(db, cafeId, mine.rows.map((r) => r.id), table);
+  emitTableChange(req, cafeId, moved, table.label);
+  logger.info('Customer moved orders %s to %s', moved.join(','), table.label);
+  ok(res, { table_number: table.label, order_ids: moved }, `Moved to ${table.label}`);
+});
+
+// Public: which table does this QR token belong to? (label only)
+exports.getTableByToken = asyncHandler(async (req, res) => {
+  const cafeRes = await db.query('SELECT id FROM cafes WHERE slug = $1 AND is_active = true', [req.params.slug]);
+  if (!cafeRes.rows.length) return fail(res, 'Café not found', 404);
+  const table = await tableFromQrToken(db, cafeRes.rows[0].id, req.params.token);
+  if (!table) return fail(res, 'Unknown table QR code', 404);
+  ok(res, { table_number: table.label });
 });

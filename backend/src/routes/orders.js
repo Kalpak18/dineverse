@@ -5,6 +5,7 @@ const requireRole = require('../middleware/requireRole');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
   validateOrder, createOrder, getDeliveryQuote, getKitchenOrders,
+  setOrderTable, customerMoveTable, getTableByToken,
   getOrders, getOrderById, updateOrderStatus,
   getDashboardStats,
   getOrderStatus, customerCancelOrder,
@@ -28,6 +29,8 @@ router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 // Public: customer places order
 router.post('/cafe/:slug/orders', orderLimiter, validateOrder, createOrder);
 router.post('/cafe/:slug/delivery-quote', publicLimiter, getDeliveryQuote);
+router.post('/cafe/:slug/move-table', publicLimiter, customerMoveTable);
+router.get('/cafe/:slug/table-qr/:token', publicLimiter, getTableByToken);
 router.get('/cafe/:slug/orders/:id/status', getOrderStatus);
 router.post('/cafe/:slug/orders/:id/cancel', publicLimiter, customerCancelOrder);
 
@@ -63,6 +66,7 @@ router.patch('/:id/items/reorder',           authenticate, checkSubscription, re
 router.post('/:id/kot',                      authenticate, checkSubscription, generateKot);
 router.get('/:id/kot/history',               authenticate, checkSubscription, getKotHistory);
 router.post('/table/:tableNumber/remind',    authenticate, checkSubscription, remindBill);
+router.patch('/:id/table',                   authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter'), setOrderTable);
 
 // Owner chat inbox
 router.get('/messages/conversations',        authenticate, checkSubscription, requireRole('manager', 'cashier'), getConversations);

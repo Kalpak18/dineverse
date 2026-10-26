@@ -6,6 +6,7 @@ import { fmtToken, fmtTime } from '../../utils/formatters';
 import PageHint from '../../components/PageHint';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
+import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
 
 const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
 const OVERDUE_MS = 25 * 60 * 1000;
@@ -67,6 +68,10 @@ export default function WaiterPage() {
       });
     }
   );
+
+  // Staff confirmed / moved a party's table
+  const applyTableChange = ({ order_ids, table_number }) => setOrders((prev) =>
+    prev.map((o) => (order_ids.includes(o.id) ? { ...o, table_number, table_verified: true } : o)));
 
   const handleOrderServe = async (orderId) => {
     setServing((s) => ({ ...s, [orderId]: true }));
@@ -194,6 +199,12 @@ export default function WaiterPage() {
                         </span>
                       </div>
                       {order.customer_name && <p className="text-sm text-gray-300 mb-0.5">{order.customer_name}</p>}
+                      {order.order_type === 'dine-in' && (
+                        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                          <TableStatusBadge order={order} dark />
+                          <TableConfirmButton order={order} className="ml-auto" onDone={applyTableChange} />
+                        </div>
+                      )}
                       <p className="text-xs text-gray-500 mb-3">{fmtTime(order.created_at)}</p>
 
                       <div className="space-y-1.5 mb-3">
@@ -250,6 +261,12 @@ export default function WaiterPage() {
                         <span className="text-[10px] text-orange-300 bg-orange-900/60 px-2 py-0.5 rounded-full font-bold">PARTIAL</span>
                       </div>
                       {order.customer_name && <p className="text-sm text-gray-300 mb-0.5">{order.customer_name}</p>}
+                      {order.order_type === 'dine-in' && (
+                        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                          <TableStatusBadge order={order} dark />
+                          <TableConfirmButton order={order} className="ml-auto" onDone={applyTableChange} />
+                        </div>
+                      )}
                       <p className="text-xs text-gray-500 mb-2">{fmtTime(order.created_at)}</p>
 
                       {readyItems.length > 0 && (
@@ -313,6 +330,12 @@ export default function WaiterPage() {
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.text}</span>
                       </div>
                       {order.customer_name && <p className="text-sm text-gray-400 mb-0.5">{order.customer_name}</p>}
+                      {order.order_type === 'dine-in' && (
+                        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                          <TableStatusBadge order={order} dark />
+                          <TableConfirmButton order={order} className="ml-auto" onDone={applyTableChange} />
+                        </div>
+                      )}
                       <p className="text-xs text-gray-600 mb-2">{fmtTime(order.created_at)}</p>
                       <div className="space-y-1">
                         {(order.items || []).map((item) => (

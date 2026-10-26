@@ -32,8 +32,10 @@ test('customer order endpoints require the order secret', async () => {
 test('table bill needs a token for an order at that table', async () => {
   const cafe = await createCafe(srv.db);
   const item = await createMenuItem(srv.db, cafe.id);
-  const order = await placeOrder(srv.base, cafe.slug, item.id);
-  const path = `/orders/cafe/${cafe.slug}/table-bill/3`;
+  // Placed by scanning the table QR, so it counts toward Table 3's bill
+  const t3 = (await srv.db.query(`INSERT INTO cafe_tables (cafe_id, label) VALUES ($1, '3') RETURNING qr_token`, [cafe.id])).rows[0];
+  const order = await placeOrder(srv.base, cafe.slug, item.id, { table_token: t3.qr_token });
+  const path = `/orders/cafe/${cafe.slug}/table-bill/${encodeURIComponent('Table 3')}`;
   assert.equal((await api(srv.base, 'GET', `${path}?customer_name=Asha`)).status, 404);
   const r = await api(srv.base, 'GET', path, { headers: { 'x-order-tokens': `junk,${order.customer_token}` } });
   assert.equal(r.status, 200);

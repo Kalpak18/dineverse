@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtToken } from '../../utils/formatters';
+import { TableStatusBadge } from '../TableConfirm';
 
 // ─── Kitchen "Lanes" view ────────────────────────────────────────────────────
 // NEW → COOKING → READY. Tablet/desktop/TV: each lane is a row of fixed-width
@@ -99,6 +100,7 @@ function Ticket({ order, lane, now, station, compact, selected, dimmed, getNext,
             <span className={`${compact ? 'text-xs' : 'text-sm'} font-semibold opacity-90 truncate`}>· {order.customer_name}</span>
           )}
         </div>
+        <div className="mt-1 empty:hidden"><TableStatusBadge order={order} dark /></div>
         {hint && <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-80">{hint} →</div>}
         {station && lane === 'ready' && <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-80">Done here ✓</div>}
       </button>

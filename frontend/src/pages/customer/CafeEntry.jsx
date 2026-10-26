@@ -3,8 +3,8 @@ import { Helmet } from 'react-helmet-async';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
-import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist, getWaitlistPosition, checkReservationByPhone } from '../../services/api';
-import { loadOrders } from '../../utils/cafeOrderStorage';
+import { getCafeBySlug, getCafeTables, createReservation, joinWaitlist, getWaitlistPosition, checkReservationByPhone, getTableByQr, moveToTable } from '../../services/api';
+import { loadOrders, upsertOrder } from '../../utils/cafeOrderStorage';
 import { loadReservations, upsertReservation, removeReservation } from '../../utils/cafeReservationStorage';
 import { loadWaitlist, upsertWaitlist, removeWaitlist } from '../../utils/cafeWaitlistStorage';
 import { trackVisit } from '../../utils/visitedCafes';
@@ -166,14 +166,23 @@ export default function CafeEntry() {
   const socketRef = useRef(null);
 
   const tableFromUrl = searchParams.get('table') || '';
+  const tableTokenFromUrl = searchParams.get('t') || '';
+  // Open orders from this device at another table → offer to move them here
+  const [movePrompt, setMovePrompt] = useState(null); // { from, to, tokens }
+  const [moving, setMoving] = useState(false);
   const [form, setForm] = useState(() => {
     try {
       const saved = localStorage.getItem(`session_${slug}`);
       const base = saved
         ? JSON.parse(saved)
         : { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: '', order_type: 'dine-in' };
-      // QR table param always wins over stale session value
+      // QR table param always wins over stale session value. A table token
+      // is only trusted from a fresh scan (≤ 4 h); the server re-checks it.
       if (tableFromUrl) base.table_number = tableFromUrl;
+      if (tableFromUrl || !base.table_scanned_at || Date.now() - base.table_scanned_at > 4 * 3600 * 1000) {
+        delete base.table_token;
+        delete base.table_scanned_at;
+      }
       return base;
     } catch {
       return { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: tableFromUrl, order_type: 'dine-in' };
@@ -181,6 +190,43 @@ export default function CafeEntry() {
   });
   const [errors, setErrors] = useState({});
   const [reservationHint, setReservationHint] = useState(null);
+
+  // Scanned a table QR: resolve its secret token to the real table, lock the
+  // table field to it, and offer to move this device's open orders here.
+  useEffect(() => {
+    if (!tableTokenFromUrl) return;
+    let cancelled = false;
+    getTableByQr(slug, tableTokenFromUrl)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const label = data.table_number;
+        setForm((f) => ({ ...f, order_type: 'dine-in', table_number: label, table_token: tableTokenFromUrl, table_scanned_at: Date.now() }));
+        const elsewhere = loadOrders(slug).filter((o) =>
+          o.customer_token && !['takeaway', 'delivery'].includes(o.order_type) &&
+          !['paid', 'cancelled'].includes(o.status) && o.table_number && o.table_number !== label);
+        if (elsewhere.length) {
+          setMovePrompt({ from: elsewhere[0].table_number, to: label, tokens: elsewhere.map((o) => o.customer_token) });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) toast.error('This table QR code is out of date — your table will be confirmed by staff');
+      });
+    return () => { cancelled = true; };
+  }, [slug, tableTokenFromUrl]);
+
+  const handleMoveOrders = async () => {
+    setMoving(true);
+    try {
+      const { data } = await moveToTable(slug, tableTokenFromUrl, movePrompt.tokens);
+      data.order_ids.forEach((id) => upsertOrder(slug, { id, table_number: data.table_number, table_verified: true }));
+      toast.success(`Your orders are now at ${data.table_number}`);
+      setMovePrompt(null);
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Could not move your orders — please tell a waiter');
+    } finally {
+      setMoving(false);
+    }
+  };
   const reservationCheckTimer = useRef(null);
 
   // When phone changes and order is dine-in, check for a reservation today
@@ -358,7 +404,9 @@ export default function CafeEntry() {
     const session = {
       customer_name:  form.customer_name.trim(),
       customer_phone: form.customer_phone || '',
-      table_number:   form.order_type === 'takeaway' ? 'Takeaway' : form.order_type === 'delivery' ? 'Delivery' : tableLabel,
+      table_number:   form.order_type === 'takeaway' ? 'Takeaway' : form.order_type === 'delivery' ? 'Delivery' : (form.table_token ? form.table_number : tableLabel),
+      // Scanned table QR (verified server-side on every order)
+      ...(form.order_type === 'dine-in' && form.table_token && { table_token: form.table_token, table_scanned_at: form.table_scanned_at }),
       order_type:     form.order_type,
       reservation_id: reservationHint?.id || null,
       cafe_name:      cafe?.name || '',
@@ -537,7 +585,20 @@ export default function CafeEntry() {
             </div>
 
             {/* Table selection — dine-in only */}
-            {form.order_type === 'dine-in' && (
+            {form.order_type === 'dine-in' && form.table_token ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-green-700">✓ Table scanned</p>
+                  <p className="font-bold text-gray-900 truncate">{form.table_number}</p>
+                </div>
+                <button type="button"
+                  onClick={() => setForm((f) => ({ ...f, table_number: '', table_token: undefined, table_scanned_at: undefined }))}
+                  className="flex-shrink-0 min-h-[44px] px-3 text-xs font-semibold text-gray-500 underline">
+                  Not your table?
+                </button>
+              </div>
+            ) : form.order_type === 'dine-in' && (
+              <>
               <TableSearch
                 hasTables={hasTables}
                 areas={areas}
@@ -547,6 +608,12 @@ export default function CafeEntry() {
                 setErrors={setErrors}
                 normalizeTableNumber={normalizeTableNumber}
               />
+              {hasTables && (
+                <p className="text-xs text-gray-500 -mt-1">
+                  Tip: scan the QR code on your table — otherwise a staff member will confirm your table.
+                </p>
+              )}
+              </>
             )}
 
             {form.order_type === 'takeaway' && (
@@ -671,6 +738,24 @@ export default function CafeEntry() {
           Powered by <span className="text-brand-400">DineVerse</span>
         </p>
       </div>
+
+      {movePrompt && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
+          role="dialog" aria-modal="true" aria-labelledby="move-table-title">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl space-y-4">
+            <h2 id="move-table-title" className="text-lg font-bold text-gray-900">Moved tables?</h2>
+            <p className="text-sm text-gray-600">
+              You ordered at <strong>{movePrompt.from}</strong>. Move your open orders to <strong>{movePrompt.to}</strong> so they&apos;re served here?
+            </p>
+            <div className="flex flex-col-reverse sm:flex-row gap-2">
+              <button type="button" onClick={() => setMovePrompt(null)} className="btn-secondary flex-1 min-h-[44px]">No, keep them</button>
+              <button type="button" onClick={handleMoveOrders} disabled={moving} className="btn-primary flex-1 min-h-[44px] disabled:opacity-60">
+                {moving ? 'Moving…' : `Yes, move to ${movePrompt.to}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showWaitlist && (
         <WaitlistModal slug={slug} cafeName={cafe.name} onClose={() => setShowWaitlist(false)} />

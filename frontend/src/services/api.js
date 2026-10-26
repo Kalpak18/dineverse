@@ -204,6 +204,9 @@ export const updateArea       = (id, data)     => api.patch(`/tables/areas/${id}
 export const deleteArea       = (id)           => api.delete(`/tables/areas/${id}`);
 export const createTable      = (data)         => api.post('/tables', data);
 export const updateTable      = (id, data)     => api.patch(`/tables/${id}`, data);
+export const rotateTableQr    = (id)           => api.post(`/tables/${id}/rotate-qr`);
+// Staff: confirm or move an order's table (whole party by default)
+export const setOrderTable    = (orderId, tableId) => api.patch(`/orders/${orderId}/table`, { table_id: tableId });
 export const deleteTable      = (id)           => api.delete(`/tables/${id}`);
 export const getCafeMenu = (slug) => api.get(`/cafes/${slug}/menu`);
 export const getUpsellSuggestions = (slug, itemIds) =>
@@ -216,6 +219,10 @@ const orderAuth = (slug, id) => {
 };
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
 export const getDeliveryQuote = (slug, data) => api.post(`/orders/cafe/${slug}/delivery-quote`, data);
+// Table QR codes carry a secret token; only orders placed through it count as that table's
+export const getTableByQr = (slug, token) => api.get(`/orders/cafe/${slug}/table-qr/${encodeURIComponent(token)}`);
+export const moveToTable  = (slug, tableToken, orderTokens) =>
+  api.post(`/orders/cafe/${slug}/move-table`, { table_token: tableToken }, { headers: { 'X-Order-Tokens': orderTokens.join(',') } });
 export const getOrderStatus = (slug, id) => api.get(`/orders/cafe/${slug}/orders/${id}/status`, orderAuth(slug, id));
 export const cancelOrder = (slug, id, customer_name, customer_phone) =>
   api.post(`/orders/cafe/${slug}/orders/${id}/cancel`, { customer_name, customer_phone }, orderAuth(slug, id));

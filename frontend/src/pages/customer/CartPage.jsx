@@ -18,6 +18,19 @@ function normTable(raw, areaName) {
   return (areaName && areaName !== 'General' && !n.startsWith(areaName)) ? `${areaName} — ${n}` : n;
 }
 
+// Dining party: server-issued secret tying this device's orders together
+// (one bill, moved together). Expires so a later visit starts fresh.
+const PARTY_TTL_MS = 6 * 3600 * 1000;
+function readParty(slug) {
+  try {
+    const p = JSON.parse(localStorage.getItem(`party_${slug}`) || 'null');
+    return p && Date.now() - p.at < PARTY_TTL_MS ? p.secret : null;
+  } catch { return null; }
+}
+function saveParty(slug, secret) {
+  try { localStorage.setItem(`party_${slug}`, JSON.stringify({ secret, at: Date.now() })); } catch { /* storage full */ }
+}
+
 export default function CartPage() {
   const { slug } = useParams();
   const navigate = useNavigate();
@@ -391,6 +404,10 @@ export default function CartPage() {
       // Customer is never charged a different amount than what they tapped.
       client_quoted_total: grandTotal,
       coupon_code: couponApplied ? couponInput.trim() : null,
+      // Scanned table QR → server confirms the table; without it the order is
+      // held for staff to confirm (never lands on another table's bill)
+      ...(session.table_token && { table_token: session.table_token }),
+      ...(readParty(slug) && { party_secret: readParty(slug) }),
       ...(session.reservation_id && { reservation_id: session.reservation_id }),
       items: items.map((i) => ({
         menu_item_id: i.menu_item_id || i.id,
@@ -430,14 +447,21 @@ export default function CartPage() {
         const { data } = await placeOrder(slug, orderPayload);
         if (data?.order) {
           upsertOrder(slug, data.order);
+          if (data.party_secret) saveParty(slug, data.party_secret);
           clearCart();
           // Reset table_number + area_id for next order so customer doesn't accidentally
           // place at the wrong table; keep customer_name/phone for convenience.
           try {
             const sk = `session_${slug}`;
             const cur = JSON.parse(localStorage.getItem(sk) || '{}');
+            // A scanned (QR-verified) table is kept for the next round at the
+            // same table; a typed one is cleared as before.
+            const keepTable = !!cur.table_token;
             localStorage.setItem(sk, JSON.stringify({
-              ...cur, table_number: '', area_id: '', reservation_id: undefined,
+              ...cur,
+              table_number: keepTable ? cur.table_number : '',
+              area_id: keepTable ? cur.area_id : '',
+              reservation_id: undefined,
             }));
           } catch { /* ignore parse errors */ }
           // Rotate UUID so the next order gets a fresh idempotency key

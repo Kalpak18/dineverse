@@ -11,7 +11,8 @@ exports.getAreas = asyncHandler(async (req, res) => {
       [req.cafeId]
     ),
     db.query(
-      'SELECT id, area_id, label, is_active FROM cafe_tables WHERE cafe_id = $1 ORDER BY label ASC',
+      // qr_token is the table's secret — returned only on this owner/manager route
+      'SELECT id, area_id, label, is_active, qr_token FROM cafe_tables WHERE cafe_id = $1 ORDER BY label ASC',
       [req.cafeId]
     ),
   ]);
@@ -75,7 +76,7 @@ exports.createTable = asyncHandler(async (req, res) => {
   }
 
   const result = await db.query(
-    'INSERT INTO cafe_tables (cafe_id, area_id, label) VALUES ($1, $2, $3) RETURNING id, area_id, label, is_active',
+    'INSERT INTO cafe_tables (cafe_id, area_id, label) VALUES ($1, $2, $3) RETURNING id, area_id, label, is_active, qr_token',
     [req.cafeId, area_id || null, label.trim()]
   );
   ok(res, { table: result.rows[0] }, 'Table created', 201);
@@ -90,7 +91,7 @@ exports.updateTable = asyncHandler(async (req, res) => {
          area_id   = COALESCE($2, area_id),
          is_active = COALESCE($3, is_active)
      WHERE id = $4 AND cafe_id = $5
-     RETURNING id, area_id, label, is_active`,
+     RETURNING id, area_id, label, is_active, qr_token`,
     [label?.trim() || null, area_id !== undefined ? area_id : null, is_active ?? null, req.params.id, req.cafeId]
   );
   if (result.rows.length === 0) return fail(res, 'Table not found', 404);
@@ -305,4 +306,19 @@ exports.getPublicTables = asyncHandler(async (req, res) => {
   }
 
   ok(res, { areas, has_tables: tablesRows.length > 0 });
+});
+
+// ─── POST /api/tables/:id/rotate-qr ──────────────────────────
+// New secret for a table's QR code (e.g. a photo of it is circulating).
+// The old printed QR stops verifying — orders through it are held for staff.
+exports.rotateTableQr = asyncHandler(async (req, res) => {
+  const result = await db.query(
+    `UPDATE cafe_tables
+     SET qr_token = replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')
+     WHERE id = $1 AND cafe_id = $2
+     RETURNING id, area_id, label, is_active, qr_token`,
+    [req.params.id, req.cafeId]
+  );
+  if (result.rows.length === 0) return fail(res, 'Table not found', 404);
+  ok(res, { table: result.rows[0] }, 'New QR code generated — print and replace the old one');
 });
