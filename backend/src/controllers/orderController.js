@@ -804,9 +804,12 @@ exports.getKitchenOrders = asyncHandler(async (req, res) => {
                 COALESCE(oi.sort_order, 0) AS sort_order,
                 oi.preparing_at, oi.ready_at, oi.served_at, oi.cancelled_at,
                 oi.prep_started_at, oi.prep_duration_mins,
-                mi.is_veg, mi.default_prep_mins
+                mi.is_veg, mi.default_prep_mins,
+                COALESCE(NULLIF(cat.station, ''), NULLIF(pcat.station, '')) AS station
          FROM order_items oi
          LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+         LEFT JOIN categories cat ON cat.id = mi.category_id
+         LEFT JOIN categories pcat ON pcat.id = cat.parent_id
          WHERE oi.order_id = ANY($1)
          ORDER BY oi.sort_order ASC, oi.id ASC`,
         [orderIds]
@@ -816,7 +819,16 @@ exports.getKitchenOrders = asyncHandler(async (req, res) => {
   for (const item of itemsResult.rows) {
     (itemsByOrderId[item.order_id] ||= []).push(item);
   }
-  ok(res, { orders: ordersResult.rows.map((o) => ({ ...o, items: itemsByOrderId[o.id] || [] })) });
+  // Stations this café uses, for the KDS station picker
+  const stationsResult = await db.query(
+    `SELECT DISTINCT station FROM categories
+     WHERE cafe_id = $1 AND station IS NOT NULL AND station <> '' ORDER BY station`,
+    [req.cafeId]
+  );
+  ok(res, {
+    orders: ordersResult.rows.map((o) => ({ ...o, items: itemsByOrderId[o.id] || [] })),
+    stations: stationsResult.rows.map((r) => r.station),
+  });
 });
 
 // ─── Owner/Staff: get single order ────────────────────────────
@@ -1343,9 +1355,12 @@ async function getOrderWithItems(orderId, cafeId = null) {
               COALESCE(oi.sort_order, 0) AS sort_order,
               oi.preparing_at, oi.ready_at, oi.served_at, oi.cancelled_at,
               oi.prep_started_at, oi.prep_duration_mins,
-              mi.is_veg, mi.default_prep_mins
+              mi.is_veg, mi.default_prep_mins,
+              COALESCE(NULLIF(cat.station, ''), NULLIF(pcat.station, '')) AS station
        FROM order_items oi
        LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+       LEFT JOIN categories cat ON cat.id = mi.category_id
+       LEFT JOIN categories pcat ON pcat.id = cat.parent_id
        WHERE oi.order_id = $1
        ORDER BY oi.sort_order ASC, oi.id ASC`,
       [orderId]

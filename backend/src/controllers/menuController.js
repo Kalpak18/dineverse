@@ -27,7 +27,7 @@ exports.createCategory = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
-  const { name, display_order, parent_id } = req.body;
+  const { name, display_order, parent_id, station } = req.body;
 
   // Validate parent belongs to this cafe (if provided)
   if (parent_id) {
@@ -40,16 +40,19 @@ exports.createCategory = asyncHandler(async (req, res) => {
   }
 
   const result = await db.query(
-    'INSERT INTO categories (cafe_id, name, display_order, parent_id) VALUES ($1, $2, $3, $4) RETURNING *',
-    [req.cafeId, name, display_order || 0, parent_id || null]
+    'INSERT INTO categories (cafe_id, name, display_order, parent_id, station) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [req.cafeId, name, display_order || 0, parent_id || null, normStation(station)]
   );
   await bustMenuCache(req.cafeId);
   ok(res, { category: result.rows[0] }, 'Category created', 201);
 });
 
+// '' / whitespace → NULL (main kitchen); keep the owner's casing for display
+const normStation = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 40) : null);
+
 exports.updateCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, display_order, parent_id } = req.body;
+  const { name, display_order, parent_id, station } = req.body;
 
   // Validate parent (if changing it)
   if (parent_id !== undefined && parent_id !== null) {
@@ -66,10 +69,12 @@ exports.updateCategory = asyncHandler(async (req, res) => {
     `UPDATE categories
      SET name          = COALESCE($1, name),
          display_order = COALESCE($2, display_order),
-         parent_id     = CASE WHEN $3::boolean THEN $4::uuid ELSE parent_id END
+         parent_id     = CASE WHEN $3::boolean THEN $4::uuid ELSE parent_id END,
+         station       = CASE WHEN $7::boolean THEN $8 ELSE station END
      WHERE id = $5 AND cafe_id = $6
      RETURNING *`,
-    [name || null, display_order ?? null, parent_id !== undefined, parent_id || null, id, req.cafeId]
+    [name || null, display_order ?? null, parent_id !== undefined, parent_id || null, id, req.cafeId,
+     station !== undefined, normStation(station)]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
   await bustMenuCache(req.cafeId);

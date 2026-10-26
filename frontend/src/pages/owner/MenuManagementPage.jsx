@@ -1021,6 +1021,9 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
 function CategoryModal({ category, categories = [], onClose, onSaved }) {
   const [name, setName] = useState(category?.name || '');
   const [parentId, setParentId] = useState(category?.parent_id || null);
+  const [station, setStation] = useState(category?.station || '');
+  // Station names already in use, offered as suggestions
+  const knownStations = [...new Set(categories.map((c) => c.station).filter(Boolean))];
   const [saving, setSaving] = useState(false);
   const [configLoading, setConfigLoading] = useState(Boolean(category));
   const [allModifierGroups, setAllModifierGroups] = useState([]);
@@ -1062,8 +1065,8 @@ function CategoryModal({ category, categories = [], onClose, onSaved }) {
     setSaving(true);
     try {
       const { data } = category
-        ? await updateCategory(category.id, { name, parent_id: parentId })
-        : await createCategory({ name, parent_id: parentId });
+        ? await updateCategory(category.id, { name, parent_id: parentId, station })
+        : await createCategory({ name, parent_id: parentId, station });
       await setCategoryModifierGroups(data.category.id, attachedGroupIds);
       toast.success(category ? 'Category updated' : 'Category added');
       onSaved(data.category);
@@ -1114,6 +1117,20 @@ function CategoryModal({ category, categories = [], onClose, onSaved }) {
             </div>
           </div>
         )}
+        <div>
+          <label className="label" htmlFor="category-station">
+            Kitchen station <span className="text-gray-400 font-normal">(optional)</span>
+          </label>
+          <p className="text-xs text-gray-400 mb-2">
+            e.g. Bar, Tandoor. Items in this category show on that station&apos;s kitchen screen.
+            {parentId ? ' Leave blank to use the parent category\'s station.' : ' Leave blank for the main kitchen.'}
+          </p>
+          <input id="category-station" className="input" list="known-stations" maxLength={40}
+            value={station} onChange={(e) => setStation(e.target.value)} placeholder="Main kitchen" />
+          <datalist id="known-stations">
+            {knownStations.map((st) => <option key={st} value={st} />)}
+          </datalist>
+        </div>
         <div className="border border-gray-200 rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div>

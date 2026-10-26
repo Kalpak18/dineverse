@@ -69,3 +69,25 @@ test('recall moves an order (and its items) one step back', async () => {
   assert.deepEqual(await items(order.id), ['pending']);
   assert.equal((await bump(order.id, 'pending')).status, 400); // only one step, never past confirmed
 });
+
+test('items carry their category station (subcategories inherit) and the feed lists stations', async () => {
+  const c = await createCafe(srv.db);
+  const token = (await login(srv.base, c.email)).token;
+  const drinks = await api(srv.base, 'POST', '/menu/categories', { token, body: { name: 'Drinks', station: ' Bar ' } });
+  assert.equal(drinks.body.category.station, 'Bar');
+  const shakes = await api(srv.base, 'POST', '/menu/categories', { token, body: { name: 'Shakes', parent_id: drinks.body.category.id } });
+  const mains = await api(srv.base, 'POST', '/menu/categories', { token, body: { name: 'Mains' } });
+  const shake = await srv.db.query(`INSERT INTO menu_items (cafe_id, category_id, name, price) VALUES ($1,$2,'Oreo Shake',150) RETURNING id`, [c.id, shakes.body.category.id]);
+  const curry = await srv.db.query(`INSERT INTO menu_items (cafe_id, category_id, name, price) VALUES ($1,$2,'Dal',120) RETURNING id`, [c.id, mains.body.category.id]);
+  await api(srv.base, 'POST', `/orders/cafe/${c.slug}/orders`, {
+    body: { customer_name: 'S', table_number: '1', items: [{ menu_item_id: shake.rows[0].id, quantity: 1 }, { menu_item_id: curry.rows[0].id, quantity: 1 }] },
+  });
+  const feed = await api(srv.base, 'GET', '/orders/kitchen', { token });
+  assert.deepEqual(feed.body.stations, ['Bar']);
+  const byName = Object.fromEntries(feed.body.orders[0].items.map((i) => [i.item_name, i.station]));
+  assert.deepEqual(byName, { 'Oreo Shake': 'Bar', Dal: null });
+
+  // Clearing the station returns the category to the main kitchen
+  const cleared = await api(srv.base, 'PATCH', `/menu/categories/${drinks.body.category.id}`, { token, body: { station: '' } });
+  assert.equal(cleared.body.category.station, null);
+});

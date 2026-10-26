@@ -7,7 +7,7 @@ import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { getApiError } from '../../utils/apiError';
-import TicketRail from '../../components/kds/TicketRail';
+import TicketRail, { itemOnStation } from '../../components/kds/TicketRail';
 import toast from 'react-hot-toast';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -837,11 +837,13 @@ function usePersisted(key, defaultVal) {
 
 export default function KitchenPage() {
   const { cafe } = useAuth();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   // ?station=veg  → locked to veg-only screen
   // ?station=nonveg → locked to non-veg-only screen
   // (no param) → normal unified/split UI
   const stationLock = searchParams.get('station'); // 'veg' | 'nonveg' | null
+  // Any other ?station= value is a menu-category station screen ('main' = no station)
+  const railStation = stationLock && !['veg', 'nonveg'].includes(stationLock) ? stationLock.toLowerCase() : null;
 
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -852,6 +854,9 @@ export default function KitchenPage() {
   const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'rail');
   // Last 5 bumps for Recall: { id, from }
   const [recallStack, setRecallStack]     = useState([]);
+  const [stations, setStations]           = useState([]); // e.g. ['Bar', 'Tandoor'] from menu categories
+  const [density, setDensity]             = usePersisted('kds_density', 'comfortable');
+  const [tvMode, setTvMode]               = usePersisted('kds_tv', false);
   const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified');
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal]     = useState(null); // { orderId, itemId, itemName }
@@ -880,6 +885,7 @@ export default function KitchenPage() {
       // Dedicated feed: every active order (no page limit) with veg/prep fields
       const { data } = await getKitchenOrders();
       setOrders(data.orders.filter((o) => KITCHEN_STATUSES.includes(o.status)));
+      setStations(data.stations || []);
       if (isRefresh) toast('Orders refreshed', { icon: '✓', style: { background: '#1f2937', color: '#fff' } });
     } catch (err) { toast.error(`Couldn't load orders: ${getApiError(err)}`); }
     finally { setLoading(false); setRefreshing(false); }
@@ -944,6 +950,18 @@ export default function KitchenPage() {
       setRecallStack(rest); // stale entry (order moved on elsewhere)
     }
     fetchOrders(); // a served ticket comes back, items reload
+  };
+
+  // Station screen: the header moves only this station's items — NEW starts
+  // them, COOKING finishes them. The order itself advances automatically once
+  // every station's items are done (server-side item → order roll-up).
+  const handleStationBump = async (order, lane) => {
+    const mine = (order.items || []).filter((i) =>
+      i.item_status !== 'cancelled' && !['ready', 'served'].includes(i.item_status) && itemOnStation(i, railStation));
+    for (const item of mine) {
+      if (item.item_status === 'pending') await handleItemUpdate(order.id, item.id, 'preparing');
+      if (lane === 'cooking') await handleItemUpdate(order.id, item.id, 'ready');
+    }
   };
 
   // Tap an item line: tick it done (→ ready), tap again to undo
@@ -1231,12 +1249,14 @@ export default function KitchenPage() {
   // Shared card renderer — used by both unified and split panels
   const renderRail = (railOrders) => (
     <TicketRail orders={railOrders} now={now} getNext={kitchenNext}
-      onBump={handleBump} onItemTap={handleItemTick}
-      onRecall={handleRecall} recallCount={recallStack.length} />
+      station={railStation} density={density} tv={tvMode}
+      onBump={railStation ? handleStationBump : handleBump} onItemTap={handleItemTick}
+      // Recall undoes order-level bumps; station screens tick items (tap again to undo)
+      onRecall={railStation ? undefined : handleRecall} recallCount={recallStack.length} />
   );
 
   const renderCardFeed = (feedOrders, highlightVeg = null) => {
-    if (viewMode === 'rail') return renderRail(feedOrders);
+    if (viewMode === 'rail' || railStation) return renderRail(feedOrders);
     if (feedOrders.length === 0) return (
       <div className="flex flex-col items-center justify-center py-20 text-gray-700">
         <span className="text-5xl mb-3 opacity-20">🍳</span>
@@ -1382,7 +1402,9 @@ export default function KitchenPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between px-3 md:px-5 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xl">🍳</span>
-          <h1 className="font-bold text-base md:text-lg truncate">Kitchen</h1>
+          <h1 className="font-bold text-base md:text-lg truncate">
+            {railStation ? (railStation === 'main' ? 'Main kitchen' : stations.find((st) => st.toLowerCase() === railStation) || railStation) : 'Kitchen'}
+          </h1>
           <span className="hidden md:inline text-xs text-gray-500">{cafe?.name}</span>
           <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-semibold">{orders.length}</span>
         </div>
@@ -1407,6 +1429,39 @@ export default function KitchenPage() {
               </button>
             ))}
           </div>
+
+          {/* Station screen picker — only once the café has assigned stations to categories */}
+          {stations.length > 0 && (
+            <select
+              aria-label="Kitchen station"
+              value={railStation || ''}
+              onChange={(e) => {
+                const next = new URLSearchParams(searchParams);
+                if (e.target.value) next.set('station', e.target.value); else next.delete('station');
+                setSearchParams(next, { replace: true });
+              }}
+              className="min-h-[44px] flex-shrink-0 px-3 rounded-xl text-xs font-bold bg-gray-800 text-gray-200 border-0 focus:ring-2 focus:ring-gray-500"
+            >
+              <option value="">All stations</option>
+              <option value="main">Main kitchen</option>
+              {stations.map((st) => <option key={st} value={st.toLowerCase()}>{st}</option>)}
+            </select>
+          )}
+
+          {(viewMode === 'rail' || railStation) && (
+            <>
+              <button onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}
+                title={density === 'compact' ? 'Compact — tap for comfortable' : 'Comfortable — tap for compact'}
+                className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold flex-shrink-0 ${density === 'compact' ? 'bg-gray-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                {density === 'compact' ? 'Aa−' : 'Aa'}
+              </button>
+              <button onClick={() => setTvMode((v) => !v)}
+                title="TV mode: lanes page automatically instead of scrolling"
+                className={`${TB} hidden md:flex items-center min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold flex-shrink-0 ${tvMode ? 'bg-gray-600 text-white' : 'bg-gray-800 text-gray-400'}`}>
+                📺 <span className="hidden lg:inline ml-1">TV</span>
+              </button>
+            </>
+          )}
 
           {/* Split kitchen toggle */}
           <button
@@ -1534,7 +1589,7 @@ export default function KitchenPage() {
 
       ) : (
         /* ── UNIFIED VIEW ── */
-        viewMode === 'rail' ? (
+        viewMode === 'rail' || railStation ? (
           <div className="flex-1 min-h-0 flex flex-col">{renderRail(orders.filter(orderMatchesVeg))}</div>
         ) : (
         <div className="flex-1 overflow-y-auto overscroll-contain">
