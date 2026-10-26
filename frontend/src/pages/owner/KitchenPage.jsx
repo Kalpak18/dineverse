@@ -7,6 +7,7 @@ import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { getApiError } from '../../utils/apiError';
+import TicketRail from '../../components/kds/TicketRail';
 import toast from 'react-hot-toast';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -847,7 +848,10 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled]   = usePersisted(SOUND_PREF_KEY, true); // shared with the bell menu
   const [fullscreen, setFullscreen]       = useState(false);
-  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'combined');
+  // 'rail' = NEW → COOKING → READY lanes (default on devices with no saved choice)
+  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'rail');
+  // Last 5 bumps for Recall: { id, from }
+  const [recallStack, setRecallStack]     = useState([]);
   const [kitchenView, setKitchenView]     = usePersisted('kds_kitchen_view', 'unified');
   const [selectedItems, setSelectedItems] = useState({});
   const [cancelModal, setCancelModal]     = useState(null); // { orderId, itemId, itemName }
@@ -906,6 +910,48 @@ export default function KitchenPage() {
     // Orders placed during a Wi-Fi blip never arrive as events — refetch
     { onReconnect: () => fetchOrders() }
   );
+
+  // Lanes view: tap a ticket header to move it to the next lane. NEW covers
+  // pending + confirmed ('confirmed' means nothing to a cook), so a NEW
+  // ticket goes straight to cooking.
+  const handleBump = async (order) => {
+    try {
+      let from = order.status;
+      if (from === 'pending') { await updateOrderStatus(order.id, 'confirmed'); from = 'confirmed'; }
+      const next = kitchenNext(from, order.order_type);
+      if (!next) return;
+      await updateOrderStatus(order.id, next);
+      setRecallStack((st) => [{ id: order.id, from }, ...st].slice(0, 5));
+      setOrders((prev) => KITCHEN_STATUSES.includes(next)
+        ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
+        : prev.filter((o) => o.id !== order.id));
+      if (next === 'ready') printReadySlip(order);
+    } catch (err) {
+      toast.error(`Couldn't update order: ${getApiError(err)}`);
+      fetchOrders();
+    }
+  };
+
+  const handleRecall = async () => {
+    const [last, ...rest] = recallStack;
+    if (!last) return;
+    try {
+      await updateOrderStatus(last.id, last.from);
+      setRecallStack(rest);
+      toast('Recalled', { icon: '↶', style: { background: '#1f2937', color: '#fff' } });
+    } catch (err) {
+      toast.error(`Couldn't recall: ${getApiError(err)}`);
+      setRecallStack(rest); // stale entry (order moved on elsewhere)
+    }
+    fetchOrders(); // a served ticket comes back, items reload
+  };
+
+  // Tap an item line: tick it done (→ ready), tap again to undo
+  const handleItemTick = async (order, item) => {
+    if (item.item_status === 'ready') return handleItemUpdate(order.id, item.id, 'preparing');
+    if (item.item_status === 'pending') await handleItemUpdate(order.id, item.id, 'preparing');
+    return handleItemUpdate(order.id, item.id, 'ready');
+  };
 
   // One serving slip per order when it becomes ready — never one per item
   const printReadySlip = (order) => {
@@ -1183,7 +1229,14 @@ export default function KitchenPage() {
   const STATUS_BADGE_BG = { pending:'bg-yellow-500', confirmed:'bg-blue-500', preparing:'bg-orange-500', ready:'bg-teal-500' };
 
   // Shared card renderer — used by both unified and split panels
+  const renderRail = (railOrders) => (
+    <TicketRail orders={railOrders} now={now} getNext={kitchenNext}
+      onBump={handleBump} onItemTap={handleItemTick}
+      onRecall={handleRecall} recallCount={recallStack.length} />
+  );
+
   const renderCardFeed = (feedOrders, highlightVeg = null) => {
+    if (viewMode === 'rail') return renderRail(feedOrders);
     if (feedOrders.length === 0) return (
       <div className="flex flex-col items-center justify-center py-20 text-gray-700">
         <span className="text-5xl mb-3 opacity-20">🍳</span>
@@ -1241,7 +1294,7 @@ export default function KitchenPage() {
 
   if (loading) {
     return (
-      <div className="h-screen bg-gray-950 flex items-center justify-center">
+      <div className="h-full bg-gray-950 flex items-center justify-center">
         <p className="text-gray-400 text-lg">Loading kitchen...</p>
       </div>
     );
@@ -1264,7 +1317,7 @@ export default function KitchenPage() {
     const stationLabel = isVeg ? '🟢 Veg Kitchen' : '🔴 Non-Veg Kitchen';
 
     return (
-      <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+      <div className="h-full bg-gray-950 text-white flex flex-col overflow-hidden">
         {/* Station header */}
         <div className={`flex-shrink-0 flex items-center gap-3 px-4 py-3 ${headerBg} border-b ${borderCol}`}>
           <span className={`w-4 h-4 rounded ${dotBg} flex-shrink-0`} />
@@ -1322,10 +1375,11 @@ export default function KitchenPage() {
 
   // ── NORMAL UNIFIED / SPLIT VIEW ──
   return (
-    <div className="h-screen bg-gray-950 text-white flex flex-col overflow-hidden">
+    <div className="h-full bg-gray-950 text-white flex flex-col overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="flex items-center justify-between px-3 md:px-5 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
+      {/* Phone: title row, then a scrollable toolbar row. md+: one row. */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between px-3 md:px-5 py-2 bg-gray-900 border-b border-gray-800 flex-shrink-0 gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xl">🍳</span>
           <h1 className="font-bold text-base md:text-lg truncate">Kitchen</h1>
@@ -1333,16 +1387,17 @@ export default function KitchenPage() {
           <span className="text-xs bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full font-semibold">{orders.length}</span>
         </div>
 
-        <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+        <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto scrollbar-none md:flex-shrink-0 md:overflow-visible">
           {/* View mode — touch-sized buttons */}
           <div className="flex gap-0.5 bg-gray-800 rounded-xl p-1">
             {[
+              { key: 'rail',       icon: '▤', label: 'Lanes'      },
               { key: 'combined',   icon: '⊞', label: 'By Table'   },
               { key: 'individual', icon: '☰', label: 'Individual' },
               { key: 'rush',       icon: '⚡', label: 'Rush'       },
             ].map(({ key, icon, label }) => (
               <button key={key} onClick={() => setViewMode(key)}
-                className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
+                className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
                   viewMode === key
                     ? key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white'
                     : 'text-gray-400'
@@ -1356,29 +1411,29 @@ export default function KitchenPage() {
           {/* Split kitchen toggle */}
           <button
             onClick={() => setKitchenView((v) => v === 'unified' ? 'split' : 'unified')}
-            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
+            className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${
               kitchenView === 'split'
                 ? 'bg-purple-600/30 border-purple-500 text-purple-300'
                 : 'bg-gray-800 border-transparent text-gray-400'
             }`}
             title="Split Veg / Non-veg kitchen view">
-            🟢🔴
+            <span className="whitespace-nowrap">🟢🔴</span>
           </button>
 
           <button onClick={() => setSoundEnabled((s) => !s)}
-            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+            className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-sm font-medium transition-colors ${soundEnabled ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
             {soundEnabled ? '🔔' : '🔕'}
           </button>
           <button onClick={() => fetchOrders(true)} disabled={refreshing}
-            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 disabled:opacity-50`}>
+            className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 disabled:opacity-50`}>
             <span className={refreshing ? 'animate-spin inline-block' : ''}>↻</span>
           </button>
           <button onClick={() => setShowHelp(true)}
-            className={`${TB} min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400`}>
+            className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400`}>
             ?
           </button>
           <button onClick={toggleFullscreen}
-            className={`${TB} hidden md:flex min-w-[44px] min-h-[36px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 items-center justify-center`}>
+            className={`${TB} hidden md:flex min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-sm bg-gray-800 text-gray-400 items-center justify-center`}>
             ⛶
           </button>
         </div>
@@ -1389,7 +1444,7 @@ export default function KitchenPage() {
       {/* ── Filter bar — hidden in split mode (split has its own panel headers) ── */}
       {kitchenView === 'unified' && (
         <div className="flex-shrink-0 bg-gray-900 border-b border-gray-800 px-3 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
-          {STATUS_FILTER_CONFIG.map(({ key, label, icon, activeBg }) => {
+          {viewMode !== 'rail' && STATUS_FILTER_CONFIG.map(({ key, label, icon, activeBg }) => {
             const count = key === 'all' ? orders.length : byStatus[key] || 0;
             const isActive = statusFilter === key;
             return (
@@ -1408,7 +1463,7 @@ export default function KitchenPage() {
             );
           })}
 
-          <div className="w-px h-7 bg-gray-700 flex-shrink-0 mx-1" />
+          {viewMode !== 'rail' && <div className="w-px h-7 bg-gray-700 flex-shrink-0 mx-1" />}
 
           {[
             { key: 'all',    label: 'All',        cls: 'bg-gray-600/40 border-gray-500 text-white' },
@@ -1479,6 +1534,9 @@ export default function KitchenPage() {
 
       ) : (
         /* ── UNIFIED VIEW ── */
+        viewMode === 'rail' ? (
+          <div className="flex-1 min-h-0 flex flex-col">{renderRail(orders.filter(orderMatchesVeg))}</div>
+        ) : (
         <div className="flex-1 overflow-y-auto overscroll-contain">
           {filteredOrders.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-gray-700 py-20">
@@ -1489,6 +1547,7 @@ export default function KitchenPage() {
             </div>
           ) : renderCardFeed(filteredOrders)}
         </div>
+        )
       )}
 
       {cancelModal && <CancelItemModal cancelModal={cancelModal} cancelReason={cancelReason} setCancelReason={setCancelReason} cancelling={cancelling} onSubmit={handleCancelItemSubmit} onClose={() => { setCancelModal(null); setCancelReason(''); }} TB={TB} />}

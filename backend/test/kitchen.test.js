@@ -57,3 +57,15 @@ test('items can be ticked in combined mode and the prep timer uses the default',
   assert.equal(it.prep_duration_mins, 18);
   assert.ok(it.prep_started_at);
 });
+
+test('recall moves an order (and its items) one step back', async () => {
+  const item = await createMenuItem(srv.db, cafe.id);
+  const order = await placeOrder(srv.base, cafe.slug, item.id);
+  for (const s of ['confirmed', 'preparing', 'ready']) await bump(order.id, s);
+  assert.deepEqual(await items(order.id), ['ready']);
+  assert.equal((await bump(order.id, 'preparing')).status, 200);
+  assert.deepEqual(await items(order.id), ['preparing']);
+  assert.equal((await bump(order.id, 'confirmed')).status, 200);
+  assert.deepEqual(await items(order.id), ['pending']);
+  assert.equal((await bump(order.id, 'pending')).status, 400); // only one step, never past confirmed
+});

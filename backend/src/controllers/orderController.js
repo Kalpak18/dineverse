@@ -873,9 +873,10 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const TRANSITIONS = {
     pending:   ['confirmed', 'cancelled', ...(isPrepaid ? ['paid'] : [])],
     confirmed: ['preparing', 'cancelled', ...(isPrepaid ? ['paid'] : [])],
-    preparing: ['ready',    'cancelled', ...(isPrepaid ? ['paid'] : [])],
-    ready:     ['served',                ...(isPrepaid ? ['paid'] : [])],
-    served:    ['paid'],
+    // One step back = the KDS "Recall" (undo an accidental bump)
+    preparing: ['ready',    'cancelled', 'confirmed', ...(isPrepaid ? ['paid'] : [])],
+    ready:     ['served',   'preparing',              ...(isPrepaid ? ['paid'] : [])],
+    served:    ['paid',     'ready'],
     paid:      [],
     cancelled: [],
   };
@@ -929,7 +930,21 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   // so a Ready order doesn't still show its items as Pending on the KDS.
   const ITEM_STATUS_FOR = { preparing: 'preparing', ready: 'ready', served: 'served', paid: 'served' };
   const itemStatus = ITEM_STATUS_FOR[status];
-  if (itemStatus) {
+  const ORDER_RANK = { pending: 0, confirmed: 1, preparing: 2, ready: 3, served: 4, paid: 5 };
+  if (ORDER_RANK[status] < ORDER_RANK[currentStatus]) {
+    // Recall: pull items that ran ahead back to the order's new stage
+    const back = { confirmed: 'pending', preparing: 'preparing', ready: 'ready' }[status];
+    await client.query(
+      `UPDATE order_items SET item_status = $1,
+         ready_at  = CASE WHEN $1 IN ('pending', 'preparing') THEN NULL ELSE ready_at END,
+         served_at = NULL
+       WHERE order_id = $2
+         AND item_status <> 'cancelled'
+         AND array_position(ARRAY['pending','preparing','ready','served']::text[], item_status::text)
+           > array_position(ARRAY['pending','preparing','ready','served']::text[], $1::text)`,
+      [back, id]
+    );
+  } else if (itemStatus) {
     await client.query(
       `UPDATE order_items SET
          item_status  = $1,

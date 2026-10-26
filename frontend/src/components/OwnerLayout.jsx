@@ -198,7 +198,10 @@ function OwnerLayoutInner() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
+    // 100dvh = the visible viewport (iOS Safari's 100vh includes the hidden
+    // toolbar area, which let the page scroll and the top bar slide away).
+    // h-screen stays as the fallback where dvh isn't supported.
+    <div className="flex h-screen bg-gray-50 overflow-hidden" style={{ height: '100dvh' }}>
 
       {/* ── Sidebar ── */}
       <aside
@@ -522,8 +525,9 @@ function OwnerLayoutInner() {
 
       {/* ── Main area ── */}
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-        {/* Top bar (mobile) — fixed so it never scrolls away on iOS Safari */}
-        <header className="md:hidden fixed top-0 inset-x-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        {/* Top bar (mobile) — a normal row above the scrolling <main>; the
+            dvh-sized root keeps it in view on iOS without position:fixed */}
+        <header className="md:hidden flex-shrink-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
 
           <button
             onClick={() => setMobileOpen(true)}
@@ -570,19 +574,19 @@ function OwnerLayoutInner() {
           </div>
         </header>
 
-        {/* Spacer so content doesn't hide under the fixed mobile header (≈57px tall) */}
-        <div className="md:hidden h-[57px] flex-shrink-0" />
 
 
-        {/* Notification bell — desktop, owner only */}
-        {!isStaff && (
+        {/* Notification bell — desktop, owner only (the kitchen display has its own sound toggle) */}
+        {!isStaff && !location.pathname.startsWith('/owner/kitchen') && (
           <div className="hidden md:flex absolute top-4 right-4 z-50 items-center gap-2">
             <NotificationCenter cafeId={cafe?.id} />
           </div>
         )}
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-4 md:p-6">
+        {/* Page content — the kitchen display is full-bleed and manages its own scrolling */}
+        <main className={location.pathname.startsWith('/owner/kitchen')
+          ? 'flex-1 min-h-0 overflow-hidden'
+          : 'flex-1 overflow-y-auto p-4 md:p-6'}>
           <Outlet />
         </main>
       </div>
