@@ -1,4 +1,5 @@
 /**
+import { tableName } from './tableName';
  * printKot — prints a Kitchen Order Ticket for a single item.
  * 80mm thermal receipt format, no prices (kitchen doesn't need them).
  *
@@ -170,7 +171,7 @@ export function printFullKot(kot, cafeName) {
   <div class="cafe">${escHtml(cafeName || 'Kitchen')}</div>
   <div class="cafe-sub">Kitchen Order Ticket</div>
   <div class="kot-title">KOT — SLIP #${kot.slip_number}</div>
-  <div class="order-id">${isTakeaway ? 'TAKEAWAY' : `TABLE ${escHtml(String(kot.table_number))}`}</div>
+  <div class="order-id">${isTakeaway ? 'TAKEAWAY' : escHtml(tableName(kot.table_number).toUpperCase())}</div>
   ${kot.customer_name ? `<div class="order-type">${escHtml(kot.customer_name)}</div>` : ''}
   <div class="info-row"><span>${dateStr}</span><span>${timeStr}</span></div>
   <hr class="sep"/>

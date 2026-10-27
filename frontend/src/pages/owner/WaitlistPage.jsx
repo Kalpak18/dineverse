@@ -6,6 +6,7 @@ import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { ownerSocketAuth } from '../../utils/socketAuth';
 import { useAuth } from '../../context/AuthContext';
+import { tableName } from '../../utils/tableName';
 
 
 const STATUS_LABELS = {
@@ -59,7 +60,7 @@ export default function WaitlistPage() {
       const { data } = await updateWaitlistEntry(id, payload);
       setEntries((prev) => prev.map((e) => e.id === id ? { ...e, ...data.entry } : e));
       toast.success(
-        status === 'seated'    ? `Customer seated${tableNumber ? ` at Table ${tableNumber}` : ''}!` :
+        status === 'seated'    ? `Customer seated${tableNumber ? ` at ${tableName(tableNumber)}` : ''}!` :
         status === 'no_show'   ? 'Marked as no-show' :
         status === 'cancelled' ? 'Entry cancelled' : 'Updated'
       );

@@ -803,7 +803,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
               o.order_type, o.status, o.kitchen_mode, o.accepted,
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
-              o.payment_verified, o.cancellation_reason,
+              o.payment_verified, o.cancellation_reason, o.payment_mode, o.cash_received, o.payment_splits,
               o.notes, o.created_at, o.updated_at,
               o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
        FROM orders o ${whereClause}
@@ -903,7 +903,7 @@ exports.getOrderById = asyncHandler(async (req, res) => {
 // ─── Owner/Staff: update order status ─────────────────────────
 exports.updateOrderStatus = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { status, cash_received, cancellation_reason, payment_mode } = req.body;
+  const { status, cash_received, cancellation_reason, payment_mode, payment_splits } = req.body;
 
   const validStatuses = ['pending', 'confirmed', 'preparing', 'ready', 'served', 'paid', 'cancelled'];
   if (!validStatuses.includes(status)) return fail(res, 'Invalid status');
@@ -971,10 +971,22 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1} - total_amount`);
     params.push(cash_received);
   }
-  const validModes = ['cash', 'upi', 'card', 'online'];
+  const validModes = ['cash', 'upi', 'card', 'online', 'split'];
   if (status === 'paid' && payment_mode && validModes.includes(payment_mode)) {
     setClauses.push(`payment_mode = $${idx++}`);
     params.push(payment_mode);
+  }
+  // Split bill: each share's amount + how it was paid (counter modes only)
+  if (status === 'paid' && payment_mode === 'split' && payment_splits !== undefined) {
+    const splits = Array.isArray(payment_splits) ? payment_splits : null;
+    const valid = splits && splits.length >= 2 && splits.length <= 20 && splits.every((p) =>
+      ['cash', 'upi', 'card'].includes(p?.mode) && Number.isFinite(Number(p?.amount)) && Number(p.amount) > 0);
+    if (!valid) {
+      await client.query('ROLLBACK');
+      return fail(res, 'payment_splits must be 2–20 shares, each { amount > 0, mode: cash|upi|card }', 400);
+    }
+    setClauses.push(`payment_splits = $${idx++}::jsonb`);
+    params.push(JSON.stringify(splits.map((p) => ({ amount: Math.round(Number(p.amount) * 100) / 100, mode: p.mode }))));
   }
 
   params.push(id, req.cafeId);
@@ -1401,7 +1413,7 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
               o.platform_fee, o.platform_fee_rate,
-              o.payment_verified, o.cancellation_reason,
+              o.payment_verified, o.cancellation_reason, o.payment_mode, o.cash_received, o.payment_splits,
               o.notes, o.created_at, o.updated_at,
               o.delivery_address, o.delivery_address2, o.delivery_city, o.delivery_zipcode,
               o.delivery_phone, o.delivery_instructions, o.delivery_status,

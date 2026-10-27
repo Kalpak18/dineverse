@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { fmtToken } from '../../utils/formatters';
 import { TableStatusBadge } from '../TableConfirm';
+import { tableName } from '../../utils/tableName';
 
 // ─── Kitchen "Lanes" view ────────────────────────────────────────────────────
 // NEW → COOKING → READY. Tablet/desktop/TV: each lane is a row of fixed-width
@@ -71,7 +72,7 @@ function Ticket({ order, lane, now, station, compact, selected, dimmed, getNext,
   const items = (order.items || []).filter(isActive);
   const typeLabel = order.order_type === 'takeaway' ? 'Takeaway'
     : order.order_type === 'delivery' ? 'Delivery'
-    : `Table ${order.table_number ?? '—'}`;
+    : tableName(order.table_number);
 
   return (
     <article

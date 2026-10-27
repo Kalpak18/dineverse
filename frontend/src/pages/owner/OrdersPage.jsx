@@ -18,6 +18,7 @@ import { printBill } from '../../utils/printBill';
 import { printKot, printFullKot } from '../../utils/printKot';
 import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
 import ServiceRequestsPanel from '../../components/ServiceRequestsPanel';
+import { tableName } from '../../utils/tableName';
 
 const QUICK_REASONS = [
   'Item(s) out of stock',
@@ -114,7 +115,7 @@ export default function OrdersPage() {
       // Native OS notification when running as Electron desktop app
       window.electronAPI?.notifyNewOrder(
         `New Order — ${token}`,
-        `${order.customer_name} · ${order.order_type === 'takeaway' ? 'Takeaway' : `Table ${order.table_number}`}`
+        `${order.customer_name} · ${order.order_type === 'takeaway' ? 'Takeaway' : tableName(order.table_number)}`
       );
     },
     (updated) => {
@@ -155,18 +156,18 @@ export default function OrdersPage() {
     };
     setBillingModal({
       bill,
-      onConfirm: (cashReceived, paymentMode) =>
-        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode),
+      onConfirm: (cashReceived, paymentMode, splits) =>
+        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode, splits),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const billingBill = billingModal?.bill || null;
 
-  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null) => {
+  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null, paymentSplits = null) => {
     if (inFlightRef.current.has(orderId)) return;
     inFlightRef.current.add(orderId);
     try {
-      await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode);
+      await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode, paymentSplits);
       setOrders((prev) =>
         prev.map((o) => o.id === orderId
           ? { ...o, status: newStatus, cancellation_reason: cancellationReason || o.cancellation_reason }
@@ -1063,7 +1064,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
   const [collecting, setCollecting] = useState(null); // orderId or tableNumber being paid
   const [reminding, setReminding] = useState(null);
 
-  const handleCollect = async (bill, cashReceived, paymentMode = null) => {
+  const handleCollect = async (bill, cashReceived, paymentMode = null, splits = null) => {
     const key = bill.isTakeaway ? bill.orders[0].id : bill.table_number;
     setCollecting(key);
     try {
@@ -1071,14 +1072,15 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
         bill.isTakeaway ? o.status === 'ready' : o.status === 'served'
       );
       const results = await Promise.allSettled(
-        toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null, null, paymentMode))
+        // Cash received + split shares are recorded once, on the first order of the bill
+        toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null, null, paymentMode, i === 0 ? splits : null))
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed === 0) {
         toast.success(
           bill.isTakeaway
             ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
-            : `Table ${bill.table_number} — payment collected!`
+            : `${tableName(bill.table_number)} — payment collected!`
         );
       } else if (failed < toPay.length) {
         toast.error(`${failed} order(s) could not be marked paid — please retry`);
@@ -1113,7 +1115,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
       })),
       orders: [order],
     };
-    onOpenBilling(bill, (cashReceived, paymentMode) => handleCollect(bill, cashReceived, paymentMode));
+    onOpenBilling(bill, (cashReceived, paymentMode, splits) => handleCollect(bill, cashReceived, paymentMode, splits));
   };
 
   const q = search.trim().toLowerCase();
@@ -1300,7 +1302,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
                         )}
                         {allServed && (
                           <button
-                            onClick={() => onOpenBilling(bill, (cashReceived, paymentMode) => handleCollect(bill, cashReceived, paymentMode))}
+                            onClick={() => onOpenBilling(bill, (cashReceived, paymentMode, splits) => handleCollect(bill, cashReceived, paymentMode, splits))}
                             disabled={collecting === bill.table_number}
                             className="py-1.5 px-4 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-60 text-white font-bold text-xs transition-colors"
                           >
@@ -1395,6 +1397,21 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
   // saved values carried into receipt step (pre-seeded when viewing history)
   const [paidMode, setPaidMode]   = useState(bill.paidMode || null);
   const [paidCash, setPaidCash]   = useState(null);
+  const [paidSplits, setPaidSplits] = useState(bill.paidSplits || null);
+  // Split bill: N shares, each with its own amount + payment mode
+  const [splitOn, setSplitOn]     = useState(false);
+  const [shares, setShares]       = useState([]);
+  const equalShares = (n, prev = []) => {
+    const paise = Math.round(bill.total * 100);
+    const base = Math.floor(paise / n);
+    return Array.from({ length: n }, (_, i) => ({
+      amount: ((base + (i === n - 1 ? paise - base * n : 0)) / 100).toFixed(2), // remainder on the last share
+      mode: prev[i]?.mode || 'cash',
+    }));
+  };
+  const sharesTotal = shares.reduce((s, x) => s + (parseFloat(x.amount) || 0), 0);
+  const sharesValid = splitOn && shares.length >= 2 && shares.every((x) => parseFloat(x.amount) > 0)
+    && Math.abs(sharesTotal - bill.total) < 0.01;
 
   const grandTotal  = bill.total;
   const cash        = parseFloat(cashInput) || 0;
@@ -1403,15 +1420,17 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
   const isCash      = paymentMode === 'cash';
 
   const doPrint = (mode, cashVal, isPaid = true) =>
-    printBill({ cafe, bill, cashReceived: cashVal, paymentMode: mode, isPaid });
+    printBill({ cafe, bill, cashReceived: cashVal, paymentMode: mode, isPaid, splits: mode === 'split' ? (paidSplits || shares) : null });
 
   const handleMarkPaid = async () => {
-    const cashVal = isCash && cashInput ? parseFloat(cashInput) : null;
+    const cashVal = !splitOn && isCash && cashInput ? parseFloat(cashInput) : null;
+    const splits = splitOn ? shares.map((x) => ({ amount: parseFloat(x.amount), mode: x.mode })) : null;
     setConfirming(true);
     try {
-      await onConfirm(cashVal, paymentMode);
-      setPaidMode(paymentMode);
+      await onConfirm(cashVal, splitOn ? 'split' : paymentMode, splits);
+      setPaidMode(splitOn ? 'split' : paymentMode);
       setPaidCash(cashVal);
+      setPaidSplits(splits);
       setStep('receipt');
     } finally {
       setConfirming(false);
@@ -1444,7 +1463,7 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
 
   // ── Step 2: Receipt ───────────────────────────────────────────
   if (step === 'receipt') {
-    const modeLabel = PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
+    const modeLabel = paidMode === 'split' ? '➗ Split' : PAYMENT_MODES.find((m) => m.value === paidMode)?.label ?? paidMode;
     const gstRate = parseInt(cafe?.gst_rate ?? 5);
     const hasGst = !!(cafe?.gst_number) && gstRate > 0 && bill.taxAmount > 0;
     const hasBreakdownReceipt = hasGst || bill.discountAmount > 0 || bill.tipAmount > 0 || bill.deliveryFee > 0 || bill.platformFee > 0;
@@ -1454,9 +1473,16 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
           <div className="text-4xl mb-2">✅</div>
           <h3 className="font-bold text-gray-900 text-lg">Payment Collected!</h3>
           <p className="text-sm text-gray-500 mt-0.5">
-            {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ Table ${bill.table_number}`}
+            {bill.isTakeaway ? `🥡 ${bill.customerName}` : `🍽️ ${tableName(bill.table_number)}`}
             {' · '}{modeLabel}
           </p>
+          {paidMode === 'split' && Array.isArray(paidSplits) && (
+            <ul className="mt-2 text-xs text-gray-600 space-y-0.5">
+              {paidSplits.map((x, i) => (
+                <li key={i}>Share {i + 1}: {c(x.amount)} · {({ cash: 'Cash', upi: 'UPI', card: 'Card' })[x.mode] || x.mode}</li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Charge breakdown */}
@@ -1526,7 +1552,7 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
         <p className="text-sm text-gray-500 mt-0.5">
           {bill.isTakeaway
             ? `🥡 ${bill.customerName} — ${fmtToken(bill.orderNumber, 'takeaway')}`
-            : `🍽️ Table ${bill.table_number}`}
+            : `🍽️ ${tableName(bill.table_number)}`}
         </p>
       </div>
 
@@ -1586,7 +1612,52 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
         </div>
       </div>
 
+      {/* Split bill */}
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-gray-700">Split between friends</span>
+        <button type="button"
+          onClick={() => { setSplitOn((on) => !on); if (!splitOn) setShares(equalShares(2)); }}
+          className={`min-h-[40px] px-3 rounded-xl text-sm font-bold border ${splitOn ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-gray-600 border-gray-300'}`}>
+          {splitOn ? 'On' : '➗ Split bill'}
+        </button>
+      </div>
+      {splitOn && (
+        <div className="rounded-xl border border-gray-200 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-600">People</span>
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label="Fewer people" disabled={shares.length <= 2}
+                onClick={() => setShares((s) => equalShares(s.length - 1, s))}
+                className="w-10 h-10 rounded-full bg-gray-100 text-lg font-bold disabled:opacity-40">−</button>
+              <span className="w-6 text-center font-bold tabular-nums">{shares.length}</span>
+              <button type="button" aria-label="More people" disabled={shares.length >= 20}
+                onClick={() => setShares((s) => equalShares(s.length + 1, s))}
+                className="w-10 h-10 rounded-full bg-gray-100 text-lg font-bold disabled:opacity-40">+</button>
+            </div>
+          </div>
+          {shares.map((x, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <span className="w-6 text-xs text-gray-400 tabular-nums">#{i + 1}</span>
+              <input type="number" min="0" step="0.01" aria-label={`Share ${i + 1} amount`}
+                className="input flex-1 min-w-0" value={x.amount}
+                onChange={(e) => setShares((s) => s.map((y, j) => (j === i ? { ...y, amount: e.target.value } : y)))} />
+              <select aria-label={`Share ${i + 1} payment mode`} className="input w-28"
+                value={x.mode}
+                onChange={(e) => setShares((s) => s.map((y, j) => (j === i ? { ...y, mode: e.target.value } : y)))}>
+                <option value="cash">Cash</option>
+                <option value="upi">UPI</option>
+                <option value="card">Card</option>
+              </select>
+            </div>
+          ))}
+          <p className={`text-xs text-right ${sharesValid ? 'text-green-600' : 'text-red-600'}`}>
+            {sharesValid ? `Shares add up to ${c(bill.total)} ✓` : `Shares total ${c(sharesTotal)} — must equal ${c(bill.total)}`}
+          </p>
+        </div>
+      )}
+
       {/* Payment mode selector */}
+      {!splitOn && (<>
       <div>
         <label className="label">Payment Mode</label>
         <div className="flex gap-2">
@@ -1640,8 +1711,10 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
         </div>
       )}
 
+      </>)}
+
       {/* UPI hint */}
-      {paymentMode === 'upi' && cafe?.upi_id && (
+      {(paymentMode === 'upi' || (splitOn && shares.some((x) => x.mode === 'upi'))) && cafe?.upi_id && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-center text-blue-700">
           UPI: <strong>{cafe.upi_id}</strong>
         </div>
@@ -1650,7 +1723,7 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
       <div className="flex flex-col gap-2 pt-1">
         <button
           onClick={handleMarkPaid}
-          disabled={confirming || (isCash && cashInput !== '' && !isValid)}
+          disabled={confirming || (splitOn ? !sharesValid : (isCash && cashInput !== '' && !isValid))}
           className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold text-sm transition-colors"
         >
           {confirming ? 'Processing…' : isCash && cashInput ? 'Confirm & Mark Paid' : 'Mark Paid'}
@@ -1844,6 +1917,7 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
       platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
       total:           parseFloat(order.final_amount || order.total_amount) || 0,
       paidMode:        order.payment_mode || 'cash',
+      paidSplits:      order.payment_splits || null,
       aggregatedItems: (order.items || []).map((i) => ({
         name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
@@ -2101,7 +2175,7 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
           <div>
             <p className="font-semibold text-gray-800 text-base">{order.customer_name}</p>
             <p className="text-sm text-gray-400 mt-0.5">
-              {order.order_type === 'takeaway' ? '🥡 Takeaway' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ Table ${order.table_number}`}
+              {order.order_type === 'takeaway' ? '🥡 Takeaway' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ ${tableName(order.table_number)}`}
               {' · '}{fmtDateTime(order.created_at)}
             </p>
             {order.customer_phone && <p className="text-sm text-gray-400">{order.customer_phone}</p>}

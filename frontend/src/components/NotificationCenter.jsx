@@ -19,6 +19,7 @@ import { ownerSocketAuth } from '../utils/socketAuth';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { playNotificationSound } from '../hooks/useSocketIO';
 import { getNotifications, markAllRead, markOneRead } from '../services/api';
+import { tableName } from '../utils/tableName';
 
 let globalSocket = null;
 
@@ -126,14 +127,14 @@ export default function NotificationCenter({ cafeId }) {
     const onNewOrder = (order) => onNotification({
       id: null, type: 'new_order',
       title: `New order from ${order.customer_name ?? 'customer'}`,
-      body: order.order_type === 'takeaway' ? 'Takeaway order' : `Table ${order.table_number ?? ''}`,
+      body: order.order_type === 'takeaway' ? 'Takeaway order' : tableName(order.table_number),
       ref_id: order.id,
     });
     const onOrderUpdated = (order) => {
       if (order.status === 'ready') onNotification({
         id: null, type: 'order_ready',
         title: `Order #${order.order_number ?? '—'} is ready`,
-        body: order.order_type === 'takeaway' ? 'Pickup' : `Table ${order.table_number ?? ''}`,
+        body: order.order_type === 'takeaway' ? 'Pickup' : tableName(order.table_number),
         ref_id: order.id,
       });
     };

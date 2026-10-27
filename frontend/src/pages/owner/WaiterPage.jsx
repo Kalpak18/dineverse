@@ -8,6 +8,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
 import ServiceRequestsPanel from '../../components/ServiceRequestsPanel';
+import { tableName } from '../../utils/tableName';
 
 const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
 const OVERDUE_MS = 25 * 60 * 1000;
@@ -29,7 +30,7 @@ const STATUS_LABEL = {
 };
 
 // "3" → "TABLE 3"; "Table 3" / "Patio — Table 3" stay as they are (no "TABLE Table 3")
-const tableLabel = (t) => (/^\d+$/.test(String(t || '')) ? `TABLE ${t}` : String(t || '').toUpperCase());
+const tableLabel = (t) => tableName(t).toUpperCase();
 
 export default function WaiterPage() {
   const { cafe } = useAuth();

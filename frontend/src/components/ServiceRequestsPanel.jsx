@@ -4,6 +4,7 @@ import { getServiceRequests, ackServiceRequest } from '../services/api';
 import { useSocketIO, playNotificationSound } from '../hooks/useSocketIO';
 import { useAuth } from '../context/AuthContext';
 import { getApiError } from '../utils/apiError';
+import { tableName } from '../utils/tableName';
 
 // Live "Call waiter" / "Request bill" requests for floor staff (Waiter and
 // Orders screens). Renders nothing when there are no open requests.
@@ -67,7 +68,7 @@ export default function ServiceRequestsPanel({ dark = false }) {
             <span className="text-2xl" aria-hidden="true">{TYPE[r.type]?.icon}</span>
             <div className="min-w-0 flex-1">
               <p className={`font-black truncate ${dark ? 'text-white' : 'text-gray-900'}`}>
-                {/^\d+$/.test(r.table_number || '') ? `Table ${r.table_number}` : r.table_number}
+                {tableName(r.table_number)}
               </p>
               <p className={`text-xs ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
                 {TYPE[r.type]?.label} · {minsAgo(r.created_at) ? `${minsAgo(r.created_at)} min ago` : 'just now'}

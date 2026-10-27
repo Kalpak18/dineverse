@@ -165,3 +165,24 @@ test('paying for an order the kitchen already started keeps it cooking', async (
   assert.equal((await payOrder(srv.base, cafe.slug, order)).status, 200);
   assert.equal((await orderRow(order.id)).status, 'preparing');
 });
+
+test('a split bill records each share and its payment mode', async () => {
+  const cafe = await createCafe(srv.db);
+  const item = await createMenuItem(srv.db, cafe.id, 'Thali', 300);
+  const owner = await login(srv.base, cafe.email);
+  const order = await placeOrder(srv.base, cafe.slug, item.id);
+  for (const status of ['confirmed', 'preparing', 'ready', 'served']) {
+    await api(srv.base, 'PATCH', `/orders/${order.id}/status`, { token: owner.token, body: { status } });
+  }
+  const bad = await api(srv.base, 'PATCH', `/orders/${order.id}/status`, {
+    token: owner.token, body: { status: 'paid', payment_mode: 'split', payment_splits: [{ amount: 100, mode: 'bitcoin' }, { amount: 206, mode: 'cash' }] },
+  });
+  assert.equal(bad.status, 400);
+  const good = await api(srv.base, 'PATCH', `/orders/${order.id}/status`, {
+    token: owner.token, body: { status: 'paid', payment_mode: 'split', payment_splits: [{ amount: 153, mode: 'cash' }, { amount: 153, mode: 'upi' }] },
+  });
+  assert.equal(good.status, 200);
+  const row = await orderRow(order.id);
+  assert.equal(row.payment_mode, 'split');
+  assert.deepEqual(row.payment_splits, [{ amount: 153, mode: 'cash' }, { amount: 153, mode: 'upi' }]);
+});

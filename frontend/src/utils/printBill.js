@@ -1,4 +1,5 @@
 /**
+import { tableName } from './tableName';
  * printBill — opens a GST-compliant 80mm thermal receipt in a new window and prints.
  *
  * Compliant with:
@@ -19,7 +20,7 @@ const CURRENCY_SYMBOLS = {
   CAD: 'C$', SGD: 'S$', AED: 'د.إ', JPY: '¥', CNY: '¥',
 };
 
-export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash', isPaid = false }) {
+export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash', isPaid = false, splits = null }) {
   const sym = escHtml(CURRENCY_SYMBOLS[cafe?.currency] ?? ((cafe?.currency || 'INR') + ' '));
   const prefix     = cafe?.bill_prefix || 'INV';
   // daily_order_number resets each day — preferred for display; fall back to global serial
@@ -99,7 +100,7 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
   }).join('');
 
   // ── Payment mode label ───────────────────────────────────────────────────
-  const modeLabel = { cash: 'Cash', upi: 'UPI', card: 'Card / POS', online: 'Online', pending: 'Pending' }[paymentMode] || paymentMode;
+  const modeLabel = { cash: 'Cash', upi: 'UPI', card: 'Card / POS', online: 'Online', pending: 'Pending', split: 'Split' }[paymentMode] || paymentMode;
   const isOnline   = paymentMode === 'online';
   const isPending  = paymentMode === 'pending' || !isPaid;
 
@@ -226,7 +227,7 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
       #${dailyNum}
     </div>
     <div style="font-size:9px;color:#777;margin-top:2px;">
-      ${bill.isTakeaway ? '🥡 TAKEAWAY' : `🍽️ TABLE ${escHtml(String(bill.table_number || ''))}`}
+      ${bill.isTakeaway ? '🥡 TAKEAWAY' : `🍽️ ${escHtml(tableName(bill.table_number).toUpperCase())}`}
     </div>
   </div>
 
@@ -240,7 +241,7 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     <div class="row"><span>Time</span><span>${timeStr}</span></div>
     <div class="row">
       <span>Type</span>
-      <span>${bill.isTakeaway ? 'Takeaway' : `Dine-In · Table ${escHtml(String(bill.table_number))}`}</span>
+      <span>${bill.isTakeaway ? 'Takeaway' : `Dine-In · ${escHtml(tableName(bill.table_number))}`}</span>
     </div>
     ${customerName ? `<div class="row"><span>Customer</span><span>${escHtml(customerName)}</span></div>` : ''}
     ${hasGst ? `<div class="row"><span>SAC Code</span><span>996331</span></div>` : ''}
@@ -329,6 +330,10 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     <div style="display:flex;justify-content:space-between;">
       <span>Payment Mode</span><strong>${escHtml(modeLabel)}</strong>
     </div>
+    ${Array.isArray(splits) && splits.length ? splits.map((s, i) => `
+    <div style="display:flex;justify-content:space-between;font-size:11px;">
+      <span>Share ${i + 1} · ${escHtml({ cash: 'Cash', upi: 'UPI', card: 'Card' }[s.mode] || s.mode)}</span><span>${sym}${fmt(s.amount)}</span>
+    </div>`).join('') : ''}
     ${cafe?.upi_id && (paymentMode === 'upi' || paymentMode === 'pending' || isOnline)
       ? `<div style="display:flex;justify-content:space-between;">
            <span>UPI ID</span><span>${escHtml(cafe.upi_id)}</span>

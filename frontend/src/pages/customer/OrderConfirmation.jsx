@@ -1096,10 +1096,60 @@ export default function OrderConfirmation() {
                   <span>{c(tableBill.combined_total)}</span>
                 </div>
               </div>
+              <SplitCalculator
+                total={parseFloat(tableBill.combined_total) || 0}
+                mine={(tableBill.orders || []).filter((o) => orders.some((m) => m.id === o.id))
+                  .reduce((sum, o) => sum + parseFloat(o.final_amount || o.total_amount || 0), 0)}
+                tableLabel={tableBill.table_number}
+                cafeName={tableBill.cafe_name}
+                c={c}
+              />
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Split the table bill (customer) ──────────────────────────
+// Equal split for N friends + "your orders" (what this phone ordered), with a
+// share sheet so the payer can send everyone their part.
+function SplitCalculator({ total, mine, tableLabel, cafeName, c }) {
+  const [people, setPeople] = useState(2);
+  if (!total) return null;
+  const each = Math.ceil((total / people) * 100) / 100; // round up so shares cover the bill
+  const share = async () => {
+    const text = `${cafeName} · ${tableLabel}\nBill total: ${c(total)}\nSplit ${people} ways: ${c(each)} each`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Our bill', text });
+      else { await navigator.clipboard.writeText(text); toast.success('Copied — paste it in your group chat'); }
+    } catch { /* share cancelled */ }
+  };
+  return (
+    <div className="mt-4 rounded-xl border border-gray-200 p-3 space-y-3">
+      <p className="text-sm font-bold text-gray-800">➗ Split the bill</p>
+      <div className="flex items-center justify-between">
+        <span className="text-sm text-gray-600">People at the table</span>
+        <div className="flex items-center gap-2">
+          <button type="button" aria-label="Fewer people" disabled={people <= 2} onClick={() => setPeople((n) => n - 1)}
+            className="w-10 h-10 rounded-full bg-gray-100 text-lg font-bold disabled:opacity-40">−</button>
+          <span className="w-6 text-center font-bold tabular-nums" aria-live="polite">{people}</span>
+          <button type="button" aria-label="More people" disabled={people >= 20} onClick={() => setPeople((n) => n + 1)}
+            className="w-10 h-10 rounded-full bg-gray-100 text-lg font-bold disabled:opacity-40">+</button>
+        </div>
+      </div>
+      <div className="flex justify-between text-base font-bold text-gray-900">
+        <span>Each pays</span><span>{c(each)}</span>
+      </div>
+      {mine > 0 && mine < total && (
+        <div className="flex justify-between text-sm text-gray-600">
+          <span>Or just your orders</span><span>{c(mine)}</span>
+        </div>
+      )}
+      <button type="button" onClick={share} className="w-full min-h-[44px] rounded-xl border-2 border-brand-500 text-brand-600 text-sm font-bold">
+        Share with friends
+      </button>
     </div>
   );
 }

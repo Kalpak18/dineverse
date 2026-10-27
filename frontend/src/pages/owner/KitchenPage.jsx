@@ -9,6 +9,7 @@ import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/st
 import { getApiError } from '../../utils/apiError';
 import TicketRail, { itemOnStation } from '../../components/kds/TicketRail';
 import toast from 'react-hot-toast';
+import { tableName } from '../../utils/tableName';
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function itemDetails(item) {
@@ -66,7 +67,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   <div class="token-box">
     <div class="token-label">Serving Slip · Ready for Service</div>
     <div class="token-num">${isTakeaway ? `TK ${num}` : isDelivery ? `D ${num}` : `#${num}`}</div>
-    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ TABLE ${esc(order.table_number)}`}</div>
+    <div class="type-badge">${isTakeaway ? '🥡 TAKEAWAY' : isDelivery ? '🚚 DELIVERY' : `🍽️ ${esc(tableName(order.table_number).toUpperCase())}`}</div>
   </div>
   <div class="meta">${esc(order.customer_name)} · ${dateStr} ${timeStr}</div>
   <hr class="sep-solid"/>
