@@ -238,3 +238,24 @@ test('cancelling an item of an unpaid order triggers no refund', async () => {
   assert.equal(srv.rzpCalls().slice(before).filter((c) => c.call === 'payments.refund').length, 0);
   assert.equal((await srv.db.query('SELECT COUNT(*)::int n FROM order_refunds WHERE order_id = $1', [r.body.order.id])).rows[0].n, 0);
 });
+
+test('repair script: dry run reports, --apply fixes only prepaid cash_due', async () => {
+  const { execFileSync } = require('node:child_process');
+  const cafe = await createCafe(srv.db, { name: 'Repair Cafe' });
+  await srv.db.query(
+    `INSERT INTO orders (cafe_id, customer_name, table_number, total_amount, final_amount, status, payment_verified, commission_amount, commission_status)
+     VALUES ($1,'A','1',100,100,'paid',true,2,'cash_due'),
+            ($1,'B','1',100,100,'paid',true,2,'collected'),
+            ($1,'C','1',100,100,'paid',false,2,'cash_due')`, [cafe.id]);
+  const dbUrl = srv.db.options.connectionString;
+  const run = (args) => execFileSync('node', ['scripts/fix-prepaid-commission.js', ...args], { cwd: require('node:path').join(__dirname, '..'), env: { ...process.env, DATABASE_URL: dbUrl } }).toString();
+
+  const dry = run([]);
+  assert.match(dry, /Repair Cafe .*1 orders, ₹2\.00/);
+  assert.match(dry, /Dry run/);
+  const statuses = async () => (await srv.db.query(`SELECT customer_name, commission_status FROM orders WHERE cafe_id = $1 ORDER BY customer_name`, [cafe.id])).rows.map((r) => r.commission_status);
+  assert.deepEqual(await statuses(), ['cash_due', 'collected', 'cash_due']);
+
+  run(['--apply']);
+  assert.deepEqual(await statuses(), ['auto_deducted', 'collected', 'cash_due']); // only the prepaid cash_due one
+});
