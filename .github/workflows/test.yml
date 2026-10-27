@@ -54,6 +54,9 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    # Chromium + its system libraries preinstalled (apt install took >10 min);
+    # keep the tag in step with @playwright/test in e2e/package.json
+    container: mcr.microsoft.com/playwright:v1.64.1-noble
     services:
       postgres:
         image: postgres:16
@@ -74,12 +77,12 @@ jobs:
         working-directory: backend
       - run: npm ci
         working-directory: frontend
-      - run: npm ci && npx playwright install --with-deps chromium
+      - run: npm ci
         working-directory: e2e
       - run: npx playwright test
         working-directory: e2e
         env:
-          TEST_PG_URL: postgres://postgres:postgres@localhost:5432/postgres
+          TEST_PG_URL: postgres://postgres:postgres@postgres:5432/postgres
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
