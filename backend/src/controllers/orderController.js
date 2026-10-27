@@ -162,9 +162,10 @@ exports.validateOrder = [
     .trim().notEmpty().withMessage('Table number is required for dine-in orders'),
   body('customer_phone').optional().trim().isLength({ max: 20 }),
   body('client_order_id').optional().trim().isLength({ max: 64 }),
-  body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
+  body('items').isArray({ min: 1, max: 50 }).withMessage('An order needs 1–50 different items'),
   body('items.*.menu_item_id').notEmpty().withMessage('menu_item_id is required'),
-  body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
+  // Upper bound stops prank orders (10,000 coffees) flooding the kitchen
+  body('items.*.quantity').isInt({ min: 1, max: 100 }).withMessage('Quantity must be between 1 and 100'),
   body('delivery_address')
     .if(body('order_type').equals('delivery'))
     .trim().notEmpty().withMessage('Delivery address is required'),
@@ -193,6 +194,7 @@ exports.createOrder = asyncHandler(async (req, res) => {
   const isDineIn = order_type !== 'takeaway' && order_type !== 'delivery';
 
   const client = await db.pool.connect();
+  let released = false;
   try {
     await client.query('BEGIN');
 
@@ -455,14 +457,14 @@ exports.createOrder = asyncHandler(async (req, res) => {
     let finalAmount     = total;
 
     if (req.body.coupon_code) {
-      const result = await applyCoupon(cafeId, req.body.coupon_code, items, total, customer_phone || null);
+      const result = await applyCoupon(cafeId, req.body.coupon_code, items, total, customer_phone || null, client);
       offerId         = result.offerId;
       platformOfferId = result.platformOfferId;
       offerFundedBy   = result.fundedBy;
       discountAmount  = result.discountAmount;
       finalAmount     = result.finalAmount;
     } else {
-      const result = await applyBestOffer(cafeId, items, total, customer_phone || null);
+      const result = await applyBestOffer(cafeId, items, total, customer_phone || null, client);
       offerId         = result.offerId;
       platformOfferId = result.platformOfferId;
       offerFundedBy   = result.fundedBy;
@@ -604,6 +606,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
+      client.release();
+      released = true;
       if (insertErr.code === '23505' && insertErr.constraint === 'orders_client_order_id_idx') {
         // Idempotent: return the existing order so the client can resume normally
         const existingResult = await db.query(
@@ -738,6 +742,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     }
 
     await client.query('COMMIT');
+    // Hand the connection back now: the reads below take their own, and
+    // holding this one meanwhile starves the pool during a rush
+    client.release();
+    released = true;
 
     // Audit: initial order placement
     db.query(
@@ -774,10 +782,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     // customer_token goes only to the customer — never in socket/owner payloads
     ok(res, { order: { ...fullOrder, customer_token: customerToken }, party_secret: partySecret }, 'Order placed', 201);
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (!released) await client.query('ROLLBACK');
     throw err; // re-throw — asyncHandler + global error middleware handles response
   } finally {
-    client.release();
+    if (!released) client.release();
   }
 });
 

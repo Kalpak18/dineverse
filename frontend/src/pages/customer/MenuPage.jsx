@@ -533,9 +533,9 @@ export default function MenuPage() {
 
         <div className="flex gap-2">
           {[
-            { key: 'all', label: 'All', icon: null, active: 'bg-gray-900 text-white' },
-            { key: 'veg', label: 'Pure Veg', icon: '🟢', active: 'bg-green-600 text-white' },
-            { key: 'nonveg', label: 'Non-Veg', icon: '🔴', active: 'bg-red-600 text-white' },
+            { key: 'all', label: t('menu.filterAll'), icon: null, active: 'bg-gray-900 text-white' },
+            { key: 'veg', label: t('menu.filterVeg'), icon: '🟢', active: 'bg-green-600 text-white' },
+            { key: 'nonveg', label: t('menu.filterNonVeg'), icon: '🔴', active: 'bg-red-600 text-white' },
           ].map((f) => (
             <button
               key={f.key}

@@ -230,10 +230,10 @@ const calculateOfferDiscount = async (offer, items, total, bogoPriceMap = null) 
 };
 
 // ─── Fetch active platform offers applicable to a café ───────────
-async function getActivePlatformOffers(cafeId, total) {
+async function getActivePlatformOffers(cafeId, total, q = db) {
   const { dayOfWeek, timeStr, today } = nowIST();
 
-  const { rows } = await db.query(
+  const { rows } = await q.query(
     `SELECT po.*
      FROM platform_offers po
      WHERE po.is_active = true
@@ -479,11 +479,13 @@ async function customerOfferUses(offerId, platformOfferId, customerPhone) {
 
 // ─── Helper: apply best offer (owner + platform) to an order ─────
 // Returns { offerId, platformOfferId, fundedBy, discountAmount, finalAmount, ... }
-exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
+// q: run on the caller's transaction client — createOrder must not borrow a
+// second pool connection while holding one (pool starvation under load)
+exports.applyBestOffer = async (cafeId, items, total, customerPhone = null, q = db) => {
   const { dayOfWeek, timeStr, today } = nowIST();
 
   const [ownerRes, platformRes] = await Promise.all([
-    db.query(
+    q.query(
       `SELECT * FROM offers
        WHERE cafe_id = $1 AND is_active = true
          AND min_order_amount <= $2
@@ -496,7 +498,7 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
          AND (max_uses   IS NULL OR uses_count < max_uses)`,
       [cafeId, total, dayOfWeek, timeStr, today]
     ),
-    getActivePlatformOffers(cafeId, total),
+    getActivePlatformOffers(cafeId, total, q),
   ]);
 
   const allOffers = [
@@ -510,14 +512,14 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
   const bogoItemIds = [...new Set(allOffers.filter((o) => o.offer_type === 'bogo' && o.bogo_item_id).map((o) => o.bogo_item_id))];
   let bogoPriceMap = {};
   if (bogoItemIds.length) {
-    const { rows: bogoRows } = await db.query('SELECT id, price FROM menu_items WHERE id = ANY($1)', [bogoItemIds]);
+    const { rows: bogoRows } = await q.query('SELECT id, price FROM menu_items WHERE id = ANY($1)', [bogoItemIds]);
     bogoRows.forEach((r) => { bogoPriceMap[r.id] = parseFloat(r.price) || 0; });
   }
 
   // Pre-check first_order eligibility
   let hasPriorOrder = false;
   if (customerPhone && allOffers.some((o) => o.offer_type === 'first_order')) {
-    const { rows } = await db.query(
+    const { rows } = await q.query(
       `SELECT 1 FROM orders WHERE cafe_id = $1 AND customer_phone = $2 AND status = 'paid' LIMIT 1`,
       [cafeId, customerPhone]
     );
@@ -531,14 +533,14 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
     const capsPlatform = allOffers.filter((o) => o._fundedBy === 'platform' && o.max_uses_per_customer);
     const checks = [];
     if (capsOwner.length) {
-      checks.push(db.query(
+      checks.push(q.query(
         `SELECT offer_id AS id, COUNT(*) AS cnt FROM offer_redemptions
          WHERE offer_id = ANY($1) AND customer_phone = $2 GROUP BY offer_id`,
         [capsOwner.map((o) => o.id), customerPhone]
       ).then(({ rows }) => rows.forEach((r) => { customerUsesMap[r.id] = parseInt(r.cnt); })));
     }
     if (capsPlatform.length) {
-      checks.push(db.query(
+      checks.push(q.query(
         `SELECT platform_offer_id AS id, COUNT(*) AS cnt FROM offer_redemptions
          WHERE platform_offer_id = ANY($1) AND customer_phone = $2 GROUP BY platform_offer_id`,
         [capsPlatform.map((o) => o.id), customerPhone]
@@ -580,12 +582,12 @@ exports.applyBestOffer = async (cafeId, items, total, customerPhone = null) => {
 };
 
 // ─── Helper: apply a specific coupon code ────────────────────────
-exports.applyCoupon = async (cafeId, couponCode, items, total, customerPhone) => {
+exports.applyCoupon = async (cafeId, couponCode, items, total, customerPhone, q = db) => {
   const { dayOfWeek, timeStr, today } = nowIST();
   const code = couponCode.trim().toUpperCase();
 
   // Check owner coupon
-  const { rows: ownerRows } = await db.query(
+  const { rows: ownerRows } = await q.query(
     `SELECT * FROM offers
      WHERE cafe_id = $1 AND is_active = true
        AND UPPER(coupon_code) = $2
@@ -601,7 +603,7 @@ exports.applyCoupon = async (cafeId, couponCode, items, total, customerPhone) =>
   );
 
   // Check platform coupon
-  const { rows: platformRows } = await db.query(
+  const { rows: platformRows } = await q.query(
     `SELECT po.* FROM platform_offers po
      WHERE po.is_active = true AND UPPER(po.coupon_code) = $1
        AND po.min_order_amount <= $2
@@ -625,7 +627,7 @@ exports.applyCoupon = async (cafeId, couponCode, items, total, customerPhone) =>
 
   // First-order check
   if (offer.offer_type === 'first_order' && customerPhone) {
-    const { rows: prev } = await db.query(
+    const { rows: prev } = await q.query(
       `SELECT id FROM orders WHERE cafe_id = $1 AND customer_phone = $2 AND status = 'paid' LIMIT 1`,
       [cafeId, customerPhone]
     );

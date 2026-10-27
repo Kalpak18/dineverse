@@ -4,6 +4,7 @@ import { loadOrders } from '../utils/cafeOrderStorage';
 import { loadReservations } from '../utils/cafeReservationStorage';
 import { loadVisited } from '../utils/visitedCafes';
 import { getNotifications, getUnreadCount, markAllRead, clearNotifications } from '../utils/customerNotifications';
+import { useT } from '../i18n';
 
 // Count paid orders for a café from localStorage, grouping same-day orders as one visit.
 // Multiple orders placed in one sitting (same day) count as a single visit — matches the
@@ -67,6 +68,7 @@ function ChevronLeft() {
 const ICON_MAP = { order: '📋', reservation: '📅', waitlist: '🪑', info: 'ℹ️' };
 
 export default function CustomerBottomNav() {
+  const { t } = useT();
   const { slug } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -207,11 +209,11 @@ export default function CustomerBottomNav() {
       {/* ── Bottom nav bar ── */}
       <nav className="fixed bottom-0 inset-x-0 z-30 bg-white border-t border-gray-200 flex items-stretch"
         style={{ height: 60, paddingBottom: 'env(safe-area-inset-bottom)' }}>
-        <Tab active={isHome}     onClick={() => navigate(`/cafe/${slug}`)}           icon={<HomeIcon />}    label="Café"     />
-        <Tab active={isOrders}   onClick={() => navigate(`/cafe/${slug}/my-orders`)} icon={<OrdersIcon />}  label="Orders"   badge={activeOrderCount} />
-        <Tab active={isBookings} onClick={() => navigate(`/cafe/${slug}/my-orders?tab=reservations`)} icon={<BookingsIcon />} label="Bookings" badge={activeBkCount} />
-        <Tab active={isAlerts}   onClick={alertsOpen ? closeAlerts : openAlerts}  icon={<BellIcon />} label="Alerts"  badge={unreadCount} />
-        <Tab active={visitedOpen} onClick={visitedOpen ? closeVisited : openVisited} icon={<VisitedIcon />} label="Visited" />
+        <Tab active={isHome}     onClick={() => navigate(`/cafe/${slug}`)}           icon={<HomeIcon />}    label={t('nav.cafe')}     />
+        <Tab active={isOrders}   onClick={() => navigate(`/cafe/${slug}/my-orders`)} icon={<OrdersIcon />}  label={t('nav.orders')}   badge={activeOrderCount} />
+        <Tab active={isBookings} onClick={() => navigate(`/cafe/${slug}/my-orders?tab=reservations`)} icon={<BookingsIcon />} label={t('nav.bookings')} badge={activeBkCount} />
+        <Tab active={isAlerts}   onClick={alertsOpen ? closeAlerts : openAlerts}  icon={<BellIcon />} label={t('nav.alerts')}  badge={unreadCount} />
+        <Tab active={visitedOpen} onClick={visitedOpen ? closeVisited : openVisited} icon={<VisitedIcon />} label={t('nav.visited')} />
       </nav>
 
       {/* ── Alerts — full screen page ── */}

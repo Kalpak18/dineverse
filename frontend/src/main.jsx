@@ -19,6 +19,12 @@ import { LanguageProvider } from './i18n';
 // Initialise Sentry BEFORE React mounts so any render-time error is captured.
 initSentry();
 
+// Logo wordmark font, non-render-blocking (preloaded in index.html)
+const fontLink = document.createElement('link');
+fontLink.rel = 'stylesheet';
+fontLink.href = 'https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap';
+document.head.appendChild(fontLink);
+
 // Global safety net: surface unhandled promise rejections / errors so the
 // app never silently breaks. ErrorBoundary catches React render errors;
 // these handlers catch everything else (axios calls, async event handlers).

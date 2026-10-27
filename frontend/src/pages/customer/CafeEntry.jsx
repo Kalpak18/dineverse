@@ -661,7 +661,7 @@ export default function CafeEntry() {
           onClick={() => setShowReserve(true)}
           className="w-full mt-4 py-3 rounded-xl border-2 border-brand-300 text-brand-700 font-semibold text-sm hover:bg-brand-50 transition-colors"
         >
-          📅 Book a Table in Advance
+          {t('entry.bookTable')}
         </button>
 
         {/* Join Waitlist */}
@@ -669,7 +669,7 @@ export default function CafeEntry() {
           onClick={() => setShowWaitlist(true)}
           className="w-full mt-2 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
         >
-          🕐 Join Waitlist
+          {t('entry.joinWaitlist')}
         </button>
 
         {/* My Bookings — live status tracker */}

@@ -251,6 +251,7 @@ export default function TicketRail({
             onClick={onRecall}
             disabled={!recallCount}
             title="Undo the last bump (R)"
+            aria-label="Recall"
             className="flex-shrink-0 min-h-[40px] min-w-[44px] px-3 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 disabled:opacity-30 select-none touch-manipulation"
           >
             ↶ <span className="hidden sm:inline">Recall</span>

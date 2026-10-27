@@ -15,6 +15,9 @@ function loadFromStorage() {
   }
 }
 
+// Same limit the API enforces per order line
+export const MAX_QTY = 100;
+
 function cartReducer(state, action) {
   switch (action.type) {
     case 'ADD_ITEM': {
@@ -23,7 +26,7 @@ function cartReducer(state, action) {
         return {
           ...state,
           items: state.items.map((i) =>
-            i.id === action.item.id ? { ...i, quantity: i.quantity + 1 } : i
+            i.id === action.item.id ? { ...i, quantity: Math.min(i.quantity + 1, MAX_QTY) } : i
           ),
         };
       }
@@ -38,7 +41,7 @@ function cartReducer(state, action) {
       return {
         ...state,
         items: state.items.map((i) =>
-          i.id === action.id ? { ...i, quantity: action.qty } : i
+          i.id === action.id ? { ...i, quantity: Math.min(action.qty, MAX_QTY) } : i
         ),
       };
     }

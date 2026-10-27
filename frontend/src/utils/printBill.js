@@ -1,5 +1,7 @@
-/**
 import { tableName } from './tableName';
+import { openPrintWindow } from './printWindow';
+
+/**
  * printBill — opens a GST-compliant 80mm thermal receipt in a new window and prints.
  *
  * Compliant with:
@@ -359,22 +361,10 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     <p style="margin-top:4px;color:#999;font-size:9px;">Powered by DineVerse</p>
   </div>
 
-  <script>
-    window.onload = function () {
-      window.print();
-      window.onafterprint = function () { window.close(); };
-    };
-  </script>
 </body>
 </html>`;
 
-  const win = window.open('', '_blank', 'width=420,height=750,toolbar=0,menubar=0,scrollbars=1');
-  if (!win) {
-    alert('Pop-up blocked. Please allow pop-ups for this site to print bills.');
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
+  openPrintWindow(html, { features: 'width=420,height=750,toolbar=0,menubar=0,scrollbars=1', autoPrint: true });
 }
 
 function fmt(n) {

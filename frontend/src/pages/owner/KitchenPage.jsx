@@ -74,17 +74,23 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   <table><tbody>${itemRows}</tbody></table>
   <hr class="sep"/>
   ${order.notes ? `<div class="notes">📝 ${esc(order.notes)}</div>` : ''}
-  <script>window.onload=function(){window.focus();}; function doPrint(){window.print();window.onafterprint=function(){window.close();};};<\/script>
   <div style="text-align:center;margin-top:10px;">
-    <button onclick="doPrint()" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;">🖨 PRINT</button>
+    <button id="print-btn" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;">🖨 PRINT</button>
   </div>
 </body>
 </html>`;
 
+  // Caller shows its own toast when blocked; never alert() — it freezes the KDS
   const w = window.open('', '_blank', 'width=380,height=580,toolbar=0,menubar=0,scrollbars=0');
-  if (!w) return false; // caller shows a toast — alert() would freeze the KDS
+  if (!w) return false;
   w.document.write(html);
   w.document.close();
+  // CSP blocks inline handlers, so wire the PRINT button from here
+  w.document.getElementById('print-btn')?.addEventListener('click', () => {
+    w.onafterprint = () => w.close();
+    w.print();
+  });
+  w.focus();
   return true;
 }
 
@@ -1349,7 +1355,7 @@ export default function KitchenPage() {
           {/* Status filter chips */}
           <div className="flex gap-1.5 overflow-x-auto scrollbar-none ml-auto">
             {STATUS_FILTER_CONFIG.map(({ key, icon, label }) => (
-              <button key={key} onClick={() => setStatusFilter(key)}
+              <button key={key} onClick={() => setStatusFilter(key)} aria-label={label} aria-pressed={statusFilter === key}
                 className={`${TB} min-w-[44px] min-h-[40px] px-3 py-2 rounded-xl text-xs font-bold flex-shrink-0 transition-colors flex items-center gap-1.5 ${
                   statusFilter === key
                     ? isVeg ? 'bg-green-700 text-white' : 'bg-red-700 text-white'
@@ -1419,7 +1425,7 @@ export default function KitchenPage() {
               { key: 'individual', icon: '☰', label: 'Individual' },
               { key: 'rush',       icon: '⚡', label: 'Rush'       },
             ].map(({ key, icon, label }) => (
-              <button key={key} onClick={() => setViewMode(key)}
+              <button key={key} onClick={() => setViewMode(key)} aria-label={`${label} view`} aria-pressed={viewMode === key}
                 className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-lg text-xs font-bold transition-colors ${
                   viewMode === key
                     ? key === 'rush' ? 'bg-orange-600 text-white' : 'bg-gray-600 text-white'
@@ -1504,7 +1510,7 @@ export default function KitchenPage() {
             const count = key === 'all' ? orders.length : byStatus[key] || 0;
             const isActive = statusFilter === key;
             return (
-              <button key={key} onClick={() => setStatusFilter(key)}
+              <button key={key} onClick={() => setStatusFilter(key)} aria-label={`${label} (${count})`} aria-pressed={isActive}
                 className={`${TB} flex items-center gap-1.5 min-h-[40px] px-3 py-2 rounded-xl border text-xs font-bold whitespace-nowrap transition-all flex-shrink-0 ${
                   isActive ? activeBg : 'border-transparent text-gray-500 active:bg-gray-800'
                 }`}>

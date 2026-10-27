@@ -87,3 +87,28 @@ test('delivery: radius, per-km fee and minimum order are enforced', async () => 
   assert.equal(small.status, 400);
   assert.match(small.body.message, /Minimum order/);
 });
+
+test('a rush of simultaneous orders all succeed with unique token numbers', async () => {
+  // Regression: createOrder held its transaction connection while offer
+  // lookups borrowed a second one from the pool → >10 parallel orders
+  // starved the pool and failed with "timeout exceeded when trying to connect"
+  const cafe = await createCafe(srv.db);
+  const item = await createMenuItem(srv.db, cafe.id);
+  const results = await Promise.all(Array.from({ length: 30 }, (_, i) =>
+    api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders`, {
+      body: { customer_name: `G${i}`, table_number: '1', items: [{ menu_item_id: item.id, quantity: 1 }] },
+    })));
+  assert.deepEqual(results.map((r) => r.status).filter((s) => s !== 201), []);
+  const nums = results.map((r) => Number(r.body.order.daily_order_number)).sort((a, b) => a - b);
+  assert.deepEqual(nums, Array.from({ length: 30 }, (_, i) => i + 1));
+});
+
+test('order lines are capped at 100 units', async () => {
+  const cafe = await createCafe(srv.db);
+  const item = await createMenuItem(srv.db, cafe.id);
+  const place = (quantity) => api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders`, {
+    body: { customer_name: 'X', table_number: '1', items: [{ menu_item_id: item.id, quantity }] },
+  });
+  assert.equal((await place(100)).status, 201);
+  assert.equal((await place(101)).status, 400);
+});

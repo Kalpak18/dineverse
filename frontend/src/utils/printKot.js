@@ -1,5 +1,7 @@
-/**
 import { tableName } from './tableName';
+import { openPrintWindow } from './printWindow';
+
+/**
  * printKot — prints a Kitchen Order Ticket for a single item.
  * 80mm thermal receipt format, no prices (kitchen doesn't need them).
  *
@@ -106,22 +108,10 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
     <p style="font-size:9px;color:#999;margin-top:4px;">Powered by DineVerse</p>
   </div>
 
-  <script>
-    window.onload = function () {
-      window.print();
-      window.onafterprint = function () { window.close(); };
-    };
-  </script>
 </body>
 </html>`;
 
-  const win = window.open('', '_blank', 'width=380,height=500,toolbar=0,menubar=0,scrollbars=1');
-  if (!win) {
-    alert('Pop-up blocked. Please allow pop-ups to print KOT.');
-    return;
-  }
-  win.document.write(html);
-  win.document.close();
+  openPrintWindow(html, { features: 'width=380,height=500,toolbar=0,menubar=0,scrollbars=1', autoPrint: true });
 }
 
 /**
@@ -178,7 +168,7 @@ export function printFullKot(kot, cafeName) {
   <table><tbody>${itemRows}</tbody></table>
   <hr class="sep"/>
   <div style="text-align:center;margin-top:8px;">
-    <button onclick="window.print();window.onafterprint=function(){window.close()};"
+    <button id="print-btn"
       style="font-family:'Courier New',monospace;font-size:12px;font-weight:bold;padding:7px 24px;
              border:2px solid #000;border-radius:4px;background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
       PRINT KOT
@@ -187,9 +177,7 @@ export function printFullKot(kot, cafeName) {
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1');
-  if (w) { w.document.write(html); w.document.close(); }
-  else alert('Pop-up blocked. Allow pop-ups to print KOT.');
+  openPrintWindow(html, { features: 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1', printButton: 'print-btn' });
 }
 
 function escHtml(str) {

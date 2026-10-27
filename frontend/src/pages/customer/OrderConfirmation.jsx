@@ -795,6 +795,13 @@ export default function OrderConfirmation() {
                   </button>
                 )}
 
+                {/* Paid online, waiting for staff to close the order */}
+                {order.payment_verified && order.status !== 'paid' && order.status !== 'cancelled' && (
+                  <p role="status" className="rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-semibold text-center px-3 py-2.5">
+                    💳 {t('order.paidOnline')}
+                  </p>
+                )}
+
                 {/* Pay Now — shown when food is ready/served and not yet paid */}
                 {canPayOnline && !order.payment_verified && (
                   <div className="space-y-2">

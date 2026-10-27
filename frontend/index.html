@@ -65,12 +65,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <!-- Only load Poppins for logo wordmark — tiny subset, non-render-blocking with display=swap -->
-    <link
-      rel="preload"
-      as="style"
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap"
-      onload="this.rel='stylesheet'"
-    />
+    <!-- The stylesheet itself is added by src/main.jsx (an inline onload swap
+         would be blocked by the CSP, which has no 'unsafe-inline' scripts) -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap" />
     <noscript>
       <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@900&display=swap" rel="stylesheet" />
     </noscript>

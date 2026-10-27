@@ -43,6 +43,7 @@ const customerRoutes    = require('./routes/customers');
 const initReportScheduler = require('./services/reportScheduler');
 
 const app = express();
+app.disable('x-powered-by'); // helmet also strips it, but CORS rejections run before helmet
 // 🔥 REQUIRED for Render / Vercel / proxies
 app.set('trust proxy', 1);
 const server = http.createServer(app);
