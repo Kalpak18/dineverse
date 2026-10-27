@@ -186,3 +186,55 @@ test('a split bill records each share and its payment mode', async () => {
   assert.equal(row.payment_mode, 'split');
   assert.deepEqual(row.payment_splits, [{ amount: 153, mode: 'cash' }, { amount: 153, mode: 'upi' }]);
 });
+
+test('cancelling one item of a prepaid order refunds that item; the last one refunds the rest', async () => {
+  const cafe = await routeCafe();
+  const owner = await login(srv.base, cafe.email);
+  const big = await createMenuItem(srv.db, cafe.id, 'Thali', 200);
+  const small = await createMenuItem(srv.db, cafe.id, 'Lassi', 100);
+  const r = await api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders`, {
+    body: { customer_name: 'A', table_number: '1', items: [{ menu_item_id: big.id, quantity: 1 }, { menu_item_id: small.id, quantity: 1 }] },
+  });
+  const order = r.body.order;
+  assert.equal(Number(order.final_amount), 306); // 300 + 2% platform fee
+  assert.equal((await payOrder(srv.base, cafe.slug, order)).status, 200);
+  const lassi = order.items.find((i) => i.item_name === 'Lassi');
+  const thali = order.items.find((i) => i.item_name === 'Thali');
+  const before = srv.rzpCalls().length;
+
+  const c1 = await api(srv.base, 'PATCH', `/orders/${order.id}/items/${lassi.id}/cancel`, { token: owner.token, body: { reason: 'Out of curd' } });
+  assert.equal(c1.status, 200);
+  await sleep(500);
+  let mine = srv.rzpCalls().slice(before);
+  assert.deepEqual(mine.map((c) => [c.call, c.amount]), [['transfers.reverse', 10000], ['payments.refund', 10200]]);
+  const partial = (await srv.db.query('SELECT amount, status FROM order_refunds WHERE order_id = $1', [order.id])).rows;
+  assert.deepEqual(partial.map((p) => [Number(p.amount), p.status]), [[102, 'processed']]);
+  assert.equal((await orderRow(order.id)).status, 'confirmed');
+
+  const c2 = await api(srv.base, 'PATCH', `/orders/${order.id}/items/${thali.id}/cancel`, { token: owner.token, body: { reason: 'Kitchen closed' } });
+  assert.equal(c2.status, 200);
+  await sleep(500);
+  mine = srv.rzpCalls().slice(before);
+  const last = mine[mine.length - 1];
+  assert.equal(last.call, 'payments.refund');
+  assert.equal(last.amount, 20400); // only what's left
+  assert.equal(last.reverse_all, 1);
+  const row = await orderRow(order.id);
+  assert.equal(row.status, 'cancelled');
+  assert.equal(row.refund_status, 'processed');
+});
+
+test('cancelling an item of an unpaid order triggers no refund', async () => {
+  const cafe = await createCafe(srv.db);
+  const owner = await login(srv.base, cafe.email);
+  const a = await createMenuItem(srv.db, cafe.id, 'A', 100);
+  const b = await createMenuItem(srv.db, cafe.id, 'B', 100);
+  const r = await api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders`, {
+    body: { customer_name: 'A', table_number: '1', items: [{ menu_item_id: a.id, quantity: 1 }, { menu_item_id: b.id, quantity: 1 }] },
+  });
+  const before = srv.rzpCalls().length;
+  await api(srv.base, 'PATCH', `/orders/${r.body.order.id}/items/${r.body.order.items[0].id}/cancel`, { token: owner.token, body: { reason: 'x' } });
+  await sleep(300);
+  assert.equal(srv.rzpCalls().slice(before).filter((c) => c.call === 'payments.refund').length, 0);
+  assert.equal((await srv.db.query('SELECT COUNT(*)::int n FROM order_refunds WHERE order_id = $1', [r.body.order.id])).rows[0].n, 0);
+});

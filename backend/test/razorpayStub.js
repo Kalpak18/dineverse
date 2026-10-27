@@ -29,12 +29,15 @@ class FakeRazorpay {
       transfer: async (id) => { log({ call: 'payments.transfer', id }); return { items: [{ id: 'trf_manual' }] }; },
       fetchTransfer: async (id) => {
         const order = orders[id.replace('pay_', 'order_')];
-        return { items: order?.transfers?.length ? [{ id: `trf_${id}` }] : [] };
+        return { items: order?.transfers?.length ? [{ id: `trf_${id}`, amount: order.transfers[0].amount }] : [] };
       },
       refund: async (id, opts) => {
         log({ call: 'payments.refund', id, amount: opts.amount, reverse_all: opts.reverse_all || 0 });
         return { id: `rfnd_${id}` };
       },
+    };
+    this.transfers = {
+      reverse: async (id, opts) => { log({ call: 'transfers.reverse', id, amount: opts.amount }); return { id: `rvrsl_${id}` }; },
     };
   }
 }

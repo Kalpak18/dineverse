@@ -9,7 +9,7 @@ const { applyBestOffer, applyCoupon } = require('./offerController');
 const { notify } = require('../services/notificationService');
 const { sendToOwners } = require('./pushController');
 const { generateOrderToken, hasOrderToken, sentOrderTokens, safeEqual } = require('../utils/orderToken');
-const { refundPrepaidOrder } = require('../services/refundService');
+const { refundPrepaidOrder, refundOrderItem } = require('../services/refundService');
 const { geocodeAddress } = require('../services/geocodingService');
 
 // Orders placed before migration 074 have no customer_token — let them
@@ -1934,6 +1934,27 @@ exports.acceptOrder = asyncHandler(async (req, res) => {
   ok(res, { order: fullOrder });
 });
 
+// After an item is cancelled/rejected: if nothing is left the order is
+// cancelled and whatever was prepaid is refunded; otherwise a prepaid order
+// gets that item refunded. (Both refunds are no-ops for unpaid orders.)
+async function settleItemRemoval(orderId, itemId, reason) {
+  const left = await db.query(
+    `SELECT COUNT(*)::int AS n FROM order_items WHERE order_id = $1 AND item_status <> 'cancelled'`,
+    [orderId]
+  );
+  if (left.rows[0].n === 0) {
+    await db.query(
+      `UPDATE orders SET status = 'cancelled',
+         cancellation_reason = COALESCE(cancellation_reason, 'All items unavailable'), updated_at = NOW()
+       WHERE id = $1 AND status NOT IN ('paid', 'cancelled')`,
+      [orderId]
+    );
+    refundPrepaidOrder(orderId, reason);
+  } else {
+    refundOrderItem(orderId, itemId, reason);
+  }
+}
+
 // Reject entire order (kitchen staff rejects all items)
 exports.rejectOrder = asyncHandler(async (req, res) => {
   const { id } = req.params;
@@ -2027,6 +2048,7 @@ exports.rejectItem = asyncHandler(async (req, res) => {
 
   const orderData = order.rows[0];
   if (orderData.kitchen_mode !== 'individual') return fail(res, 'Item rejection only available in individual mode', 400);
+  if (['paid', 'cancelled'].includes(orderData.status)) return fail(res, 'Order is already completed');
 
   const item = await db.query(
     'SELECT * FROM order_items WHERE id = $1 AND order_id = $2',
@@ -2034,11 +2056,13 @@ exports.rejectItem = asyncHandler(async (req, res) => {
   );
   if (item.rows.length === 0) return fail(res, 'Item not found', 404);
   if (item.rows[0].accepted) return fail(res, 'Cannot reject an already accepted item', 400);
+  if (item.rows[0].item_status === 'cancelled') return fail(res, 'Item already cancelled', 400);
 
   await db.query(
-    'UPDATE order_items SET item_status = $1, cancellation_reason = $2 WHERE id = $3',
+    'UPDATE order_items SET item_status = $1, cancellation_reason = $2, cancelled_at = NOW() WHERE id = $3',
     ['cancelled', reason, itemId]
   );
+  await settleItemRemoval(id, itemId, `Rejected: ${reason.trim()}`);
   await db.query(
     `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
      VALUES ($1, $2, $3, 'staff', $4, $5)`,
@@ -2077,25 +2101,16 @@ exports.cancelItem = asyncHandler(async (req, res) => {
   );
   if (itemResult.rows.length === 0) return fail(res, 'Item not found or already cancelled', 404);
 
-  // Void entire order if every item is now cancelled
-  const remaining = await db.query(
-    "SELECT COUNT(*) FROM order_items WHERE order_id = $1 AND item_status != 'cancelled'",
-    [id]
-  );
-  if (parseInt(remaining.rows[0].count, 10) === 0) {
-    await db.query(
-      "UPDATE orders SET status = 'cancelled', cancellation_reason = 'All items unavailable', updated_at = NOW() WHERE id = $1",
-      [id]
-    );
-  }
+  // Whole order void if nothing is left; refunds for prepaid orders
+  await settleItemRemoval(id, itemId, reason.trim());
 
   const fullOrder = await getOrderWithItems(id, cafeId);
   if (req.io) {
     req.io.to(`cafe:${cafeId}`).emit('order_updated', fullOrder);
     req.io.to(`order:${id}`).emit('order_updated', fullOrder);
     req.io.to(`order:${id}`).emit('item_cancelled', {
-      orderId: parseInt(id, 10),
-      itemId: parseInt(itemId, 10),
+      orderId: id,
+      itemId,
       itemName: itemResult.rows[0].item_name,
       reason: reason.trim(),
     });
