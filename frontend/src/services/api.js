@@ -253,6 +253,7 @@ export const deleteCategory = (id) => api.delete(`/menu/categories/${id}`);
 
 // ─── Menu Items (Owner) ───────────────────────────────────────
 export const getMenuItems = () => api.get('/menu/items');
+export const importMenuCsv = (rows) => api.post('/menu/import', { rows });
 export const createMenuItem = (data) => api.post('/menu/items', data);
 export const updateMenuItem = (id, data) => api.patch(`/menu/items/${id}`, data);
 export const deleteMenuItem = (id) => api.delete(`/menu/items/${id}`);

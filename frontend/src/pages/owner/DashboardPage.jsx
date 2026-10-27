@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSocketIO } from '../../hooks/useSocketIO';
 import { useAuth } from '../../context/AuthContext';
 import { getDashboardStats, getPublicSetting, toggleCafeOpen, submitTestimonial, getMyTestimonial } from '../../services/api';
 import CafeQRCard from '../../components/CafeQRCard';
@@ -56,6 +57,26 @@ export default function DashboardPage() {
   }, [cafe?.id]);
 
   useEffect(() => { loadDashboard(); }, [loadDashboard]);
+
+  // ── Live: refresh today's numbers as orders arrive / change ──
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const refreshTimer = useRef(null);
+  const refreshStats = useCallback(() => {
+    clearTimeout(refreshTimer.current);
+    // Batch bursts (several status changes at once) into one request
+    refreshTimer.current = setTimeout(() => {
+      getDashboardStats()
+        .then(({ data }) => { setStats(data); setUpdatedAt(new Date()); })
+        .catch(() => { /* keep the last numbers; next event retries */ });
+    }, 1500);
+  }, []);
+  useEffect(() => () => clearTimeout(refreshTimer.current), []);
+  useEffect(() => { if (stats && !updatedAt) setUpdatedAt(new Date()); }, [stats, updatedAt]);
+  useSocketIO(cafe?.id, refreshStats, refreshStats, null, { onReconnect: refreshStats });
+  useEffect(() => {
+    const id = setInterval(() => { if (document.visibilityState === 'visible') refreshStats(); }, 60000);
+    return () => clearInterval(id);
+  }, [refreshStats]);
 
   const handleToggleOpen = async () => {
     setTogglingOpen(true);
@@ -163,7 +184,16 @@ export default function DashboardPage() {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-bold text-gray-900 truncate">{cafe?.name}</h1>
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-xl font-bold text-gray-900 truncate">{cafe?.name}</h1>
+              {updatedAt && (
+                <span className="flex-shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-green-700" aria-live="polite"
+                  title="Numbers update automatically as orders come in">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" aria-hidden="true" />
+                  Live · {updatedAt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">/{cafe?.slug}</p>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">

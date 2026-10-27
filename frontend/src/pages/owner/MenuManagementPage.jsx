@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import {
   getCategories, createCategory, updateCategory, deleteCategory,
-  getMenuItems, createMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability,
+  getMenuItems, importMenuCsv, createMenuItem, updateMenuItem, deleteMenuItem, toggleItemAvailability,
   updateStock,
   getModifierGroups, createModifierGroup, createModifierOption,
   getItemModifierGroups, setItemModifierGroups,
@@ -16,6 +16,7 @@ import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
 import TranslationFields from '../../components/TranslationFields';
+import { parseCsv, MENU_CSV_TEMPLATE } from '../../utils/csv';
 
 // Group items by category (supports subcategories).
 // Returns array of { ...category, items[], subcategories: [{ ...sub, items[] }] }
@@ -54,6 +55,8 @@ export default function MenuManagementPage() {
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [restockItem, setRestockItem] = useState(null); // item being restocked
   const [priceBumpModal, setPriceBumpModal] = useState(false);
+  const [query, setQuery] = useState('');
+  const [importOpen, setImportOpen] = useState(false);
 
   const loadAll = async () => {
     try {
@@ -136,8 +139,14 @@ export default function MenuManagementPage() {
 
   if (loading) return <LoadingSpinner />;
 
-  const vegItems = items.filter((i) => i.is_veg);
-  const nonVegItems = items.filter((i) => !i.is_veg);
+  // Search across item name, description and category name
+  const q = query.trim().toLowerCase();
+  const catName = (id) => categories.find((c) => c.id === id)?.name || '';
+  const shownItems = q
+    ? items.filter((i) => `${i.name} ${i.description || ''} ${catName(i.category_id)}`.toLowerCase().includes(q))
+    : items;
+  const vegItems = shownItems.filter((i) => i.is_veg);
+  const nonVegItems = shownItems.filter((i) => !i.is_veg);
   const vegGroups = groupByCategory(vegItems, categories);
   const nonVegGroups = groupByCategory(nonVegItems, categories);
 
@@ -157,8 +166,11 @@ export default function MenuManagementPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Menu Management</h1>
-        <div className="flex gap-2">
-          <button onClick={() => setPriceBumpModal(true)} className="btn-secondary text-sm">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setImportOpen(true)} className="btn-secondary text-sm min-h-[44px]">
+            ⬆ Import CSV
+          </button>
+          <button onClick={() => setPriceBumpModal(true)} className="btn-secondary text-sm min-h-[44px]">
             📈 Bulk Price Update
           </button>
           <button onClick={() => setItemModal('new')} className="btn-primary text-sm">
@@ -187,7 +199,18 @@ export default function MenuManagementPage() {
       {/* ── Items tab (3-level view) ── */}
       {activeTab === 'items' && (
         <div className="space-y-6">
-          {items.length === 0 ? (
+          {items.length > 0 && (
+            <div className="relative">
+              <label htmlFor="menu-search" className="sr-only">Search menu items</label>
+              <input id="menu-search" type="search" className="input pl-10 min-h-[44px]" placeholder="Search items, descriptions or categories…"
+                value={query} onChange={(e) => setQuery(e.target.value)} />
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" aria-hidden="true">🔍</span>
+              {q && <p className="text-xs text-gray-500 mt-1.5">{shownItems.length} of {items.length} items match “{query.trim()}”</p>}
+            </div>
+          )}
+          {q && shownItems.length === 0 ? (
+            <div className="card text-center py-10 text-gray-400">No items match “{query.trim()}”.</div>
+          ) : items.length === 0 ? (
             <div className="card text-center py-12 text-gray-400">
               <p className="text-4xl mb-2">🍽️</p>
               <p>No menu items yet.</p>
@@ -202,7 +225,7 @@ export default function MenuManagementPage() {
                 label="Veg"
                 icon="🟢"
                 groups={vegGroups}
-                collapsedGroups={collapsedGroups}
+                collapsedGroups={q ? {} : collapsedGroups}
                 onToggleGroup={toggleGroup}
                 onEdit={(item) => setItemModal(item)}
                 onDelete={handleDeleteItem}
@@ -214,7 +237,7 @@ export default function MenuManagementPage() {
                 label="Non-Veg"
                 icon="🔴"
                 groups={nonVegGroups}
-                collapsedGroups={collapsedGroups}
+                collapsedGroups={q ? {} : collapsedGroups}
                 onToggleGroup={toggleGroup}
                 onEdit={(item) => setItemModal(item)}
                 onDelete={handleDeleteItem}
@@ -290,6 +313,12 @@ export default function MenuManagementPage() {
           item={restockItem}
           onClose={() => setRestockItem(null)}
           onSave={(qty) => handleRestock(restockItem.id, qty)}
+        />
+      )}
+      {importOpen && (
+        <CsvImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => { setImportOpen(false); loadAll(); }}
         />
       )}
       {priceBumpModal && (
@@ -1292,5 +1321,104 @@ function Modal({ title, onClose, children }) {
         <div className="p-5">{children}</div>
       </div>
     </div>
+  );
+}
+
+// ─── CSV import ───────────────────────────────────────────────
+// Parse in the browser, preview, then import all-or-nothing on the server
+// (which lists every row to fix). Same name + category updates the item.
+function CsvImportModal({ onClose, onImported }) {
+  const [file, setFile] = useState(null);
+  const [records, setRecords] = useState([]);
+  const [missing, setMissing] = useState([]);
+  const [errors, setErrors] = useState([]);
+  const [importing, setImporting] = useState(false);
+
+  const downloadTemplate = () => {
+    const blob = new Blob(['\uFEFF' + MENU_CSV_TEMPLATE], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'dineverse-menu-template.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const onFile = async (f) => {
+    setFile(f); setErrors([]);
+    if (!f) { setRecords([]); return; }
+    const { headers, records: rows } = parseCsv(await f.text());
+    setMissing(['name', 'price'].filter((h) => !headers.includes(h)));
+    setRecords(rows);
+  };
+
+  const doImport = async () => {
+    setImporting(true); setErrors([]);
+    try {
+      const { data } = await importMenuCsv(records);
+      toast.success(`${data.created} added, ${data.updated} updated${data.categories_created ? `, ${data.categories_created} new categories` : ''}`);
+      onImported();
+    } catch (err) {
+      setErrors(err?.response?.data?.errors || [{ row: '-', message: getApiError(err) }]);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <Modal title="Import menu from CSV" onClose={onClose}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">
+          Columns: <b>name</b>, <b>price</b>, category, description, veg (veg / non-veg), tags (separated by ;),
+          hindi_name, marathi_name. An item with the same name in the same category is updated, not duplicated.
+        </p>
+        <button type="button" onClick={downloadTemplate} className="text-sm font-semibold text-brand-600 underline min-h-[44px]">
+          ⬇ Download a template
+        </button>
+        <div>
+          <label className="label" htmlFor="csv-file">CSV file</label>
+          <input id="csv-file" type="file" accept=".csv,text/csv" className="block w-full text-sm"
+            onChange={(e) => onFile(e.target.files?.[0] || null)} />
+        </div>
+        {file && missing.length > 0 && (
+          <p className="text-sm text-red-600">Missing required column{missing.length > 1 ? 's' : ''}: {missing.join(', ')}</p>
+        )}
+        {records.length > 0 && missing.length === 0 && (
+          <div>
+            <p className="text-sm font-semibold text-gray-700 mb-1.5">{records.length} row{records.length > 1 ? 's' : ''} found — first {Math.min(5, records.length)}:</p>
+            <div className="overflow-x-auto border border-gray-200 rounded-xl">
+              <table className="min-w-full text-xs">
+                <thead className="bg-gray-50 text-gray-500">
+                  <tr>{['name', 'price', 'category', 'is_veg'].map((h) => <th key={h} className="px-2 py-1.5 text-left font-semibold">{h === 'is_veg' ? 'veg' : h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {records.slice(0, 5).map((r, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-2 py-1.5">{r.name}</td><td className="px-2 py-1.5">{r.price}</td>
+                      <td className="px-2 py-1.5">{r.category}</td><td className="px-2 py-1.5">{r.is_veg || 'veg'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+        {errors.length > 0 && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 max-h-40 overflow-y-auto" role="alert">
+            <p className="text-sm font-semibold text-red-700 mb-1">Nothing was imported — fix these rows:</p>
+            <ul className="text-xs text-red-700 space-y-0.5">
+              {errors.map((e, i) => <li key={i}>Row {e.row}: {e.message}</li>)}
+            </ul>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="btn-secondary flex-1 min-h-[44px]">Cancel</button>
+          <button type="button" onClick={doImport}
+            disabled={!records.length || missing.length > 0 || importing}
+            className="btn-primary flex-1 min-h-[44px] disabled:opacity-50">
+            {importing ? 'Importing…' : `Import ${records.length || ''} item${records.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

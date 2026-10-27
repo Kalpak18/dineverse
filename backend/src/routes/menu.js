@@ -25,5 +25,6 @@ router.delete('/items/:id', requireRole('manager'), deleteMenuItem);
 router.patch('/items/:id/toggle', requireRole('manager'), toggleAvailability);
 router.patch('/items/:id/stock',  requireRole('manager'), updateStock);
 router.get('/inventory',          requireRole('manager'), getInventory);
+router.post('/import',            requireRole('manager'), require('../controllers/menuImportController').importMenu);
 
 module.exports = router;

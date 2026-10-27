@@ -8,28 +8,36 @@ import NotificationCenter from './NotificationCenter';
 import NavIcon from './NavIcon';
 
 // All nav items — filtered by role below
+// Sidebar sections (order = display order)
+const NAV_GROUPS = [
+  { key: 'operate',  label: 'Operate' },
+  { key: 'menu',     label: 'Menu' },
+  { key: 'grow',     label: 'Grow' },
+  { key: 'settings', label: 'Settings' },
+];
+
 const ALL_NAV = [
-  { to: '/owner/dashboard',    label: 'Dashboard',    icon: 'dashboard',    roles: ['owner', 'manager'] },
-  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/waiter',       label: 'Waiter',       icon: 'waiter',       roles: ['owner', 'manager', 'waiter'] },
-  { to: '/owner/messages',     label: 'Messages',     icon: 'messages',     roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      roles: ['owner', 'manager', 'cashier', 'kitchen'] },
-  { to: '/owner/menu',         label: 'Menu',         icon: 'menu',         roles: ['owner', 'manager'] },
-  { to: '/owner/offers',       label: 'Offers',       icon: 'offers',       roles: ['owner', 'manager'] },
-  { to: '/owner/reservations', label: 'Reservations', icon: 'reservations', roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/ratings',      label: 'Ratings',      icon: 'ratings',      roles: ['owner', 'manager'] },
-  { to: '/owner/analytics',    label: 'Analytics',    icon: 'analytics',    roles: ['owner', 'manager'] },
-  { to: '/owner/staff',        label: 'Staff',        icon: 'staff',        roles: ['owner'] },
-  { to: '/owner/tables',       label: 'Tables',       icon: 'tables',       roles: ['owner', 'manager'] },
-  { to: '/owner/inventory',    label: 'Inventory',    icon: 'inventory',    roles: ['owner', 'manager'] },
-  { to: '/owner/customers',    label: 'Customers',    icon: 'customers',    roles: ['owner', 'manager'] },
-  { to: '/owner/waitlist',     label: 'Waitlist',     icon: 'waitlist',     roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/shift',        label: 'Shift',        icon: 'shift',        roles: ['owner', 'manager', 'cashier'] },
-  { to: '/owner/loyalty',      label: 'Loyalty',      icon: 'loyalty',      roles: ['owner', 'manager'] },
-  { to: '/owner/modifiers',    label: 'Add-ons',      icon: 'modifiers',    roles: ['owner', 'manager'] },
-  { to: '/owner/schedule',     label: 'Schedule',     icon: 'schedule',     roles: ['owner', 'manager'] },
-  { to: '/owner/billing',      label: 'Billing',      icon: 'billing',      roles: ['owner'] },
-  { to: '/owner/help',         label: 'Help',         icon: 'help',         roles: ['owner', 'manager'] },
+  { to: '/owner/dashboard',    label: 'Dashboard',    icon: 'dashboard',    group: 'operate', roles: ['owner', 'manager'] },
+  { to: '/owner/orders',       label: 'Orders',       icon: 'orders',       group: 'operate', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/waiter',       label: 'Waiter',       icon: 'waiter',       group: 'operate', roles: ['owner', 'manager', 'waiter'] },
+  { to: '/owner/messages',     label: 'Messages',     icon: 'messages',     group: 'operate', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/kitchen',      label: 'Kitchen',      icon: 'kitchen',      group: 'operate', roles: ['owner', 'manager', 'cashier', 'kitchen'] },
+  { to: '/owner/menu',         label: 'Menu',         icon: 'menu',         group: 'menu', roles: ['owner', 'manager'] },
+  { to: '/owner/offers',       label: 'Offers',       icon: 'offers',       group: 'grow', roles: ['owner', 'manager'] },
+  { to: '/owner/reservations', label: 'Reservations', icon: 'reservations', group: 'operate', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/ratings',      label: 'Ratings',      icon: 'ratings',      group: 'grow', roles: ['owner', 'manager'] },
+  { to: '/owner/analytics',    label: 'Analytics',    icon: 'analytics',    group: 'grow', roles: ['owner', 'manager'] },
+  { to: '/owner/staff',        label: 'Staff',        icon: 'staff',        group: 'settings', roles: ['owner'] },
+  { to: '/owner/tables',       label: 'Tables',       icon: 'tables',       group: 'operate', roles: ['owner', 'manager'] },
+  { to: '/owner/inventory',    label: 'Inventory',    icon: 'inventory',    group: 'menu', roles: ['owner', 'manager'] },
+  { to: '/owner/customers',    label: 'Customers',    icon: 'customers',    group: 'grow', roles: ['owner', 'manager'] },
+  { to: '/owner/waitlist',     label: 'Waitlist',     icon: 'waitlist',     group: 'operate', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/shift',        label: 'Shift',        icon: 'shift',        group: 'operate', roles: ['owner', 'manager', 'cashier'] },
+  { to: '/owner/loyalty',      label: 'Loyalty',      icon: 'loyalty',      group: 'grow', roles: ['owner', 'manager'] },
+  { to: '/owner/modifiers',    label: 'Add-ons',      icon: 'modifiers',    group: 'menu', roles: ['owner', 'manager'] },
+  { to: '/owner/schedule',     label: 'Schedule',     icon: 'schedule',     group: 'menu', roles: ['owner', 'manager'] },
+  { to: '/owner/billing',      label: 'Billing',      icon: 'billing',      group: 'settings', roles: ['owner'] },
+  { to: '/owner/help',         label: 'Help',         icon: 'help',         group: 'settings', roles: ['owner', 'manager'] },
 ];
 
 const ROLE_BADGE = {
@@ -177,6 +185,46 @@ function OwnerLayoutInner() {
     setReorderMode(false);
   };
 
+  const renderNavLink = (item) => {
+    const badgeCount = badges[item.to] || 0;
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        onClick={() => setMobileOpen(false)}
+        title={collapsed ? item.label : undefined}
+        className={({ isActive }) =>
+          `flex items-center rounded-lg text-sm font-medium transition-colors ${
+            collapsed ? 'justify-center p-2.5' : 'gap-3 px-3 py-2.5'
+          } ${
+            isActive
+              ? 'bg-brand-50 text-brand-700'
+              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+          }`
+        }
+      >
+        <div className="relative flex-shrink-0">
+          <NavIcon name={item.icon} />
+          {collapsed && badgeCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] px-0.5 rounded-full bg-brand-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+              {badgeCount > 9 ? '9+' : badgeCount}
+            </span>
+          )}
+        </div>
+        {!collapsed && (
+          <>
+            <span className="flex-1">{item.label}</span>
+            {badgeCount > 0 && (
+              <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold flex items-center justify-center leading-none">
+                {badgeCount > 99 ? '99+' : badgeCount}
+              </span>
+            )}
+          </>
+        )}
+      </NavLink>
+    );
+  };
+
   // Avatar: logo image or first-letter fallback
   const Avatar = ({ size = 'md' }) => {
     const cls = size === 'lg'
@@ -206,7 +254,7 @@ function OwnerLayoutInner() {
       {/* ── Sidebar ── */}
       <aside
         className={`${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
-          md:translate-x-0 fixed md:static inset-y-0 left-0 z-40
+          md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 md:z-40
           ${collapsed ? 'md:w-16' : 'w-64'}
           bg-white border-r border-gray-200 flex flex-col transition-all duration-200 overflow-hidden`}
       >
@@ -370,7 +418,20 @@ function OwnerLayoutInner() {
 
         {/* Nav — scrollable */}
         <nav className={`flex-1 overflow-y-auto py-3 space-y-0.5 ${collapsed ? 'px-1.5' : 'px-3'}`}>
-          {navItems.map((item, idx) => {
+          {/* Grouped view (sections) unless reordering or only a handful of pages */}
+          {!reorderMode && navItems.length > 6 && NAV_GROUPS.map((g, gi) => {
+            const items = navItems.filter((i) => i.group === g.key);
+            if (!items.length) return null;
+            return (
+              <div key={g.key} className={gi ? 'pt-3' : ''} role="group" aria-label={g.label}>
+                {collapsed
+                  ? (gi > 0 && <div className="mx-2 mb-2 border-t border-gray-100" />)
+                  : <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">{g.label}</p>}
+                <div className="space-y-0.5">{items.map(renderNavLink)}</div>
+              </div>
+            );
+          })}
+          {(reorderMode || navItems.length <= 6) && navItems.map((item, idx) => {
             const badgeCount = badges[item.to] || 0;
             const isDragTarget = dragOverIdx === idx && dragIdx !== null && dragIdx !== idx;
             return (
@@ -518,7 +579,7 @@ function OwnerLayoutInner() {
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          className="fixed inset-0 z-40 bg-black/40 md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}

@@ -44,3 +44,37 @@ test('item + category translations are cleaned, served and clearable', async () 
   const cleared = await api(srv.base, 'PATCH', `/menu/items/${item.body.item.id}`, { token, body: { translations: {} } });
   assert.deepEqual(cleared.body.item.translations, {});
 });
+
+test('CSV import: all-or-nothing validation, creates categories, updates instead of duplicating', async () => {
+  const cafe = await createCafe(srv.db);
+  const token = (await login(srv.base, cafe.email)).token;
+  const imp = (rows) => api(srv.base, 'POST', '/menu/import', { token, body: { rows } });
+
+  const bad = await imp([
+    { name: 'Masala Dosa', price: '140', category: 'South Indian' },
+    { name: '', price: 'abc', is_veg: 'maybe' },
+  ]);
+  assert.equal(bad.status, 400);
+  assert.deepEqual(bad.body.errors.map((e) => e.row), [3, 3, 3]);
+  assert.equal((await srv.db.query('SELECT COUNT(*)::int n FROM menu_items WHERE cafe_id = $1', [cafe.id])).rows[0].n, 0);
+
+  const good = await imp([
+    { name: 'Masala Dosa', price: '₹140', category: 'South Indian', is_veg: 'veg', hi_name: 'मसाला डोसा', tags: 'spicy; gluten-free' },
+    { name: 'Chicken 65', price: '260', category: 'Starters', is_veg: 'non-veg' },
+    { name: 'Filter Coffee', price: '40' },
+  ]);
+  assert.equal(good.status, 200);
+  assert.deepEqual([good.body.created, good.body.updated, good.body.categories_created], [3, 0, 2]);
+  const dosa = (await srv.db.query(`SELECT price, is_veg, tags, translations FROM menu_items WHERE cafe_id = $1 AND name = 'Masala Dosa'`, [cafe.id])).rows[0];
+  assert.equal(Number(dosa.price), 140);
+  assert.deepEqual(dosa.tags, ['spicy', 'gluten-free']);
+  assert.equal(dosa.translations.hi.name, 'मसाला डोसा');
+  assert.equal((await srv.db.query(`SELECT is_veg FROM menu_items WHERE name = 'Chicken 65' AND cafe_id = $1`, [cafe.id])).rows[0].is_veg, false);
+
+  // Re-import with a new price updates the same item
+  const again = await imp([{ name: 'masala dosa', price: '150', category: 'south indian' }]);
+  assert.deepEqual([again.body.created, again.body.updated, again.body.categories_created], [0, 1, 0]);
+  const rows = await srv.db.query(`SELECT price FROM menu_items WHERE cafe_id = $1 AND LOWER(name) = 'masala dosa'`, [cafe.id]);
+  assert.equal(rows.rows.length, 1);
+  assert.equal(Number(rows.rows[0].price), 150);
+});
