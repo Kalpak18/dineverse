@@ -11,6 +11,7 @@ import { loadOrders, upsertOrder, removeOrder } from '../../utils/cafeOrderStora
 import { pushNotification } from '../../utils/customerNotifications';
 import { isInclusiveTax } from '../../utils/billDisplay';
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime } from '../../utils/prepTime';
+import TableServiceButtons from '../../components/TableServiceButtons';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },
@@ -507,6 +508,11 @@ export default function OrderConfirmation() {
                   {loadingBill ? 'Loading…' : '🧾 View Table Bill'}
                 </button>
               )}
+              {/* Call waiter / request bill for the latest open dine-in order */}
+              {(() => {
+                const open = orders.find((o) => o.order_type === 'dine-in' && !['paid', 'cancelled'].includes(o.status));
+                return open ? <div className="mt-3 max-w-sm mx-auto"><TableServiceButtons slug={slug} order={open} /></div> : null;
+              })()}
             </>
           )}
         </div>

@@ -17,6 +17,7 @@ import { fmtToken, fmtCurrency, fmtTime, fmtDateTime } from '../../utils/formatt
 import { printBill } from '../../utils/printBill';
 import { printKot, printFullKot } from '../../utils/printKot';
 import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
+import ServiceRequestsPanel from '../../components/ServiceRequestsPanel';
 
 const QUICK_REASONS = [
   'Item(s) out of stock',
@@ -405,6 +406,7 @@ export default function OrdersPage() {
       {/* ── Orders Tab ── */}
       {activeTab === TABS.ORDERS && (
         <div className="space-y-4">
+          <ServiceRequestsPanel />
           <SearchInput
             value={search}
             onChange={setSearch}

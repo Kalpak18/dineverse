@@ -219,6 +219,10 @@ const orderAuth = (slug, id) => {
 };
 export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
 export const getDeliveryQuote = (slug, data) => api.post(`/orders/cafe/${slug}/delivery-quote`, data);
+// Call waiter / request bill — customer (needs the order secret) and staff sides
+export const requestService     = (slug, id, type) => api.post(`/orders/cafe/${slug}/orders/${id}/service-request`, { type }, orderAuth(slug, id));
+export const getServiceRequests = () => api.get('/orders/service-requests');
+export const ackServiceRequest  = (rid) => api.patch(`/orders/service-requests/${rid}/ack`);
 // Table QR codes carry a secret token; only orders placed through it count as that table's
 export const getTableByQr = (slug, token) => api.get(`/orders/cafe/${slug}/table-qr/${encodeURIComponent(token)}`);
 export const moveToTable  = (slug, tableToken, orderTokens) =>

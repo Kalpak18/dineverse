@@ -28,6 +28,8 @@ const TYPE_CONFIG = {
   order_ready:     { icon: '✅', bg: 'bg-teal-600',   border: 'border-teal-700',   label: 'Order Ready',     path: '/owner/kitchen'      },
   item_sold_out:   { icon: '⚠️', bg: 'bg-red-600',    border: 'border-red-700',    label: 'Sold Out',        path: '/owner/inventory'    },
   new_waitlist:    { icon: '🕐', bg: 'bg-purple-600', border: 'border-purple-700', label: 'Waitlist Join',   path: '/owner/waitlist'     },
+  service_waiter:  { icon: '🙋', bg: 'bg-amber-500',  border: 'border-amber-600',  label: 'Waiter Called',   path: '/owner/waiter'       },
+  service_bill:    { icon: '🧾', bg: 'bg-emerald-600', border: 'border-emerald-700', label: 'Bill Requested', path: '/owner/orders'       },
 };
 
 // Which notification types to clear when arriving at a route

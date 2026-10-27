@@ -18,7 +18,7 @@ function getAudioContext() {
  * One socket per mounted component; it is disconnected on unmount (or when
  * cafeId changes) so navigating between owner pages doesn't pile up sockets.
  */
-export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation, { onReconnect } = {}) {
+export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation, { onReconnect, events } = {}) {
   const socketRef = useRef(null);
   const onNewOrderRef = useRef(onNewOrder);
   const onOrderUpdatedRef = useRef(onOrderUpdated);
@@ -29,6 +29,9 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
   onNewReservationRef.current = onNewReservation;
   const onReconnectRef = useRef(onReconnect);
   onReconnectRef.current = onReconnect;
+  // Extra events { name: handler } — e.g. service_request on the waiter screen
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
 
   useEffect(() => {
     if (!cafeId) return;
@@ -78,6 +81,12 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
     socket.on('new_reservation', handleNewReservation);
     socket.on('connect', handleConnect);
     socket.on('connect_error', handleConnectError);
+    const extraNames = Object.keys(eventsRef.current || {});
+    const extraHandlers = extraNames.map((name) => {
+      const h = (payload) => eventsRef.current?.[name]?.(payload);
+      socket.on(name, h);
+      return [name, h];
+    });
 
     return () => {
       socket.off('new_order', handleNewOrder);
@@ -85,6 +94,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
       socket.off('new_reservation', handleNewReservation);
       socket.off('connect', handleConnect);
       socket.off('connect_error', handleConnectError);
+      extraHandlers.forEach(([name, h]) => socket.off(name, h));
       socket.disconnect(); // also leaves every room server-side
       socketRef.current = null;
     };

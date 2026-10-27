@@ -7,6 +7,7 @@ import PageHint from '../../components/PageHint';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import toast from 'react-hot-toast';
 import { TableStatusBadge, TableConfirmButton } from '../../components/TableConfirm';
+import ServiceRequestsPanel from '../../components/ServiceRequestsPanel';
 
 const ACTIVE_STATUSES = ['pending', 'confirmed', 'preparing', 'ready'];
 const OVERDUE_MS = 25 * 60 * 1000;
@@ -26,6 +27,9 @@ const STATUS_LABEL = {
   preparing: { text: 'Cooking',   color: 'text-orange-400 bg-orange-900/40' },
   ready:     { text: '🛎️ READY',   color: 'text-teal-300  bg-teal-900/60 font-bold' },
 };
+
+// "3" → "TABLE 3"; "Table 3" / "Patio — Table 3" stay as they are (no "TABLE Table 3")
+const tableLabel = (t) => (/^\d+$/.test(String(t || '')) ? `TABLE ${t}` : String(t || '').toUpperCase());
 
 export default function WaiterPage() {
   const { cafe } = useAuth();
@@ -166,6 +170,8 @@ export default function WaiterPage() {
         </div>
       </div>
 
+      <div className="px-3 md:px-4 pt-3 empty:hidden"><ServiceRequestsPanel dark /></div>
+
       {orders.length === 0 ? (
         <div className="flex flex-col items-center justify-center flex-1 py-24 text-gray-600">
           <span className="text-6xl mb-4 opacity-20">🍽️</span>
@@ -192,7 +198,7 @@ export default function WaiterPage() {
                     <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-teal-950/40 ${overdue ? 'border-red-500' : 'border-teal-400'}`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-xl">
-                          {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
+                          {order.order_type === 'dine-in' ? tableLabel(order.table_number) : fmtToken(order.daily_order_number, order.order_type)}
                         </span>
                         <span className="text-[10px] text-teal-300 bg-teal-900/60 px-2 py-0.5 rounded-full font-bold">
                           🛎️ READY
@@ -256,7 +262,7 @@ export default function WaiterPage() {
                     <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-orange-950/30 ${overdue ? 'border-red-500' : 'border-orange-500'}`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-xl">
-                          {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
+                          {order.order_type === 'dine-in' ? tableLabel(order.table_number) : fmtToken(order.daily_order_number, order.order_type)}
                         </span>
                         <span className="text-[10px] text-orange-300 bg-orange-900/60 px-2 py-0.5 rounded-full font-bold">PARTIAL</span>
                       </div>
@@ -325,7 +331,7 @@ export default function WaiterPage() {
                     <div key={order.id} className={`rounded-xl border-l-4 p-3 bg-gray-900/60 ${overdue ? 'border-red-700' : 'border-gray-700'} opacity-80`}>
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-gray-200 text-xl">
-                          {order.order_type === 'dine-in' ? `TABLE ${order.table_number}` : fmtToken(order.daily_order_number, order.order_type)}
+                          {order.order_type === 'dine-in' ? tableLabel(order.table_number) : fmtToken(order.daily_order_number, order.order_type)}
                         </span>
                         <span className={`text-[10px] px-2 py-0.5 rounded-full ${cfg.color}`}>{cfg.text}</span>
                       </div>

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { authenticate } = require('../middleware/auth');
 const checkSubscription = require('../middleware/checkSubscription');
 const requireRole = require('../middleware/requireRole');
+const svc = require('../controllers/serviceRequestController');
 const { orderLimiter, publicLimiter } = require('../middleware/rateLimiter');
 const {
   validateOrder, createOrder, getDeliveryQuote, getKitchenOrders,
@@ -30,6 +31,7 @@ router.get('/cafe/:slug/table-bill/:tableNumber', getTableBill);
 router.post('/cafe/:slug/orders', orderLimiter, validateOrder, createOrder);
 router.post('/cafe/:slug/delivery-quote', publicLimiter, getDeliveryQuote);
 router.post('/cafe/:slug/move-table', publicLimiter, customerMoveTable);
+router.post('/cafe/:slug/orders/:id/service-request', publicLimiter, svc.createServiceRequest);
 router.get('/cafe/:slug/table-qr/:token', publicLimiter, getTableByToken);
 router.get('/cafe/:slug/orders/:id/status', getOrderStatus);
 router.post('/cafe/:slug/orders/:id/cancel', publicLimiter, customerCancelOrder);
@@ -52,6 +54,9 @@ router.get('/stats', authenticate, checkSubscription, requireRole('manager'), ge
 // All features available to every café — no premium gate
 router.get('/',                              authenticate, checkSubscription, getOrders);
 router.get('/kitchen',                       authenticate, checkSubscription, getKitchenOrders);
+// Call waiter / request bill (staff side). Must stay above '/:id'.
+router.get('/service-requests',              authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter'), svc.getServiceRequests);
+router.patch('/service-requests/:rid/ack',   authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter'), svc.acknowledgeServiceRequest);
 router.get('/:id',                           authenticate, checkSubscription, getOrderById);
 router.patch('/:id/status',                  authenticate, checkSubscription, updateOrderStatus);
 router.patch('/:id/kitchen-mode',            authenticate, checkSubscription, setKitchenMode);
