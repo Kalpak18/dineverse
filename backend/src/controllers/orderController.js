@@ -1151,7 +1151,7 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
             o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
-            o.customer_token, o.refund_status, o.table_verified,
+            o.customer_token, o.refund_status, o.table_verified, o.payment_verified,
             c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
@@ -1555,6 +1555,146 @@ exports.createOrderPayment = asyncHandler(async (req, res) => {
 });
 
 // ─── Public: Verify payment + mark order paid ─────────────────
+// Settle a captured Razorpay payment against its food order. Shared by the
+// customer's verify call and the Razorpay webhook (the safety net when the
+// customer's phone drops off after paying), so both apply the same checks.
+// Locate the order by { id, slug } (verify) or { razorpayOrderId } (webhook).
+// Returns { code, httpStatus, message, order? }.
+const SETTLE = {
+  not_found:         [404, 'Order not found'],
+  already_paid:      [409, 'Already paid'],
+  order_mismatch:    [400, 'Order ID mismatch'],
+  cancelled:         [409, 'This order was cancelled, so your payment is being refunded automatically.'],
+  amount_mismatch:   [400, 'Payment amount mismatch — your payment will be refunded automatically.'],
+  unavailable:       [503, 'Payment verification temporarily unavailable. Please try again in a moment.'],
+  paid:              [200, 'Payment successful!'],
+};
+const settleResult = (code, order) => ({ code, httpStatus: SETTLE[code][0], message: SETTLE[code][1], order });
+
+async function settleFoodPayment({ id, slug, razorpayOrderId, paymentId, io }) {
+  const payClient = await db.pool.connect();
+  let updatedOrder;
+  let customerPhone;
+  let order;
+  try {
+    await payClient.query('BEGIN');
+    // Lock the order row — verify and webhook can race; only one settles
+    const result = id
+      ? await payClient.query(
+          `SELECT o.id, o.status, o.payment_order_id, o.payment_verified, o.cafe_id, o.final_amount
+           FROM orders o JOIN cafes c ON o.cafe_id = c.id
+           WHERE o.id = $1 AND c.slug = $2 FOR UPDATE OF o`,
+          [id, slug])
+      : await payClient.query(
+          `SELECT id, status, payment_order_id, payment_verified, cafe_id, final_amount
+           FROM orders WHERE payment_order_id = $1 FOR UPDATE`,
+          [razorpayOrderId]);
+    if (result.rows.length === 0) { await payClient.query('ROLLBACK'); return settleResult('not_found'); }
+    order = result.rows[0];
+
+    if (order.payment_verified) { await payClient.query('ROLLBACK'); return settleResult('already_paid'); }
+    if (razorpayOrderId && order.payment_order_id !== razorpayOrderId) {
+      await payClient.query('ROLLBACK');
+      return settleResult('order_mismatch');
+    }
+    // Cancelled while the customer was paying: record the payment but do NOT
+    // revive the order — refund it.
+    if (order.status === 'cancelled') {
+      await payClient.query(
+        `UPDATE orders SET payment_id = $1, payment_verified = true, payment_mode = 'online', updated_at = NOW()
+         WHERE id = $2`,
+        [paymentId, order.id]
+      );
+      await payClient.query('COMMIT');
+      refundPrepaidOrder(order.id, 'Paid after cancellation');
+      logger.warn('Payment %s arrived for cancelled order %s — refunding', paymentId, order.id);
+      return settleResult('cancelled');
+    }
+
+    // The amount actually charged must equal the order total
+    try {
+      const rzpPayment = await razorpay.payments.fetch(paymentId);
+      const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
+      if (rzpPayment.order_id && rzpPayment.order_id !== order.payment_order_id) {
+        await payClient.query('ROLLBACK');
+        return settleResult('order_mismatch');
+      }
+      if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
+        logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', order.id, expectedPaise, rzpPayment.amount);
+        await payClient.query('ROLLBACK');
+        razorpay.payments.refund(paymentId, { amount: rzpPayment.amount }).catch((refundErr) =>
+          logger.error('Auto-refund failed for payment %s on order %s: %s', paymentId, order.id, refundErr.message)
+        );
+        return settleResult('amount_mismatch');
+      }
+    } catch (fetchErr) {
+      logger.warn('Could not fetch payment %s for amount check on food order %s: %s', paymentId, order.id, fetchErr.message);
+      await payClient.query('ROLLBACK');
+      return settleResult('unavailable');
+    }
+
+    // Mark paid. payment_mode='online' in the same transaction so commission
+    // tracking treats it as auto-deducted. Only a pending order moves to
+    // confirmed — paying must never pull an order the kitchen has already
+    // started back to 'confirmed'.
+    const updated = await payClient.query(
+      `UPDATE orders
+       SET status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
+           payment_id = $1, payment_verified = true,
+           payment_mode = 'online', updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, order_number,
+                 COALESCE(daily_order_number, order_number) AS daily_order_number,
+                 customer_name, customer_phone, table_number, order_type, status,
+                 total_amount, final_amount, platform_fee, platform_discount_amount,
+                 payment_verified, updated_at`,
+      [paymentId, order.id]
+    );
+    // customer_phone is for loyalty only — never broadcast it to socket rooms
+    ({ customer_phone: customerPhone, ...updatedOrder } = updated.rows[0]);
+    await payClient.query('COMMIT');
+  } catch (err) {
+    await payClient.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    payClient.release();
+  }
+
+  const orderId = order.id;
+  const cafeId = order.cafe_id;
+  if (order.status === 'pending') {
+    db.query(
+      `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
+       VALUES ($1, 'pending', 'confirmed', 'system', 'Razorpay — prepaid')`,
+      [orderId]
+    ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', orderId, err.message));
+  }
+
+  // Razorpay Route: the café's share is attached as a transfer when the
+  // Razorpay order is created (createOrderPayment), so Razorpay pays it out on
+  // capture. Do NOT create another transfer here — that would pay the café
+  // twice. Just record the transfer id for reconciliation (fire-and-forget).
+  razorpay.payments.fetchTransfer(paymentId)
+    .then(async (t) => {
+      const transferId = t?.items?.[0]?.id;
+      if (transferId) {
+        await db.query('UPDATE orders SET razorpay_transfer_id = $1 WHERE id = $2', [transferId, orderId]);
+        logger.info('Razorpay Route transfer %s recorded for order %s', transferId, orderId);
+      }
+    })
+    .catch((err) => logger.warn('Could not fetch Route transfer for payment %s: %s', paymentId, err.message));
+
+  require('./loyaltyController').earnPoints(cafeId, orderId, customerPhone || null, updatedOrder.final_amount);
+
+  if (io) {
+    io.to(`cafe:${cafeId}`).emit('order_updated', updatedOrder);
+    io.to(`order:${orderId}`).emit('order_updated', updatedOrder);
+  }
+  logger.info('Food payment settled: order %s payment %s', orderId, paymentId);
+  return settleResult('paid', updatedOrder);
+}
+exports.settleFoodPayment = settleFoodPayment;
+
 exports.verifyOrderPayment = asyncHandler(async (req, res) => {
   const { slug, id } = req.params;
   const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
@@ -1577,133 +1717,9 @@ exports.verifyOrderPayment = asyncHandler(async (req, res) => {
     return fail(res, 'Payment verification failed', 400);
   }
 
-  // Fetch and lock the order row — prevents duplicate payment processing under concurrent requests
-  const payClient = await db.pool.connect();
-  let updatedOrder;
-  let customerPhone;
-  let cafeId;
-  try {
-    await payClient.query('BEGIN');
-
-    const result = await payClient.query(
-      `SELECT o.id, o.status, o.payment_order_id, o.payment_verified, o.cafe_id,
-              COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
-              o.table_number, o.order_type, o.final_amount
-       FROM orders o
-       JOIN cafes c ON o.cafe_id = c.id
-       WHERE o.id = $1 AND c.slug = $2
-       FOR UPDATE`,
-      [id, slug]
-    );
-
-    if (result.rows.length === 0) {
-      await payClient.query('ROLLBACK');
-      return fail(res, 'Order not found', 404);
-    }
-    const order = result.rows[0];
-    cafeId = order.cafe_id;
-
-    if (order.payment_verified) {
-      await payClient.query('ROLLBACK');
-      return fail(res, 'Already paid', 409);
-    }
-    if (order.payment_order_id !== razorpay_order_id) {
-      await payClient.query('ROLLBACK');
-      return fail(res, 'Order ID mismatch', 400);
-    }
-    // Cancelled while the customer was paying: record the payment but do NOT
-    // revive the order (it used to jump back to 'confirmed') — refund it.
-    if (order.status === 'cancelled') {
-      await payClient.query(
-        `UPDATE orders SET payment_id = $1, payment_verified = true, payment_mode = 'online', updated_at = NOW()
-         WHERE id = $2`,
-        [razorpay_payment_id, id]
-      );
-      await payClient.query('COMMIT');
-      refundPrepaidOrder(id, 'Paid after cancellation');
-      logger.warn('Payment %s arrived for cancelled order %s — refunding', razorpay_payment_id, id);
-      return fail(res, 'This order was cancelled, so your payment is being refunded automatically.', 409);
-    }
-
-    // Verify the actual amount charged matches the order total — prevents underpayment
-    try {
-      const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
-      const expectedPaise = Math.round(parseFloat(order.final_amount) * 100);
-      if (parseInt(rzpPayment.amount, 10) !== expectedPaise) {
-        logger.warn('Amount mismatch for food order %s: expected %d paise, got %d', id, expectedPaise, rzpPayment.amount);
-        await payClient.query('ROLLBACK');
-        // Refund the captured amount so the customer is not charged for a mismatched payment
-        razorpay.payments.refund(razorpay_payment_id, { amount: rzpPayment.amount }).catch((refundErr) =>
-          logger.error('Auto-refund failed for payment %s on order %s: %s', razorpay_payment_id, id, refundErr.message)
-        );
-        return fail(res, 'Payment amount mismatch — your payment will be refunded automatically.', 400);
-      }
-    } catch (fetchErr) {
-      logger.warn('Could not fetch payment %s for amount check on food order %s: %s', razorpay_payment_id, id, fetchErr.message);
-      await payClient.query('ROLLBACK');
-      return fail(res, 'Payment verification temporarily unavailable. Please try again in a moment.', 503);
-    }
-
-    // Mark payment received. Set payment_mode='online' in same transaction so commission
-    // tracking always sees this as an auto-deducted online order — never falls to cash_due.
-    const updated = await payClient.query(
-      `UPDATE orders
-       SET status = 'confirmed', payment_id = $1, payment_verified = true,
-           payment_mode = 'online', updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, order_number,
-                 COALESCE(daily_order_number, order_number) AS daily_order_number,
-                 customer_name, customer_phone, table_number, order_type, status,
-                 total_amount, final_amount, platform_fee, platform_discount_amount, updated_at`,
-      [razorpay_payment_id, id]
-    );
-    // customer_phone is for loyalty only — never broadcast it to socket rooms
-    ({ customer_phone: customerPhone, ...updatedOrder } = updated.rows[0]);
-
-    await payClient.query('COMMIT');
-  } catch (err) {
-    await payClient.query('ROLLBACK');
-    throw err;
-  } finally {
-    payClient.release();
-  }
-
-  // Audit: log the prepaid event
-  db.query(
-    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_name)
-     VALUES ($1, $2, 'confirmed', 'system', 'Razorpay — prepaid')`,
-    [id, 'pending']
-  ).catch((err) => logger.warn('order_events insert failed for payment %s: %s', id, err.message));
-
-  // Razorpay Route: the café's share is attached as a transfer when the
-  // Razorpay order is created (createOrderPayment), so Razorpay pays it out on
-  // capture. Do NOT create another transfer here — that would pay the café
-  // twice. Just record the transfer id for reconciliation (fire-and-forget).
-  razorpay.payments.fetchTransfer(razorpay_payment_id)
-    .then(async (t) => {
-      const transferId = t?.items?.[0]?.id;
-      if (transferId) {
-        await db.query('UPDATE orders SET razorpay_transfer_id = $1 WHERE id = $2', [transferId, id]);
-        logger.info('Razorpay Route transfer %s recorded for order %s', transferId, id);
-      }
-    })
-    .catch((err) => logger.warn('Could not fetch Route transfer for payment %s: %s', razorpay_payment_id, err.message));
-
-  // Credit loyalty points (fire-and-forget)
-  require('./loyaltyController').earnPoints(
-    cafeId, id,
-    customerPhone || null,
-    updatedOrder.final_amount
-  );
-
-  // Emit to owner/kitchen via socket
-  if (req.io) {
-    req.io.to(`cafe:${cafeId}`).emit('order_updated', updatedOrder);
-    req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
-  }
-
-  logger.info('Food payment verified: order %s cafe %s amount paid', id, slug);
-  ok(res, { order: updatedOrder }, 'Payment successful!');
+  const r = await settleFoodPayment({ id, slug, razorpayOrderId: razorpay_order_id, paymentId: razorpay_payment_id, io: req.io });
+  if (r.code !== 'paid') return fail(res, r.message, r.httpStatus);
+  ok(res, { order: r.order }, r.message);
 });
 
 // ─── Owner/Staff: set kitchen mode (combined | individual) ────

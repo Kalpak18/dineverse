@@ -24,7 +24,7 @@ const COUNTRIES = [
  *   error        string
  *   className    string  extra classes on wrapper
  */
-export default function PhoneInput({ value = '', onChange, placeholder = 'xxxxxxxxxx', required, error, className = '' }) {
+export default function PhoneInput({ id, value = '', onChange, placeholder = 'xxxxxxxxxx', required, error, className = '' }) {
   // Parse existing value into countryCode + local
   const parseValue = (v) => {
     if (!v) return { countryCode: '+91', local: '' };
@@ -96,7 +96,9 @@ export default function PhoneInput({ value = '', onChange, placeholder = 'xxxxxx
 
         {/* Phone number input */}
         <input
+          id={id}
           type="tel"
+          autoComplete="tel-national"
           className="flex-1 px-3 py-2.5 text-sm text-gray-900 bg-white outline-none"
           placeholder={placeholder}
           value={local}

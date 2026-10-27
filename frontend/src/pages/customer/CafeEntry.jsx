@@ -384,8 +384,7 @@ export default function CafeEntry() {
 
   const validate = () => {
     const e = {};
-    if (!form.customer_name.trim()) e.customer_name = 'Please enter your name';
-    if (!form.customer_phone?.trim()) e.customer_phone = 'Please enter your mobile number';
+    // Name + phone are asked at checkout — let people see the menu first
     if (form.order_type === 'dine-in') {
       if (!form.table_number.trim()) e.table_number = 'Please enter your table number';
     }
@@ -551,8 +550,11 @@ export default function CafeEntry() {
 
             {/* Name */}
             <div>
-              <label className="label">Your Name</label>
+              <label className="label" htmlFor="entry-name">
+                Your Name <span className="text-gray-400 font-normal">(optional — or at checkout)</span>
+              </label>
               <input
+                id="entry-name" autoComplete="name"
                 type="text" placeholder="e.g. Rahul" className="input"
                 value={form.customer_name}
                 onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
@@ -562,8 +564,11 @@ export default function CafeEntry() {
 
             {/* Phone */}
             <div>
-              <label className="label">Mobile Number</label>
+              <label className="label" htmlFor="entry-phone">
+                Mobile Number <span className="text-gray-400 font-normal">(optional — or at checkout)</span>
+              </label>
               <PhoneInput
+                id="entry-phone"
                 value={form.customer_phone}
                 onChange={handlePhoneChange}
                 placeholder="e.g. 9876543210"
@@ -868,29 +873,29 @@ function ReservationModal({ slug, cafeName, onClose, onBooked }) {
           <p className="text-sm text-gray-500">Reserve a table at <strong>{cafeName}</strong></p>
 
           <div>
-            <label className="label">Your Name *</label>
-            <input className="input" placeholder="e.g. Rahul" value={form.customer_name} onChange={set('customer_name')} />
+            <label className="label" htmlFor="ce-field-876">Your Name *</label>
+            <input id="ce-field-876" className="input" placeholder="e.g. Rahul" value={form.customer_name} onChange={set('customer_name')} />
           </div>
           <div>
-            <label className="label">Mobile Number</label>
-            <input className="input" type="tel" placeholder="for confirmation" value={form.customer_phone} onChange={set('customer_phone')} />
+            <label className="label" htmlFor="ce-field-880">Mobile Number</label>
+            <input id="ce-field-880" className="input" type="tel" placeholder="for confirmation" value={form.customer_phone} onChange={set('customer_phone')} />
           </div>
 
           {/* Date + Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Date *</label>
-              <input className="input" type="date" min={todayISO} value={form.reserved_date} onChange={set('reserved_date')} />
+              <label className="label" htmlFor="ce-field-887">Date *</label>
+              <input id="ce-field-887" className="input" type="date" min={todayISO} value={form.reserved_date} onChange={set('reserved_date')} />
             </div>
             <div>
-              <label className="label">Time *</label>
-              <input className="input" type="time" value={form.reserved_time} onChange={set('reserved_time')} />
+              <label className="label" htmlFor="ce-field-891">Time *</label>
+              <input id="ce-field-891" className="input" type="time" value={form.reserved_time} onChange={set('reserved_time')} />
             </div>
           </div>
 
           <div>
-            <label className="label">Party Size</label>
-            <input className="input" type="number" min="1" max="50" value={form.party_size} onChange={set('party_size')} />
+            <label className="label" htmlFor="ce-field-897">Party Size</label>
+            <input id="ce-field-897" className="input" type="number" min="1" max="50" value={form.party_size} onChange={set('party_size')} />
           </div>
 
           {/* Table picker — appears once date+time are chosen */}
@@ -962,8 +967,8 @@ function ReservationModal({ slug, cafeName, onClose, onBooked }) {
           )}
 
           <div>
-            <label className="label">Special Requests (optional)</label>
-            <textarea
+            <label className="label" htmlFor="ce-field-970">Special Requests (optional)</label>
+            <textarea id="ce-field-970"
               className="input resize-none" rows={2}
               placeholder="e.g. window seat, birthday..."
               value={form.notes} onChange={set('notes')}
@@ -1118,32 +1123,32 @@ function WaitlistModal({ slug, cafeName, onClose }) {
           <form onSubmit={handleSubmit} className="px-5 py-4 space-y-4">
             <p className="text-sm text-gray-500">Add yourself to the waiting list at <strong>{cafeName}</strong>.</p>
             <div>
-              <label className="label">Your Name *</label>
-              <input
+              <label className="label" htmlFor="ce-field-1126">Your Name *</label>
+              <input id="ce-field-1126"
                 className="input" placeholder="e.g. Rahul"
                 value={form.customer_name}
                 onChange={(e) => setForm((f) => ({ ...f, customer_name: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">Mobile Number</label>
-              <input
+              <label className="label" htmlFor="ce-field-1134">Mobile Number</label>
+              <input id="ce-field-1134"
                 className="input" type="tel" placeholder="for café to reach you"
                 value={form.customer_phone}
                 onChange={(e) => setForm((f) => ({ ...f, customer_phone: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">Party Size</label>
-              <input
+              <label className="label" htmlFor="ce-field-1142">Party Size</label>
+              <input id="ce-field-1142"
                 className="input" type="number" min="1" max="50"
                 value={form.party_size}
                 onChange={(e) => setForm((f) => ({ ...f, party_size: e.target.value }))}
               />
             </div>
             <div>
-              <label className="label">Notes (optional)</label>
-              <input
+              <label className="label" htmlFor="ce-field-1150">Notes (optional)</label>
+              <input id="ce-field-1150"
                 className="input" placeholder="e.g. high chair needed"
                 value={form.notes}
                 onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -1207,8 +1212,8 @@ function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, norma
       {/* Area filter — only when multiple named areas */}
       {namedAreas.length > 0 && (
         <div>
-          <label className="label">Area <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
-          <select
+          <label className="label" htmlFor="ce-field-1215">Area <span className="text-gray-400 font-normal text-xs">(optional)</span></label>
+          <select id="ce-field-1215"
             className="input"
             value={form.area_id}
             onChange={(e) => {
@@ -1224,8 +1229,8 @@ function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, norma
 
       {/* Smart search input */}
       <div className="relative">
-        <label className="label">Table Number</label>
-        <input
+        <label className="label" htmlFor="ce-field-1232">Table Number</label>
+        <input id="ce-field-1232"
           ref={inputRef}
           type="text"
           className="input"

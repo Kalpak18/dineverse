@@ -336,9 +336,20 @@ export default function OrderConfirmation() {
               setOrders(loadOrders(slug));
               toast.success('Payment successful! 🎉');
               resolve();
-            } catch {
-              toast.error('Payment verification failed. Contact staff if amount was deducted.');
-              reject();
+            } catch (verifyErr) {
+              const status = verifyErr?.response?.status;
+              const message = verifyErr?.response?.data?.message;
+              if (status === 409 && /already paid/i.test(message || '')) {
+                // Razorpay's webhook confirmed it first
+                await confirmPaymentLanded(order.id);
+              } else if (!verifyErr?.response || status >= 500) {
+                // Money may have been taken; the server's webhook will settle
+                // it — keep checking instead of telling them it failed
+                await confirmPaymentLanded(order.id, { poll: true });
+              } else {
+                toast.error(message || 'Payment could not be verified. Show this screen to staff.');
+              }
+              reject({ handled: true }); // one message only
             }
           },
           modal: {
@@ -348,12 +359,32 @@ export default function OrderConfirmation() {
         rzp.open();
       });
     } catch (err) {
-      if (err?.message !== 'dismissed') {
+      if (err?.message !== 'dismissed' && !err?.handled) {
         toast.error(err?.response?.data?.message || 'Payment failed. Please try again.');
       }
     } finally {
       setPaying(null);
     }
+  };
+
+  // After a payment whose verify call failed: check whether the server has
+  // recorded it (verify retry or Razorpay webhook). Polls ~1 min if asked.
+  const confirmPaymentLanded = async (orderId, { poll = false } = {}) => {
+    const toastId = poll ? toast.loading('Confirming your payment…') : undefined;
+    for (let i = 0; i < (poll ? 12 : 1); i++) {
+      if (i > 0) await new Promise((r) => setTimeout(r, 5000));
+      try {
+        const { data } = await getOrderStatus(slug, orderId);
+        if (data.order?.payment_verified) {
+          upsertOrder(slug, data.order);
+          setOrders(loadOrders(slug));
+          toast.success('Payment successful! 🎉', { id: toastId });
+          return true;
+        }
+      } catch { /* keep trying */ }
+    }
+    toast.error('We could not confirm your payment yet. If money was deducted, show this screen to staff — it will be confirmed or refunded automatically.', { id: toastId, duration: 10000 });
+    return false;
   };
 
   const handleShowTableBill = async () => {

@@ -310,6 +310,22 @@ exports.webhookHandler = asyncHandler(async (req, res) => {
     return res.status(200).json({ ok: true });
   }
 
+  // ── Food order safety net ────────────────────────────────────
+  // If the customer's phone dropped off after paying, /pay/verify never ran.
+  // Settle the order here with the same checks (idempotent: already paid → no-op).
+  try {
+    const food = await require('./orderController').settleFoodPayment({
+      razorpayOrderId: razorpay_order_id, paymentId: razorpay_payment_id, io: req.io,
+    });
+    if (food.code !== 'not_found') {
+      if (food.code === 'unavailable') return res.status(500).json({ success: false }); // Razorpay retries
+      return res.status(200).json({ ok: true, food: food.code });
+    }
+  } catch (err) {
+    logger.error('Webhook food settlement failed for %s: %s', razorpay_order_id, err.message);
+    return res.status(500).json({ success: false });
+  }
+
   // ── Subscription / legacy payment record ─────────────────────
   const paymentRes = await db.query(
     'SELECT * FROM payments WHERE razorpay_order_id = $1',

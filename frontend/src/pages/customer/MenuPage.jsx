@@ -37,7 +37,8 @@ function getCategoryEmoji(name, emojiMap = FALLBACK_EMOJI_MAP) {
 
 function FoodDot({ isVeg }) {
   return (
-    <span className={`inline-flex w-[14px] h-[14px] rounded-sm border-2 items-center justify-center flex-shrink-0 ${
+    <span role="img" aria-label={isVeg ? 'Vegetarian' : 'Non-vegetarian'}
+      className={`inline-flex w-[14px] h-[14px] rounded-sm border-2 items-center justify-center flex-shrink-0 ${
       isVeg ? 'border-green-600' : 'border-red-600'
     }`}>
       <span className={`w-[7px] h-[7px] rounded-full ${isVeg ? 'bg-green-600' : 'bg-red-600'}`} />
@@ -55,6 +56,10 @@ export default function MenuPage() {
   const [offers, setOffers] = useState([]);
   const [emojiMap, setEmojiMap] = useState(FALLBACK_EMOJI_MAP);
   const [loading, setLoading] = useState(true);
+  // Menu fetch failed (e.g. server waking up) — show a retry screen instead
+  // of silently bouncing the customer back to the start
+  const [loadError, setLoadError] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [foodFilter, setFoodFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [selectedCatId, setSelectedCatId] = useState(null);
@@ -81,6 +86,8 @@ export default function MenuPage() {
 
   useEffect(() => {
     if (!session) return;
+    setLoading(true);
+    setLoadError(false);
     Promise.all([getCafeBySlug(slug), getCafeMenu(slug), getPublicOffers(slug).catch(() => ({ data: { offers: [] } }))])
       .then(([cafeRes, menuRes, offersRes]) => {
         const cafeData = cafeRes.data.cafe;
@@ -111,9 +118,19 @@ export default function MenuPage() {
           setSelectedCatId(firstNonEmpty?.id ?? menuData[0].id);
         }
       })
-      .catch(() => navigate(`/cafe/${slug}`))
+      .catch((err) => {
+        if (err?.response?.status === 404) navigate(`/cafe/${slug}`); // café doesn't exist
+        else setLoadError(true);
+      })
       .finally(() => setLoading(false));
-  }, [slug]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [slug, loadAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-retry a few times — a cold server usually answers within ~30 s
+  useEffect(() => {
+    if (!loadError || loadAttempt >= 3) return;
+    const id = setTimeout(() => setLoadAttempt((n) => n + 1), 5000);
+    return () => clearTimeout(id);
+  }, [loadError, loadAttempt]);
 
   useEffect(() => {
     const socket = io(SOCKET_URL, { transports: ['polling', 'websocket'], reconnection: true });
@@ -320,6 +337,18 @@ export default function MenuPage() {
   };
 
   if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
+  if (loadError && !loading) return (
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-6 text-center bg-white">
+      <span className="text-5xl" aria-hidden="true">👨‍🍳</span>
+      <h1 className="text-lg font-bold text-gray-900">Waking up the kitchen…</h1>
+      <p className="text-sm text-gray-500 max-w-xs">
+        {loadAttempt < 3 ? 'The menu is taking a moment to load. Trying again automatically.' : 'We still couldn\'t load the menu. Check your connection and try again.'}
+      </p>
+      <button type="button" onClick={() => setLoadAttempt((n) => n + 1)} className="btn-primary min-h-[44px] px-6">
+        Retry now
+      </button>
+    </div>
+  );
   if (loading) return <LoadingSpinner />;
 
   const isSearching = search.trim().length > 0;
@@ -978,18 +1007,18 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
           </div>
 
           {/* Name */}
-          <h4 className="font-semibold text-gray-900 text-[13px] leading-snug line-clamp-2">{item.name}</h4>
+          <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{item.name}</h4>
 
           {/* Description */}
           {item.description && (
-            <p className="text-[11px] text-gray-400 mt-0.5 line-clamp-2 leading-relaxed">{item.description}</p>
+            <p className="text-[13px] text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{item.description}</p>
           )}
 
           {/* Tags */}
           {item.tags && item.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1.5">
               {item.tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium capitalize">
+                <span key={tag} className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium capitalize">
                   {tag}
                 </span>
               ))}
@@ -998,14 +1027,15 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
 
           {/* Price row */}
           <div className="flex items-center justify-between mt-2">
-            <span className="font-bold text-gray-900 text-[13px]">{c(item.price)}</span>
+            <span className="font-bold text-gray-900 text-[15px]">{c(item.price)}</span>
             {/* Add / Quantity control */}
             <div>
               {qty === 0 ? (
                 <button
                   onClick={onAdd}
                   disabled={fetching}
-                  className={`text-xs font-bold px-4 py-1.5 rounded-xl border-2 transition-all min-w-[60px] text-center ${
+                  aria-label={`Add ${item.name}`}
+                  className={`text-sm font-bold px-5 min-h-[44px] rounded-xl border-2 transition-all min-w-[76px] text-center touch-manipulation ${
                     fetching
                       ? 'border-brand-300 text-brand-300 cursor-wait'
                       : 'border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 active:scale-95'

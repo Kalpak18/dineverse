@@ -131,3 +131,37 @@ test('webhook ignores payment notes forged to look like a commission payment', a
   const r = await srv.db.query('SELECT commission_status FROM orders WHERE cafe_id = $1', [cafe.id]);
   assert.equal(r.rows[0].commission_status, 'cash_due');
 });
+
+test('webhook settles a food order when the customer never reached verify', async () => {
+  const cafe = await createCafe(srv.db);
+  const item = await createMenuItem(srv.db, cafe.id);
+  const order = await placeOrder(srv.base, cafe.slug, item.id);
+  const created = await api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders/${order.id}/pay`, { headers: { 'x-order-token': order.customer_token } });
+  const rzpOrder = created.body.razorpay_order_id;
+  const payId = rzpOrder.replace('order_', 'pay_');
+  // Phone lost signal after paying: only Razorpay's webhook arrives
+  const raw = JSON.stringify({ event: 'payment.captured', payload: { payment: { entity: { id: payId, order_id: rzpOrder, amount: created.body.amount, notes: {} } } } });
+  const sig = crypto.createHmac('sha256', RZP_WEBHOOK_SECRET).update(raw).digest('hex');
+  const hook = await fetch(`${srv.base}/api/payments/webhook`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-razorpay-signature': sig }, body: raw });
+  assert.equal(hook.status, 200);
+  const row = await orderRow(order.id);
+  assert.equal(row.payment_verified, true);
+  assert.equal(row.status, 'confirmed');
+
+  // The customer's late verify is then a harmless "already paid"
+  const s = crypto.createHmac('sha256', RZP_SECRET).update(`${rzpOrder}|${payId}`).digest('hex');
+  const late = await api(srv.base, 'POST', `/orders/cafe/${cafe.slug}/orders/${order.id}/pay/verify`, {
+    headers: { 'x-order-token': order.customer_token },
+    body: { razorpay_order_id: rzpOrder, razorpay_payment_id: payId, razorpay_signature: s },
+  });
+  assert.equal(late.status, 409);
+});
+
+test('paying for an order the kitchen already started keeps it cooking', async () => {
+  const cafe = await createCafe(srv.db);
+  const item = await createMenuItem(srv.db, cafe.id);
+  const order = await placeOrder(srv.base, cafe.slug, item.id);
+  await srv.db.query(`UPDATE orders SET status = 'preparing' WHERE id = $1`, [order.id]);
+  assert.equal((await payOrder(srv.base, cafe.slug, order)).status, 200);
+  assert.equal((await orderRow(order.id)).status, 'preparing');
+});

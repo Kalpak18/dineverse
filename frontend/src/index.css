@@ -58,3 +58,11 @@
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
   }
 }
+
+/* Pinch-zoom is allowed (no maximum-scale), so stop iOS Safari from
+   auto-zooming into form fields: it does that for fonts under 16px. */
+@media (max-width: 640px) {
+  input:not([type='checkbox']):not([type='radio']), select, textarea {
+    font-size: 16px !important;
+  }
+}

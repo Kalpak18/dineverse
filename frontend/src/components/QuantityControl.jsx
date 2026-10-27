@@ -1,16 +1,21 @@
+// 40px circles with a 44px hit area — easy to tap with a thumb
 export default function QuantityControl({ qty, onDecrement, onIncrement }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1.5">
       <button
+        type="button"
         onClick={onDecrement}
-        className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-sm font-bold text-gray-700 transition-colors"
+        aria-label="Remove one"
+        className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 active:bg-gray-300 flex items-center justify-center text-base font-bold text-gray-700 transition-colors touch-manipulation"
       >
         −
       </button>
-      <span className="w-6 text-center font-semibold text-sm text-gray-900">{qty}</span>
+      <span className="w-7 text-center font-semibold text-base text-gray-900 tabular-nums" aria-live="polite">{qty}</span>
       <button
+        type="button"
         onClick={onIncrement}
-        className="w-7 h-7 rounded-full bg-brand-500 hover:bg-brand-600 text-white flex items-center justify-center text-sm font-bold transition-colors"
+        aria-label="Add one more"
+        className="w-10 h-10 rounded-full bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white flex items-center justify-center text-base font-bold transition-colors touch-manipulation"
       >
         +
       </button>

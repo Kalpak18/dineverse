@@ -7,6 +7,7 @@ import { placeOrder, getDeliveryQuote, previewOffer, validateCoupon, getCafeTabl
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
+import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
 import QuantityControl from '../../components/QuantityControl';
 
@@ -73,6 +74,13 @@ export default function CartPage() {
   const session = JSON.parse(localStorage.getItem(`session_${slug}`) || 'null'); // re-read on sessionTick change
   // sessionTick is referenced here to force re-evaluation when table is re-confirmed
   void sessionTick;
+
+  // Name + phone are collected here when the customer skipped them on entry
+  const [details, setDetails] = useState(() => ({
+    customer_name:  session?.customer_name || '',
+    customer_phone: session?.customer_phone || '',
+  }));
+  const [showDetails] = useState(() => !session?.customer_name || !session?.customer_phone);
 
   // Delivery address form state
   const [deliveryForm, setDeliveryForm] = useState({
@@ -360,6 +368,14 @@ export default function CartPage() {
   const handlePlaceOrder = async () => {
     if (submittingRef.current) return;
     setOrderError(null);
+    if (!details.customer_name.trim()) { toast.error('Please enter your name'); return; }
+    if (details.customer_phone.replace(/\D/g, '').length < 10) { toast.error('Please enter your mobile number'); return; }
+    // Remember them for next time (and for the menu header)
+    try {
+      const sk = `session_${slug}`;
+      const cur = JSON.parse(localStorage.getItem(sk) || '{}');
+      localStorage.setItem(sk, JSON.stringify({ ...cur, customer_name: details.customer_name.trim(), customer_phone: details.customer_phone.trim() }));
+    } catch { /* storage unavailable */ }
     // Validate delivery form before locking — errors should be retryable
     if (isDelivery) {
       if (!deliveryForm.delivery_address.trim()) { toast.error('Please enter your delivery address'); return; }
@@ -392,8 +408,8 @@ export default function CartPage() {
     slowNetworkTimer.current = setTimeout(() => setSlowNetwork(true), 5000);
 
     const orderPayload = {
-      customer_name:  session.customer_name,
-      customer_phone: session.customer_phone || undefined,
+      customer_name:  details.customer_name.trim(),
+      customer_phone: details.customer_phone.trim() || undefined,
       table_number:   session.table_number,
       order_type:     session.order_type || 'dine-in',
       notes:          notes.trim() || undefined,
@@ -609,6 +625,25 @@ export default function CartPage() {
         </div>
       )}
 
+      {/* Your details — only when skipped on the entry screen */}
+      {showDetails && (
+        <div className="px-4 mt-4 space-y-3">
+          <p className="text-sm font-bold text-gray-800">Your details</p>
+          <div>
+            <label className="label" htmlFor="cart-name">Your name *</label>
+            <input id="cart-name" className="input" autoComplete="name" placeholder="e.g. Rahul"
+              value={details.customer_name}
+              onChange={(e) => setDetails((d) => ({ ...d, customer_name: e.target.value }))} />
+          </div>
+          <div>
+            <label className="label" htmlFor="cart-phone">Mobile number *</label>
+            <PhoneInput id="cart-phone" value={details.customer_phone} placeholder="e.g. 9876543210"
+              onChange={(v) => setDetails((d) => ({ ...d, customer_phone: v }))} />
+            <p className="text-xs text-gray-400 mt-1">For order updates — we never share it.</p>
+          </div>
+        </div>
+      )}
+
       {/* Delivery address form — only for delivery orders */}
       {isDelivery && (
         <div className="px-4 mt-4 space-y-3">
@@ -682,8 +717,8 @@ export default function CartPage() {
       )}
 
       <div className="px-4 mt-4">
-        <label className="label">Special Instructions (optional)</label>
-        <textarea
+        <label className="label" htmlFor="cart-field-720">Special Instructions (optional)</label>
+        <textarea id="cart-field-720"
           className="input resize-none"
           rows={2}
           placeholder="e.g. No sugar, extra spicy..."
