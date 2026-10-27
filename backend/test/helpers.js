@@ -9,6 +9,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 const { Pool } = require('pg');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
@@ -20,6 +21,17 @@ const RZP_SECRET = 'rzp_test_secret';
 const RZP_WEBHOOK_SECRET = 'rzp_test_webhook_secret';
 const PASSWORD = 'pass1234';
 const PASSWORD_HASH = bcrypt.hashSync(PASSWORD, 4);
+
+// A port the OS confirms is free right now (random picks could collide when
+// test files run in parallel)
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.on('error', reject);
+    srv.listen(0, () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
+  });
+}
 
 async function startServer() {
   const dbName = `dineverse_test_${process.pid}_${Date.now()}`;
@@ -34,10 +46,12 @@ async function startServer() {
 
   const rzpLog = path.join(os.tmpdir(), `${dbName}.rzp.log`);
   fs.writeFileSync(rzpLog, '');
-  const port = 20000 + Math.floor(Math.random() * 20000);
+  const port = await freePort();
+  const serverLog = path.join(os.tmpdir(), `${dbName}.server.log`);
+  const logFd = fs.openSync(serverLog, 'w');
   const child = spawn('node', ['-r', path.join(__dirname, 'razorpayStub.js'), 'src/app.js'], {
     cwd: ROOT,
-    stdio: 'ignore',
+    stdio: ['ignore', logFd, logFd],
     env: {
       ...process.env,
       NODE_ENV: 'test',
@@ -55,9 +69,15 @@ async function startServer() {
   });
 
   const base = `http://localhost:${port}`;
-  for (let i = 0; i < 60; i++) {
-    try { if ((await fetch(`${base}/`)).ok) break; } catch { /* not up yet */ }
-    await new Promise((r) => setTimeout(r, 250));
+  let up = false;
+  for (let i = 0; i < 120 && !up; i++) { // up to 30 s — CI machines can be slow
+    try { up = (await fetch(`${base}/`)).ok; } catch { /* not up yet */ }
+    if (!up) await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!up) {
+    child.kill();
+    const tail = fs.readFileSync(serverLog, 'utf8').split('\n').slice(-20).join('\n');
+    throw new Error(`Test API server did not start on ${base}. Last log lines:\n${tail}`);
   }
 
   const db = new Pool({ connectionString: DATABASE_URL });
@@ -72,6 +92,8 @@ async function startServer() {
       await a.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`).catch(() => {});
       await a.end();
       fs.rmSync(rzpLog, { force: true });
+      fs.closeSync(logFd);
+      fs.rmSync(serverLog, { force: true });
     },
   };
 }
