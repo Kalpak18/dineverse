@@ -306,7 +306,10 @@ export default function OrderConfirmation() {
   };
 
   // ─── Pay via Razorpay ────────────────────────────────────────────
-  const handlePay = async (order) => {
+  // preferUpi: open Razorpay with UPI first (on phones its intent flow lists
+  // the installed UPI apps — GPay, PhonePe, Paytm…); other methods stay one
+  // tap away inside checkout.
+  const handlePay = async (order, { preferUpi = true } = {}) => {
     setPaying(order.id);
     try {
       const loaded = await loadRazorpayScript();
@@ -323,7 +326,18 @@ export default function OrderConfirmation() {
           name:         data.cafe_name,
           description:  `Order #${data.daily_order_number}`,
           image:        data.cafe_logo_url || undefined,
-          prefill: { name: order.customer_name, contact: order.customer_phone || '' },
+          prefill: { name: order.customer_name, contact: order.customer_phone || '', ...(preferUpi && { method: 'upi' }) },
+          ...(preferUpi && {
+            config: {
+              display: {
+                blocks: {
+                  upi: { name: 'Pay with any UPI app', instruments: [{ method: 'upi', flows: ['intent', 'qr', 'collect'] }] },
+                },
+                sequence: ['block.upi'],
+                preferences: { show_default_blocks: true }, // cards/netbanking still listed below
+              },
+            },
+          }),
           theme:        { color: '#f97316' },
           notes: {
             payee: data.cafe_name,
@@ -799,7 +813,7 @@ export default function OrderConfirmation() {
                     <button
                       onClick={() => handlePay(order)}
                       disabled={isPaying}
-                      className="w-full py-3.5 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+                      className="w-full min-h-[52px] py-3.5 rounded-xl bg-brand-500 hover:bg-brand-600 disabled:opacity-60 text-white text-base font-bold transition-colors flex items-center justify-center gap-2"
                     >
                       {isPaying ? (
                         <>
@@ -809,7 +823,16 @@ export default function OrderConfirmation() {
                           </svg>
                           Processing…
                         </>
-                      ) : `💳 Pay Now — ${c(order.final_amount || order.total_amount)}`}
+                      ) : `📱 Pay ${c(order.final_amount || order.total_amount)} via UPI`}
+                    </button>
+                    <p className="text-[11px] text-center text-gray-500 mt-1.5">GPay · PhonePe · Paytm · BHIM · any UPI app</p>
+                    <button
+                      type="button"
+                      onClick={() => handlePay(order, { preferUpi: false })}
+                      disabled={isPaying}
+                      className="w-full min-h-[44px] mt-1 text-sm font-semibold text-gray-600 underline disabled:opacity-60"
+                    >
+                      Card / other payment methods
                     </button>
                   </div>
                 )}

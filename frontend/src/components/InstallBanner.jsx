@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
+
+// Only where people are browsing — never on top of ordering, paying or
+// staff screens (it was covering Place Order / Pay / menu items on phones).
+const SHOW_ON = [/^\/$/, /^\/explore\/?$/, /^\/cafe\/[^/]+\/?$/];
 
 export default function InstallBanner() {
+  const { pathname } = useLocation();
   const [prompt, setPrompt] = useState(null);
   const [dismissed, setDismissed] = useState(false);
   const [isIos, setIsIos] = useState(false);
@@ -22,6 +28,7 @@ export default function InstallBanner() {
 
   // Already installed or dismissed this session
   if (isInStandaloneMode || dismissed) return null;
+  if (!SHOW_ON.some((re) => re.test(pathname))) return null;
   // Android: wait for the browser event
   if (!isIos && !prompt) return null;
 
