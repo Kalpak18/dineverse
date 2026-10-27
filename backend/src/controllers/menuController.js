@@ -2,6 +2,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
+const { cleanTranslations } = require('../utils/translations');
 const cache = require('../utils/cache');
 
 const logger = require('../utils/logger');
@@ -27,7 +28,7 @@ exports.createCategory = asyncHandler(async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
-  const { name, display_order, parent_id, station } = req.body;
+  const { name, display_order, parent_id, station, translations } = req.body;
 
   // Validate parent belongs to this cafe (if provided)
   if (parent_id) {
@@ -40,8 +41,8 @@ exports.createCategory = asyncHandler(async (req, res) => {
   }
 
   const result = await db.query(
-    'INSERT INTO categories (cafe_id, name, display_order, parent_id, station) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-    [req.cafeId, name, display_order || 0, parent_id || null, normStation(station)]
+    'INSERT INTO categories (cafe_id, name, display_order, parent_id, station, translations) VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING *',
+    [req.cafeId, name, display_order || 0, parent_id || null, normStation(station), JSON.stringify(cleanTranslations(translations) || {})]
   );
   await bustMenuCache(req.cafeId);
   ok(res, { category: result.rows[0] }, 'Category created', 201);
@@ -52,7 +53,8 @@ const normStation = (v) => (typeof v === 'string' && v.trim() ? v.trim().slice(0
 
 exports.updateCategory = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, display_order, parent_id, station } = req.body;
+  const { name, display_order, parent_id, station, translations } = req.body;
+  const cleanTr = cleanTranslations(translations);
 
   // Validate parent (if changing it)
   if (parent_id !== undefined && parent_id !== null) {
@@ -70,11 +72,13 @@ exports.updateCategory = asyncHandler(async (req, res) => {
      SET name          = COALESCE($1, name),
          display_order = COALESCE($2, display_order),
          parent_id     = CASE WHEN $3::boolean THEN $4::uuid ELSE parent_id END,
-         station       = CASE WHEN $7::boolean THEN $8 ELSE station END
+         station       = CASE WHEN $7::boolean THEN $8 ELSE station END,
+         translations  = COALESCE($9::jsonb, translations)
      WHERE id = $5 AND cafe_id = $6
      RETURNING *`,
     [name || null, display_order ?? null, parent_id !== undefined, parent_id || null, id, req.cafeId,
-     station !== undefined, normStation(station)]
+     station !== undefined, normStation(station),
+     cleanTr === undefined ? null : JSON.stringify(cleanTr)]
   );
   if (result.rows.length === 0) return fail(res, 'Category not found', 404);
   await bustMenuCache(req.cafeId);
@@ -116,7 +120,7 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
   if (!errors.isEmpty()) return validationFail(res, errors.array());
 
   const { name, description, price, category_id, image_url, is_veg, is_available, display_order,
-          track_stock, stock_quantity, tags } = req.body;
+          track_stock, stock_quantity, tags, translations } = req.body;
 
   if (category_id) {
     const catCheck = await db.query(
@@ -131,8 +135,8 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
   const result = await db.query(
     `INSERT INTO menu_items
        (cafe_id, category_id, name, description, price, image_url, is_veg, is_available, display_order,
-        track_stock, stock_quantity, tags)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        track_stock, stock_quantity, tags, translations)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)
      RETURNING *`,
     [
       req.cafeId, category_id || null, name, description || null, price,
@@ -143,6 +147,7 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
       track_stock || false,
       track_stock && stock_quantity != null ? parseInt(stock_quantity) : null,
       tagsArr,
+      JSON.stringify(cleanTranslations(translations) || {}),
     ]
   );
   await bustMenuCache(req.cafeId);
@@ -152,8 +157,9 @@ exports.createMenuItem = asyncHandler(async (req, res) => {
 exports.updateMenuItem = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, description, price, category_id, image_url, is_veg, is_available, display_order,
-          track_stock, stock_quantity, tags } = req.body;
+          track_stock, stock_quantity, tags, translations } = req.body;
   const tagsArr = Array.isArray(tags) ? tags : undefined;
+  const cleanTr = cleanTranslations(translations);
   const result = await db.query(
     `UPDATE menu_items
      SET name           = COALESCE($1,  name),
@@ -166,14 +172,16 @@ exports.updateMenuItem = asyncHandler(async (req, res) => {
          display_order  = COALESCE($8,  display_order),
          track_stock    = COALESCE($9,  track_stock),
          stock_quantity = COALESCE($10, stock_quantity),
-         tags           = COALESCE($11, tags)
+         tags           = COALESCE($11, tags),
+         translations   = COALESCE($14::jsonb, translations)
      WHERE id = $12 AND cafe_id = $13
      RETURNING *`,
     [name, description, price, category_id, image_url, is_veg, is_available, display_order,
      track_stock != null ? track_stock : null,
      stock_quantity != null ? parseInt(stock_quantity) : null,
      tagsArr || null,
-     id, req.cafeId]
+     id, req.cafeId,
+     cleanTr === undefined ? null : JSON.stringify(cleanTr)]
   );
   if (result.rows.length === 0) return fail(res, 'Item not found', 404);
   await bustMenuCache(req.cafeId);

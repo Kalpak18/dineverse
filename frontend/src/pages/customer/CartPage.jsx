@@ -10,6 +10,7 @@ import { fmtCurrency } from '../../utils/formatters';
 import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
 import QuantityControl from '../../components/QuantityControl';
+import { useT, localized } from '../../i18n';
 
 // Normalise "5"→"Table 5", "T5"→"Table 5"; prepend area if given
 function normTable(raw, areaName) {
@@ -33,6 +34,7 @@ function saveParty(slug, secret) {
 }
 
 export default function CartPage() {
+  const { t, lang } = useT();
   const { slug } = useParams();
   const navigate = useNavigate();
   const { items, total, itemCount, cafeCurrency, addItem, updateQty, clearCart } = useCart();
@@ -323,7 +325,7 @@ export default function CartPage() {
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
             ← Back
           </button>
-          <h1 className="font-bold text-lg">Your Cart</h1>
+          <h1 className="font-bold text-lg">{t('cart.title')}</h1>
         </div>
         <div className="text-center py-20 text-gray-400">
           <div className="text-5xl mb-3">🛒</div>
@@ -368,8 +370,8 @@ export default function CartPage() {
   const handlePlaceOrder = async () => {
     if (submittingRef.current) return;
     setOrderError(null);
-    if (!details.customer_name.trim()) { toast.error('Please enter your name'); return; }
-    if (details.customer_phone.replace(/\D/g, '').length < 10) { toast.error('Please enter your mobile number'); return; }
+    if (!details.customer_name.trim()) { toast.error(t('cart.needName')); return; }
+    if (details.customer_phone.replace(/\D/g, '').length < 10) { toast.error(t('cart.needPhone')); return; }
     // Remember them for next time (and for the menu header)
     try {
       const sk = `session_${slug}`;
@@ -524,7 +526,7 @@ export default function CartPage() {
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-sm">
             ← Back
           </button>
-          <h1 className="font-bold text-lg flex-1">Your Cart</h1>
+          <h1 className="font-bold text-lg flex-1">{t('cart.title')}</h1>
           {activeOrders.length > 0 && (
             <button
               onClick={() => navigate(`/cafe/${slug}/confirmation`)}
@@ -562,7 +564,7 @@ export default function CartPage() {
         {items.map((item) => (
           <div key={item.id} className="flex items-center gap-3 border border-gray-100 rounded-xl p-3">
             <div className="flex-1">
-              <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
+              <p className="font-semibold text-gray-900 text-sm">{localized(item, 'name', lang)}</p>
               <div className="text-xs text-gray-400 mt-1 space-y-1">
                 <p>{c(parseFloat(item.price))} each</p>
                 {item.variant_name && <p>Variant: {item.variant_name}</p>}
@@ -628,18 +630,18 @@ export default function CartPage() {
       {/* Your details — only when skipped on the entry screen */}
       {showDetails && (
         <div className="px-4 mt-4 space-y-3">
-          <p className="text-sm font-bold text-gray-800">Your details</p>
+          <p className="text-sm font-bold text-gray-800">{t('cart.details')}</p>
           <div>
-            <label className="label" htmlFor="cart-name">Your name *</label>
+            <label className="label" htmlFor="cart-name">{t('cart.name')}</label>
             <input id="cart-name" className="input" autoComplete="name" placeholder="e.g. Rahul"
               value={details.customer_name}
               onChange={(e) => setDetails((d) => ({ ...d, customer_name: e.target.value }))} />
           </div>
           <div>
-            <label className="label" htmlFor="cart-phone">Mobile number *</label>
+            <label className="label" htmlFor="cart-phone">{t('cart.phone')}</label>
             <PhoneInput id="cart-phone" value={details.customer_phone} placeholder="e.g. 9876543210"
               onChange={(v) => setDetails((d) => ({ ...d, customer_phone: v }))} />
-            <p className="text-xs text-gray-400 mt-1">For order updates — we never share it.</p>
+            <p className="text-xs text-gray-400 mt-1">{t('cart.phoneHint')}</p>
           </div>
         </div>
       )}
@@ -672,7 +674,7 @@ export default function CartPage() {
             disabled={quoting}
             className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-brand-300 text-brand-700 text-sm font-semibold bg-brand-50 disabled:opacity-60"
           >
-            📍 {quoting ? 'Checking location…' : deliveryQuote?.source === 'gps' ? 'Using your current location ✓' : 'Use my current location'}
+            📍 {quoting ? 'Checking location…' : deliveryQuote?.source === 'gps' ? 'Using your current location ✓' : t('cart.useLocation')}
           </button>
           <input
             className="input"
@@ -717,7 +719,7 @@ export default function CartPage() {
       )}
 
       <div className="px-4 mt-4">
-        <label className="label" htmlFor="cart-field-720">Special Instructions (optional)</label>
+        <label className="label" htmlFor="cart-field-720">{t('cart.instructions')}</label>
         <textarea id="cart-field-720"
           className="input resize-none"
           rows={2}
@@ -768,11 +770,11 @@ export default function CartPage() {
       />
 
       <div className="mx-4 mt-4 bg-gray-50 rounded-xl p-4">
-        <h3 className="font-semibold text-gray-800 mb-3">Bill Summary</h3>
+        <h3 className="font-semibold text-gray-800 mb-3">{t('cart.summary')}</h3>
         <div className="space-y-1 text-sm">
           {items.map((item) => (
             <div key={item.id} className="flex justify-between text-gray-600">
-              <span>{item.name} × {item.quantity}</span>
+              <span>{localized(item, 'name', lang)} × {item.quantity}</span>
               <span>{c(parseFloat(item.price) * item.quantity)}</span>
             </div>
           ))}
@@ -846,7 +848,7 @@ export default function CartPage() {
 
           {tip > 0 && (
             <div className="flex justify-between text-gray-600">
-              <span>Tip</span>
+              <span>{t('cart.tip')}</span>
               <span>{c(tip)}</span>
             </div>
           )}
@@ -879,7 +881,7 @@ export default function CartPage() {
       </div>
 
       <div className="mx-4 mt-3 bg-white border border-gray-200 rounded-xl p-4">
-        <p className="text-sm font-semibold text-gray-700 mb-2.5">Add a tip? 🙏</p>
+        <p className="text-sm font-semibold text-gray-700 mb-2.5">{t('cart.addTip')}</p>
         <div className="flex gap-2 flex-wrap">
           {TIP_OPTIONS.map((t) => (
             <button
@@ -953,7 +955,7 @@ export default function CartPage() {
                 ? 'Still connecting…'
                 : loading
                 ? 'Placing order…'
-                : 'Place Order'}
+                : t('cart.placeOrder')}
             </span>
             <span>{c(grandTotal)}</span>
           </button>
@@ -1147,7 +1149,7 @@ export default function CartPage() {
                 )}
                 {tip > 0 && (
                   <div className="flex justify-between text-xs text-gray-400">
-                    <span>Tip</span>
+                    <span>{t('cart.tip')}</span>
                     <span>{c(tip)}</span>
                   </div>
                 )}
@@ -1181,7 +1183,7 @@ export default function CartPage() {
                     ? `Reconnecting… (${submitAttempt}/3)`
                     : slowNetwork ? 'Still connecting…'
                     : loading ? 'Placing…'
-                    : 'Yes, Place Order'}
+                    : t('cart.confirmPlace')}
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}

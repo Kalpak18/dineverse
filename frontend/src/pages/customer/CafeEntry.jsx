@@ -14,6 +14,8 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
 import { pushNotification } from '../../utils/customerNotifications';
+import { useT } from '../../i18n';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
 
 const RESERVATION_STATUS = {
   pending:   { label: 'Pending Confirmation', color: 'bg-yellow-100 text-yellow-800', icon: '⏳' },
@@ -153,6 +155,7 @@ function CafeSeoHead({ cafe, slug }) {
 }
 
 export default function CafeEntry() {
+  const { t } = useT();
   const { slug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -522,17 +525,20 @@ export default function CafeEntry() {
 
         {/* Entry form */}
         <div className="card shadow-lg">
-          <h2 className="text-lg font-semibold text-gray-800 mb-5">How would you like to order?</h2>
+          <div className="flex items-start justify-between gap-3 mb-5">
+            <h2 className="text-lg font-semibold text-gray-800">{t('entry.title')}</h2>
+            <LanguageSwitcher className="flex-shrink-0" />
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
 
             {/* Order type */}
             <div>
-              <label className="label">Order Type</label>
+              <p className="label">{t('entry.orderType')}</p>
               <div className="flex rounded-xl border border-gray-200 overflow-hidden">
                 {[
-                  { key: 'dine-in',  label: '🍽️ Dine In'  },
-                  { key: 'takeaway', label: '🥡 Takeaway' },
-                  ...(cafe?.delivery_enabled ? [{ key: 'delivery', label: '🛵 Delivery' }] : []),
+                  { key: 'dine-in',  label: `🍽️ ${t('entry.dineIn')}`  },
+                  { key: 'takeaway', label: `🥡 ${t('entry.takeaway')}` },
+                  ...(cafe?.delivery_enabled ? [{ key: 'delivery', label: `🛵 ${t('entry.delivery')}` }] : []),
                 ].map(({ key, label }) => (
                   <button
                     key={key}
@@ -551,7 +557,7 @@ export default function CafeEntry() {
             {/* Name */}
             <div>
               <label className="label" htmlFor="entry-name">
-                Your Name <span className="text-gray-400 font-normal">(optional — or at checkout)</span>
+                {t('entry.name')} <span className="text-gray-400 font-normal">{t('entry.optional')}</span>
               </label>
               <input
                 id="entry-name" autoComplete="name"
@@ -565,7 +571,7 @@ export default function CafeEntry() {
             {/* Phone */}
             <div>
               <label className="label" htmlFor="entry-phone">
-                Mobile Number <span className="text-gray-400 font-normal">(optional — or at checkout)</span>
+                {t('entry.phone')} <span className="text-gray-400 font-normal">{t('entry.optional')}</span>
               </label>
               <PhoneInput
                 id="entry-phone"
@@ -593,13 +599,13 @@ export default function CafeEntry() {
             {form.order_type === 'dine-in' && form.table_token ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-green-200 bg-green-50 px-3 py-2.5">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-green-700">✓ Table scanned</p>
+                  <p className="text-xs font-semibold text-green-700">{t('entry.tableScanned')}</p>
                   <p className="font-bold text-gray-900 truncate">{form.table_number}</p>
                 </div>
                 <button type="button"
                   onClick={() => setForm((f) => ({ ...f, table_number: '', table_token: undefined, table_scanned_at: undefined }))}
                   className="flex-shrink-0 min-h-[44px] px-3 text-xs font-semibold text-gray-500 underline">
-                  Not your table?
+                  {t('entry.notYourTable')}
                 </button>
               </div>
             ) : form.order_type === 'dine-in' && (
@@ -615,7 +621,7 @@ export default function CafeEntry() {
               />
               {hasTables && (
                 <p className="text-xs text-gray-500 -mt-1">
-                  Tip: scan the QR code on your table — otherwise a staff member will confirm your table.
+                  {t('entry.scanTip')}
                 </p>
               )}
               </>
@@ -645,7 +651,7 @@ export default function CafeEntry() {
             )}
 
             <button type="submit" className="btn-primary w-full mt-2">
-              View Menu →
+              {t('entry.viewMenu')}
             </button>
           </form>
         </div>
@@ -748,14 +754,12 @@ export default function CafeEntry() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 pb-4 sm:pb-0"
           role="dialog" aria-modal="true" aria-labelledby="move-table-title">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl space-y-4">
-            <h2 id="move-table-title" className="text-lg font-bold text-gray-900">Moved tables?</h2>
-            <p className="text-sm text-gray-600">
-              You ordered at <strong>{movePrompt.from}</strong>. Move your open orders to <strong>{movePrompt.to}</strong> so they&apos;re served here?
-            </p>
+            <h2 id="move-table-title" className="text-lg font-bold text-gray-900">{t('entry.movedTitle')}</h2>
+            <p className="text-sm text-gray-600">{t('entry.movedBody', { from: movePrompt.from, to: movePrompt.to })}</p>
             <div className="flex flex-col-reverse sm:flex-row gap-2">
-              <button type="button" onClick={() => setMovePrompt(null)} className="btn-secondary flex-1 min-h-[44px]">No, keep them</button>
+              <button type="button" onClick={() => setMovePrompt(null)} className="btn-secondary flex-1 min-h-[44px]">{t('entry.movedNo')}</button>
               <button type="button" onClick={handleMoveOrders} disabled={moving} className="btn-primary flex-1 min-h-[44px] disabled:opacity-60">
-                {moving ? 'Moving…' : `Yes, move to ${movePrompt.to}`}
+                {moving ? '…' : t('entry.movedYes', { to: movePrompt.to })}
               </button>
             </div>
           </div>
@@ -1166,6 +1170,7 @@ function WaitlistModal({ slug, cafeName, onClose }) {
 
 // ─── Smart table search combobox ──────────────────────────────
 function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, normalizeTableNumber }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
@@ -1229,7 +1234,7 @@ function TableSearch({ hasTables, areas, form, setForm, errors, setErrors, norma
 
       {/* Smart search input */}
       <div className="relative">
-        <label className="label" htmlFor="ce-field-1232">Table Number</label>
+        <label className="label" htmlFor="ce-field-1232">{t('entry.table')}</label>
         <input id="ce-field-1232"
           ref={inputRef}
           type="text"

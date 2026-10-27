@@ -15,6 +15,7 @@ import PageHint from '../../components/PageHint';
 import { getApiError } from '../../utils/apiError';
 import { fmtCurrency } from '../../utils/formatters';
 import toast from 'react-hot-toast';
+import TranslationFields from '../../components/TranslationFields';
 
 // Group items by category (supports subcategories).
 // Returns array of { ...category, items[], subcategories: [{ ...sub, items[] }] }
@@ -498,6 +499,7 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
     track_stock: item?.track_stock ?? false,
     stock_quantity: item?.stock_quantity ?? '',
     tags: item?.tags || [],
+    translations: item?.translations || {},
   });
 
   const toggleTag = (key) => setForm((f) => ({
@@ -851,6 +853,9 @@ function ItemModal({ item, categories: initialCategories, onClose, onSaved, onCa
             <textarea className="input resize-none" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
 
+          <TranslationFields idPrefix="item-tr" value={form.translations}
+            onChange={(translations) => setForm((f) => ({ ...f, translations }))} />
+
           <div>
             <label className="label">Price ({cafe?.currency || 'INR'}) *</label>
             <input type="number" min="0" step="any" className="input" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} required />
@@ -1022,6 +1027,7 @@ function CategoryModal({ category, categories = [], onClose, onSaved }) {
   const [name, setName] = useState(category?.name || '');
   const [parentId, setParentId] = useState(category?.parent_id || null);
   const [station, setStation] = useState(category?.station || '');
+  const [translations, setTranslations] = useState(category?.translations || {});
   // Station names already in use, offered as suggestions
   const knownStations = [...new Set(categories.map((c) => c.station).filter(Boolean))];
   const [saving, setSaving] = useState(false);
@@ -1065,8 +1071,8 @@ function CategoryModal({ category, categories = [], onClose, onSaved }) {
     setSaving(true);
     try {
       const { data } = category
-        ? await updateCategory(category.id, { name, parent_id: parentId, station })
-        : await createCategory({ name, parent_id: parentId, station });
+        ? await updateCategory(category.id, { name, parent_id: parentId, station, translations })
+        : await createCategory({ name, parent_id: parentId, station, translations });
       await setCategoryModifierGroups(data.category.id, attachedGroupIds);
       toast.success(category ? 'Category updated' : 'Category added');
       onSaved(data.category);
@@ -1131,6 +1137,7 @@ function CategoryModal({ category, categories = [], onClose, onSaved }) {
             {knownStations.map((st) => <option key={st} value={st} />)}
           </datalist>
         </div>
+        <TranslationFields idPrefix="cat-tr" value={translations} onChange={setTranslations} withDescription={false} />
         <div className="border border-gray-200 rounded-xl p-3 space-y-2">
           <div className="flex items-center justify-between gap-3">
             <div>

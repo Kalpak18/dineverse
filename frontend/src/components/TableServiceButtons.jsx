@@ -3,10 +3,12 @@ import { io } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import SOCKET_URL from '../utils/socketUrl';
 import { requestService } from '../services/api';
+import { useT } from '../i18n';
 
 // Customer: "Call waiter" / "Request bill" for an open dine-in order.
 // Shows "On the way ✓" when staff acknowledge (live, via the order's room).
 export default function TableServiceButtons({ slug, order }) {
+  const { t } = useT();
   const [state, setState] = useState({ waiter: 'idle', bill: 'idle' }); // idle | sending | sent | coming
 
   useEffect(() => {
@@ -39,10 +41,10 @@ export default function TableServiceButtons({ slug, order }) {
 
   const label = (type) => {
     const st = state[type];
-    if (st === 'sending') return 'Sending…';
-    if (st === 'coming') return type === 'bill' ? 'Bill on the way ✓' : 'Waiter on the way ✓';
-    if (st === 'sent') return type === 'bill' ? 'Bill requested ✓' : 'Waiter called ✓';
-    return type === 'bill' ? '🧾 Request bill' : '🙋 Call waiter';
+    if (st === 'sending') return t('order.sending');
+    if (st === 'coming') return type === 'bill' ? t('order.billComing') : t('order.waiterComing');
+    if (st === 'sent') return type === 'bill' ? t('order.billRequested') : t('order.waiterCalled');
+    return type === 'bill' ? t('order.requestBill') : t('order.callWaiter');
   };
 
   return (

@@ -12,6 +12,7 @@ import { pushNotification } from '../../utils/customerNotifications';
 import { isInclusiveTax } from '../../utils/billDisplay';
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime } from '../../utils/prepTime';
 import TableServiceButtons from '../../components/TableServiceButtons';
+import { useT } from '../../i18n';
 
 const STATUS_LABELS = {
   pending:   { label: 'Order Received', color: 'text-yellow-600 bg-yellow-50', icon: '⏳' },
@@ -35,6 +36,7 @@ const POLL_MS      = 10000;               // fallback poll every 10s (socket han
 const POLL_MAX_MS  = 2 * 60 * 60 * 1000; // stop polling after 2 hours regardless
 
 export default function OrderConfirmation() {
+  const { t } = useT();
   const { slug } = useParams();
   const navigate  = useNavigate();
   const location  = useLocation();
@@ -495,7 +497,7 @@ export default function OrderConfirmation() {
           ) : (
             <>
               <div className="text-5xl mb-2">🎉</div>
-              <h1 className="text-xl font-bold text-gray-900">Your Orders</h1>
+              <h1 className="text-xl font-bold text-gray-900">{t('order.title')}</h1>
               <p className="text-gray-500 text-sm mt-1">
                 {activeCount} active order{activeCount !== 1 ? 's' : ''} — live updates on
               </p>
@@ -505,7 +507,7 @@ export default function OrderConfirmation() {
                   disabled={loadingBill}
                   className="mt-3 px-4 py-1.5 rounded-xl bg-white border border-gray-200 text-gray-600 text-xs font-semibold hover:bg-gray-50 transition-colors disabled:opacity-60"
                 >
-                  {loadingBill ? 'Loading…' : '🧾 View Table Bill'}
+                  {loadingBill ? '…' : t('order.viewTableBill')}
                 </button>
               )}
               {/* Call waiter / request bill for the latest open dine-in order */}
@@ -525,6 +527,7 @@ export default function OrderConfirmation() {
               ? 'ready'
               : order.status;
           const statusInfo = STATUS_LABELS[displayStatus] || STATUS_LABELS.pending;
+          const statusText = t(`status.${STATUS_LABELS[displayStatus] ? displayStatus : 'pending'}`);
           const isPending    = order.status === 'pending';
           const isAccepted   = ['confirmed', 'preparing', 'ready', 'served'].includes(order.status);
           const isTerminal   = ['paid', 'cancelled'].includes(order.status);
@@ -547,7 +550,7 @@ export default function OrderConfirmation() {
                   <p className="font-black text-gray-900 text-3xl leading-none">{fmtToken(order.daily_order_number, order.order_type)}</p>
                 </div>
                 <span className={`badge ${statusInfo.color} px-3 py-1.5 text-sm`}>
-                  {statusInfo.icon} {statusInfo.label}
+                  {statusInfo.icon} {statusText}
                 </span>
               </div>
 
@@ -561,7 +564,7 @@ export default function OrderConfirmation() {
                   <span className="text-gray-400">Table</span>
                   <p className="font-medium">{order.table_number}</p>
                   {order.order_type === 'dine-in' && order.table_verified === false && (
-                    <p className="text-[11px] text-amber-700 mt-0.5">Staff will confirm your table</p>
+                    <p className="text-[11px] text-amber-700 mt-0.5">{t('order.staffConfirm')}</p>
                   )}
                 </div>
                 <div>
@@ -1116,6 +1119,7 @@ export default function OrderConfirmation() {
 // Equal split for N friends + "your orders" (what this phone ordered), with a
 // share sheet so the payer can send everyone their part.
 function SplitCalculator({ total, mine, tableLabel, cafeName, c }) {
+  const { t } = useT();
   const [people, setPeople] = useState(2);
   if (!total) return null;
   const each = Math.ceil((total / people) * 100) / 100; // round up so shares cover the bill
@@ -1128,9 +1132,9 @@ function SplitCalculator({ total, mine, tableLabel, cafeName, c }) {
   };
   return (
     <div className="mt-4 rounded-xl border border-gray-200 p-3 space-y-3">
-      <p className="text-sm font-bold text-gray-800">➗ Split the bill</p>
+      <p className="text-sm font-bold text-gray-800">{t('split.title')}</p>
       <div className="flex items-center justify-between">
-        <span className="text-sm text-gray-600">People at the table</span>
+        <span className="text-sm text-gray-600">{t('split.people')}</span>
         <div className="flex items-center gap-2">
           <button type="button" aria-label="Fewer people" disabled={people <= 2} onClick={() => setPeople((n) => n - 1)}
             className="w-10 h-10 rounded-full bg-gray-100 text-lg font-bold disabled:opacity-40">−</button>
@@ -1140,15 +1144,15 @@ function SplitCalculator({ total, mine, tableLabel, cafeName, c }) {
         </div>
       </div>
       <div className="flex justify-between text-base font-bold text-gray-900">
-        <span>Each pays</span><span>{c(each)}</span>
+        <span>{t('split.each')}</span><span>{c(each)}</span>
       </div>
       {mine > 0 && mine < total && (
         <div className="flex justify-between text-sm text-gray-600">
-          <span>Or just your orders</span><span>{c(mine)}</span>
+          <span>{t('split.mine')}</span><span>{c(mine)}</span>
         </div>
       )}
       <button type="button" onClick={share} className="w-full min-h-[44px] rounded-xl border-2 border-brand-500 text-brand-600 text-sm font-bold">
-        Share with friends
+        {t('split.share')}
       </button>
     </div>
   );

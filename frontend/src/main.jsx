@@ -14,6 +14,7 @@ import { SpeedInsights } from '@vercel/speed-insights/react';
 import ErrorBoundary from './components/ErrorBoundary';
 import { initSentry } from './utils/sentry';
 import './index.css';
+import { LanguageProvider } from './i18n';
 
 // Initialise Sentry BEFORE React mounts so any render-time error is captured.
 initSentry();
@@ -67,6 +68,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
           <RiderAuthProvider>
           <AuthProvider>
             <CartProvider>
+              <LanguageProvider>
               <App />
               <Analytics />
               <SpeedInsights />
@@ -104,6 +106,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                   },
                 }}
               />
+              </LanguageProvider>
             </CartProvider>
           </AuthProvider>
           </RiderAuthProvider>

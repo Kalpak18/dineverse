@@ -199,14 +199,14 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
 
   const [categoriesResult, itemsResult] = await Promise.all([
     db.query(
-      `SELECT id, name, display_order, parent_id FROM categories
+      `SELECT id, name, display_order, parent_id, translations FROM categories
        WHERE cafe_id = $1
        ORDER BY display_order ASC, name ASC`,
       [cafeId]
     ),
     db.query(
       `SELECT id, category_id, name, description, price, image_url, is_veg, is_available, display_order,
-              tags, track_stock, stock_quantity, low_stock_threshold
+              tags, track_stock, stock_quantity, low_stock_threshold, translations
        FROM menu_items
        WHERE cafe_id = $1 AND is_available = true
        ORDER BY display_order ASC, name ASC`,

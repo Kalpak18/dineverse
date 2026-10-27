@@ -11,6 +11,7 @@ import { getScheduleStatus, getTodayHours } from '../../utils/scheduleUtils';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
 import CustomerTour from '../../components/CustomerTour';
+import { useT, localized } from '../../i18n';
 
 const FALLBACK_EMOJI_MAP = {
   momos: '🥟', pizza: '🍕', burger: '🍔', biryani: '🍚',
@@ -36,8 +37,9 @@ function getCategoryEmoji(name, emojiMap = FALLBACK_EMOJI_MAP) {
 }
 
 function FoodDot({ isVeg }) {
+  const { t } = useT();
   return (
-    <span role="img" aria-label={isVeg ? 'Vegetarian' : 'Non-vegetarian'}
+    <span role="img" aria-label={isVeg ? t('menu.veg') : t('menu.nonVeg')}
       className={`inline-flex w-[14px] h-[14px] rounded-sm border-2 items-center justify-center flex-shrink-0 ${
       isVeg ? 'border-green-600' : 'border-red-600'
     }`}>
@@ -47,6 +49,7 @@ function FoodDot({ isVeg }) {
 }
 
 export default function MenuPage() {
+  const { t, lang } = useT();
   const { slug } = useParams();
   const navigate = useNavigate();
   const { items: cartItems, addItem, updateQty, itemCount, total, setCafeCurrency } = useCart();
@@ -273,6 +276,9 @@ export default function MenuPage() {
       id: `${item.id}:${selectedVariant?.id || 'base'}:${selectedModifiers.map((mod) => mod.option_id).join(',')}`,
       menu_item_id: item.id,
       name: `${item.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}`,
+      // Translated names follow the same "Name (Variant)" shape for the cart
+      translations: Object.fromEntries(Object.entries(item.translations || {}).map(([l, v]) =>
+        [l, v.name ? { name: `${v.name}${selectedVariant ? ` (${selectedVariant.name})` : ''}` } : {}])),
       price: finalPrice, unit_price: finalPrice,
       variant_id: selectedVariant?.id || null, variant_name: selectedVariant?.name || null,
       selected_modifiers: selectedModifiers, modifier_total: modifierTotal,
@@ -316,12 +322,15 @@ export default function MenuPage() {
           return (
             item.name.toLowerCase().includes(q) ||
             (item.description || '').toLowerCase().includes(q) ||
-            cat.name.toLowerCase().includes(q)
+            cat.name.toLowerCase().includes(q) ||
+            // also match what the customer reads (e.g. typing in Hindi)
+            localized(item, 'name', lang).toLowerCase().includes(q) ||
+            localized(cat, 'name', lang).toLowerCase().includes(q)
           );
         })
-        .map((item) => ({ ...item, _catName: cat.name }))
+        .map((item) => ({ ...item, _catName: localized(cat, 'name', lang) }))
     );
-  }, [menu, foodFilter, search]);
+  }, [menu, foodFilter, search, lang]);
 
   const filterItem = (item) => {
     if (!item.is_available) return false;
@@ -340,12 +349,12 @@ export default function MenuPage() {
   if (loadError && !loading) return (
     <div className="min-h-[100dvh] flex flex-col items-center justify-center gap-4 px-6 text-center bg-white">
       <span className="text-5xl" aria-hidden="true">👨‍🍳</span>
-      <h1 className="text-lg font-bold text-gray-900">Waking up the kitchen…</h1>
+      <h1 className="text-lg font-bold text-gray-900">{t('menu.waking')}</h1>
       <p className="text-sm text-gray-500 max-w-xs">
-        {loadAttempt < 3 ? 'The menu is taking a moment to load. Trying again automatically.' : 'We still couldn\'t load the menu. Check your connection and try again.'}
+        {loadAttempt < 3 ? t('menu.wakingBody') : t('menu.wakingFailed')}
       </p>
       <button type="button" onClick={() => setLoadAttempt((n) => n + 1)} className="btn-primary min-h-[44px] px-6">
-        Retry now
+        {t('menu.retry')}
       </button>
     </div>
   );
@@ -498,7 +507,7 @@ export default function MenuPage() {
           <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
           <input
             type="text"
-            placeholder="Search dishes or categories…"
+            placeholder={t('menu.search')}
             className="w-full bg-gray-100 rounded-2xl pl-9 pr-9 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-300 focus:bg-white transition-colors"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -555,7 +564,7 @@ export default function MenuPage() {
                 </div>
                 <span className={`text-[9px] text-center leading-snug font-semibold w-full px-0.5 transition-colors ${
                   isActive ? 'text-brand-700' : 'text-gray-500'
-                }`}>Deals</span>
+                }`}>{t('menu.deals')}</span>
               </button>
             );
           })()}
@@ -587,7 +596,7 @@ export default function MenuPage() {
                 </div>
                 <span className={`text-[9px] text-center leading-snug line-clamp-2 w-full px-0.5 font-semibold transition-colors ${
                   isActive ? 'text-brand-700' : 'text-gray-500'
-                }`}>{cat.name}</span>
+                }`}>{localized(cat, 'name', lang)}</span>
               </button>
             );
           })}
@@ -636,7 +645,7 @@ export default function MenuPage() {
                           {resolvedItems.map((item) => (
                             <div key={item.id} className="flex items-center gap-2.5">
                               <FoodDot isVeg={item.is_veg} />
-                              <span className="flex-1 text-sm text-gray-800 font-medium">{item.name}</span>
+                              <span className="flex-1 text-sm text-gray-800 font-medium">{localized(item, 'name', lang)}</span>
                               {item.comboQty > 1 && <span className="text-gray-400 text-xs">×{item.comboQty}</span>}
                               {savings > 0 && <span className="text-gray-400 text-xs line-through">{c(parseFloat(item.price) * item.comboQty)}</span>}
                             </div>
@@ -706,7 +715,7 @@ export default function MenuPage() {
             <>
               {/* Category title */}
               <div className="px-4 py-3 bg-white border-b border-gray-100">
-                <p className="text-sm font-bold text-gray-900">{selectedCat?.name}</p>
+                <p className="text-sm font-bold text-gray-900">{localized(selectedCat, 'name', lang)}</p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   {selectedCat ? allCatItems(selectedCat).filter(filterItem).length : 0} item
                   {(allCatItems(selectedCat || { items: [], subcategories: [] }).filter(filterItem).length !== 1) ? 's' : ''} available
@@ -758,7 +767,7 @@ export default function MenuPage() {
                         {/* Subcategory divider */}
                         <div className="flex items-center gap-3 px-4 py-2 mt-1">
                           <div className="h-px flex-1 bg-gray-200" />
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{sub.name}</span>
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{localized(sub, 'name', lang)}</span>
                           <div className="h-px flex-1 bg-gray-200" />
                         </div>
                         {sub.filteredItems.map((item) => (
@@ -808,7 +817,7 @@ export default function MenuPage() {
               className="w-full btn-primary flex items-center justify-between shadow-xl rounded-2xl py-3.5 px-4"
             >
               <span className="bg-brand-700/80 rounded-lg px-2 py-0.5 text-sm font-bold min-w-[24px] text-center">{itemCount}</span>
-              <span className="font-bold text-sm">View Cart</span>
+              <span className="font-bold text-sm">{t('menu.viewCart')}</span>
               <span className="font-black text-sm">{c(total)}</span>
             </button>
           )}
@@ -981,6 +990,9 @@ export default function MenuPage() {
 
 /* ── MenuItemRow — horizontal list card optimised for large menus ── */
 function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c }) {
+  const { t, lang } = useT();
+  const name = localized(item, 'name', lang);
+  const description = localized(item, 'description', lang);
   const hasImage = !!item.image_url;
   const isLowStock = item.track_stock && item.stock_quantity != null &&
     item.stock_quantity <= (item.low_stock_threshold ?? 5) && item.stock_quantity > 0;
@@ -1007,11 +1019,11 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
           </div>
 
           {/* Name */}
-          <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{item.name}</h4>
+          <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{name}</h4>
 
           {/* Description */}
-          {item.description && (
-            <p className="text-[13px] text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{item.description}</p>
+          {description && (
+            <p className="text-[13px] text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{description}</p>
           )}
 
           {/* Tags */}
@@ -1034,14 +1046,14 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
                 <button
                   onClick={onAdd}
                   disabled={fetching}
-                  aria-label={`Add ${item.name}`}
+                  aria-label={`${t('menu.add')} ${name}`}
                   className={`text-sm font-bold px-5 min-h-[44px] rounded-xl border-2 transition-all min-w-[76px] text-center touch-manipulation ${
                     fetching
                       ? 'border-brand-300 text-brand-300 cursor-wait'
                       : 'border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 active:scale-95'
                   }`}
                 >
-                  {fetching ? '…' : 'ADD'}
+                  {fetching ? '…' : t('menu.add')}
                 </button>
               ) : (
                 <QuantityControl
@@ -1059,7 +1071,7 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
           <div className="relative flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 mt-0.5">
             <img
               src={item.image_url}
-              alt={item.name}
+              alt={name}
               className="w-full h-full object-cover"
               loading="lazy"
               onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
