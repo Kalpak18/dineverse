@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { Helmet } from 'react-helmet-async';
 import { io } from 'socket.io-client';
@@ -209,6 +210,14 @@ export default function MenuPage() {
       }
       return { ...prev, selectedOptions: { ...prev.selectedOptions, [groupId]: next } };
     });
+  };
+
+  // Item detail sheet (large photo + full description)
+  const [detailItem, setDetailItem] = useState(null);
+  const decrementItem = (item) => {
+    const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
+    if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
+    else updateQty(item.id, getItemQty(item.id) - 1);
   };
 
   const handleAddItem = async (item) => {
@@ -696,6 +705,7 @@ export default function MenuPage() {
                       qty={getItemQty(item.id)}
                       categoryLabel={item._catName}
                       onAdd={() => handleAddItem(item)}
+                      onOpen={() => setDetailItem(item)}
                       fetching={fetchingItemId === item.id}
                       onUpdateQty={(qty) => {
                         const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
@@ -750,6 +760,7 @@ export default function MenuPage() {
                             item={item}
                             qty={getItemQty(item.id)}
                             onAdd={() => handleAddItem(item)}
+                      onOpen={() => setDetailItem(item)}
                             fetching={fetchingItemId === item.id}
                             onUpdateQty={(qty) => {
                               const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
@@ -776,6 +787,7 @@ export default function MenuPage() {
                             item={item}
                             qty={getItemQty(item.id)}
                             onAdd={() => handleAddItem(item)}
+                      onOpen={() => setDetailItem(item)}
                             fetching={fetchingItemId === item.id}
                             onUpdateQty={(qty) => {
                               const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
@@ -796,6 +808,19 @@ export default function MenuPage() {
           )}
         </main>
       </div>
+
+      {/* Item detail sheet — rendered regardless of cart state (portals to body) */}
+      {detailItem && (
+        <ItemDetailSheet
+          item={detailItem}
+          qty={getItemQty(detailItem.id)}
+          fetching={fetchingItemId === detailItem.id}
+          onAdd={() => handleAddItem(detailItem)}
+          onDecrement={() => decrementItem(detailItem)}
+          onClose={() => setDetailItem(null)}
+          c={c}
+        />
+      )}
 
       {/* ── Floating bottom buttons ── */}
       {(itemCount > 0 || activeOrders.length > 0) && (
@@ -989,7 +1014,7 @@ export default function MenuPage() {
 }
 
 /* ── MenuItemRow — horizontal list card optimised for large menus ── */
-function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c }) {
+function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, onOpen, fetching, c }) {
   const { t, lang } = useT();
   const name = localized(item, 'name', lang);
   const description = localized(item, 'description', lang);
@@ -1019,12 +1044,14 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
           </div>
 
           {/* Name */}
-          <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{name}</h4>
-
-          {/* Description */}
+          <button type="button" onClick={onOpen} className="block w-full text-left touch-manipulation" aria-haspopup="dialog">
+            <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{name}</h4>
           {description && (
             <p className="text-[13px] text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{description}</p>
           )}
+          </button>
+
+          {/* Description */}
 
           {/* Tags */}
           {item.tags && item.tags.length > 0 && (
@@ -1068,10 +1095,10 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
 
         {/* Image */}
         {hasImage && (
-          <div className="relative flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 mt-0.5">
+          <button type="button" onClick={onOpen} aria-label={name} className="relative flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 mt-0.5 touch-manipulation">
             <img
               src={item.image_url}
-              alt={name}
+              alt=""
               className="w-full h-full object-cover"
               loading="lazy"
               onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
@@ -1084,7 +1111,7 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
                 {qty}
               </span>
             )}
-          </div>
+          </button>
         )}
 
         {/* No image: show qty badge inline if in cart */}
@@ -1095,5 +1122,72 @@ function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, fetching, c
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Item detail sheet ────────────────────────────────────────
+// Large photo + full description. Bottom sheet on phones, centred dialog on
+// larger screens. Esc / backdrop / ✕ close it.
+function ItemDetailSheet({ item, qty, fetching, onAdd, onDecrement, onClose, c }) {
+  const { t, lang } = useT();
+  const name = localized(item, 'name', lang);
+  const description = localized(item, 'description', lang);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  // Portal to <body>: the sheet must not inherit the floating cart bar's
+  // stacking context (it's opened from deep inside the menu layout)
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog" aria-modal="true" aria-labelledby="item-detail-title"
+    >
+      <div className="w-full sm:max-w-md max-h-[90dvh] overflow-y-auto bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl">
+        <div className="relative">
+          {item.image_url ? (
+            <img src={item.image_url} alt={name} className="w-full aspect-[4/3] object-cover sm:rounded-t-3xl rounded-t-3xl" />
+          ) : (
+            <div className="w-full h-16" />
+          )}
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="absolute top-3 right-3 w-11 h-11 rounded-full bg-white/90 shadow flex items-center justify-center text-gray-700 text-lg">
+            ✕
+          </button>
+        </div>
+        <div className="p-5 space-y-3">
+          <div className="flex items-start gap-2">
+            <span className="mt-1"><FoodDot isVeg={item.is_veg} /></span>
+            <h2 id="item-detail-title" className="text-xl font-bold text-gray-900 leading-snug flex-1">{name}</h2>
+          </div>
+          {description && <p className="text-[15px] text-gray-600 leading-relaxed whitespace-pre-line">{description}</p>}
+          {Array.isArray(item.tags) && item.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {item.tags.map((tag) => (
+                <span key={tag} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium capitalize">{tag}</span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between pt-2">
+            <span className="text-2xl font-black text-gray-900">{c(item.price)}</span>
+            {qty === 0 ? (
+              <button type="button" onClick={onAdd} disabled={fetching}
+                className="min-h-[48px] min-w-[120px] px-6 rounded-2xl bg-brand-500 text-white font-bold text-base disabled:opacity-60 touch-manipulation">
+                {fetching ? '…' : t('menu.add')}
+              </button>
+            ) : (
+              <QuantityControl qty={qty} onDecrement={onDecrement} onIncrement={onAdd} />
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
