@@ -17,6 +17,8 @@ function getAudioContext() {
  * Handles auto-reconnection, room management, and event listeners.
  * One socket per mounted component; it is disconnected on unmount (or when
  * cafeId changes) so navigating between owner pages doesn't pile up sockets.
+ * onReconnect runs after every (re)join of the café room; return its fetch
+ * promise so live events arriving meanwhile are applied after it.
  */
 export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation, { onReconnect, events } = {}) {
   const socketRef = useRef(null);
@@ -51,24 +53,42 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
 
     // Once the server confirms the join, let the page refetch: orders placed
     // after its first load but before the join took effect (or while the
-    // socket was down) never reach this screen as events.
+    // socket was down) never reach this screen as events. Events arriving
+    // during that refetch are held and applied after it, so the refetched
+    // list can't wipe them out.
+    let catchingUp = false;
+    let held = [];
+    const deliver = (fn) => (payload) => {
+      if (catchingUp) held.push(() => fn(payload));
+      else fn(payload);
+    };
     const join = () => socket.emit('join_cafe', cafeId, (res) => {
-      if (res?.ok) onReconnectRef.current?.();
+      if (!res?.ok || !onReconnectRef.current) return;
+      catchingUp = true;
+      Promise.resolve()
+        .then(() => onReconnectRef.current())
+        .catch(() => {})
+        .finally(() => {
+          catchingUp = false;
+          const queued = held;
+          held = [];
+          queued.forEach((apply) => apply());
+        });
     });
     if (socket.connected) join(); // otherwise the connect handler joins
 
-    const handleNewOrder = (order) => {
+    const handleNewOrder = deliver((order) => {
       playNotificationSound();
       if (onNewOrderRef.current) onNewOrderRef.current(order);
-    };
+    });
 
-    const handleOrderUpdated = (updated) => {
+    const handleOrderUpdated = deliver((updated) => {
       if (onOrderUpdatedRef.current) onOrderUpdatedRef.current(updated);
-    };
+    });
 
-    const handleNewReservation = (reservation) => {
+    const handleNewReservation = deliver((reservation) => {
       if (onNewReservationRef.current) onNewReservationRef.current(reservation);
-    };
+    });
 
     const handleConnect = join; // first connect and every reconnect
 
@@ -83,7 +103,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
     socket.on('connect_error', handleConnectError);
     const extraNames = Object.keys(eventsRef.current || {});
     const extraHandlers = extraNames.map((name) => {
-      const h = (payload) => eventsRef.current?.[name]?.(payload);
+      const h = deliver((payload) => eventsRef.current?.[name]?.(payload));
       socket.on(name, h);
       return [name, h];
     });

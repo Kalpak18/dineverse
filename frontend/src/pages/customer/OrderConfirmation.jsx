@@ -85,9 +85,16 @@ export default function OrderConfirmation() {
   }, [slug, refresh]);
 
   // ─── Join socket room for a single order ID ────────────────────
+  // Once joined, re-check the order: a status change made before the join
+  // took effect (or while disconnected) never arrives as an event
+  const pollOrderRef = useRef(pollOrder);
+  pollOrderRef.current = pollOrder;
+  const joinOrderRoom = (socket, orderId) =>
+    socket.emit('track_order', orderId, () => pollOrderRef.current({ id: orderId }));
+
   const trackOrder = useCallback((orderId) => {
     if (!socketRef.current || trackedIds.current.has(orderId)) return;
-    socketRef.current.emit('track_order', orderId);
+    joinOrderRoom(socketRef.current, orderId);
     trackedIds.current.add(orderId);
   }, []);
 
@@ -129,7 +136,7 @@ export default function OrderConfirmation() {
     // 4. On connect / reconnect — re-join all tracked rooms
     const onConnect = () => {
       setLostConnection(false);
-      trackedIds.current.forEach((id) => socket.emit('track_order', id));
+      trackedIds.current.forEach((id) => joinOrderRoom(socket, id));
     };
     socket.on('connect', onConnect);
 

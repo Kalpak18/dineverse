@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getOrders, updateOrderStatus, updateItemStatus } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
+import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import PageHint from '../../components/PageHint';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -39,16 +40,17 @@ export default function WaiterPage() {
   const [serving, setServing] = useState({});
   const now = useTimer();
 
+  const latest = useLatestRequest();
   const fetchOrders = useCallback(async () => {
     try {
-      const { data } = await getOrders({ limit: 200 });
+      const { data } = await latest(getOrders({ limit: 200 }));
       setOrders((data.orders || []).filter((o) => ACTIVE_STATUSES.includes(o.status)));
-    } catch {
-      toast.error('Could not load orders — check your connection.');
+    } catch (err) {
+      if (!isStale(err)) toast.error('Could not load orders — check your connection.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [latest]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 

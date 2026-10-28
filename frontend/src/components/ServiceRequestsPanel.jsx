@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { getServiceRequests, ackServiceRequest } from '../services/api';
 import { useSocketIO, playNotificationSound } from '../hooks/useSocketIO';
+import { useLatestRequest } from '../hooks/useLatestRequest';
 import { useAuth } from '../context/AuthContext';
 import { getApiError } from '../utils/apiError';
 import { tableName } from '../utils/tableName';
@@ -21,9 +22,10 @@ export default function ServiceRequestsPanel({ dark = false }) {
   const [busy, setBusy] = useState(null);
   const [, setTick] = useState(0);
 
-  const load = useCallback(() => {
-    getServiceRequests().then(({ data }) => setRequests(data.requests || [])).catch(() => {});
-  }, []);
+  const latest = useLatestRequest();
+  const load = useCallback(() => latest(getServiceRequests())
+    .then(({ data }) => setRequests(data.requests || []))
+    .catch(() => {}), [latest]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30000); // refresh "n min ago"

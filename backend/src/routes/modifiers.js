@@ -4,8 +4,20 @@ const ctrl    = require('../controllers/modifierController');
 const { authenticate } = require('../middleware/auth');
 const checkSubscription = require('../middleware/checkSubscription');
 const requireRole = require('../middleware/requireRole');
+const cache = require('../utils/cache');
 
 const auth = [authenticate, checkSubscription, requireRole('manager')];
+
+// The public menu says which items have add-ons (has_options) and is cached:
+// any add-on change clears it so customers see the change right away
+router.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    res.on('finish', () => {
+      if (req.cafeId && res.statusCode < 400) cache.del(`menu:${req.cafeId}`).catch(() => {});
+    });
+  }
+  next();
+});
 
 // ─── Modifier groups ──────────────────────────────────────────
 router.get('/groups',                          ...auth, ctrl.getGroups);

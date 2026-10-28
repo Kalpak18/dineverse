@@ -166,8 +166,11 @@ io.on('connection', (socket) => {
     socket.leave(`cafe:${cafeId}`);
   });
 
-  socket.on('track_order', (orderId) => {
+  // ack (optional): the customer's page re-checks the order once it is in the
+  // room, so a status change made during the join isn't missed
+  socket.on('track_order', (orderId, ack) => {
     socket.join(`order:${orderId}`);
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   socket.on('track_reservation', (reservationId) => {

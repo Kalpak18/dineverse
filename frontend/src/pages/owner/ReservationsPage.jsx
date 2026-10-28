@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getReservations, updateReservation, deleteReservation } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
+import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import { getApiError } from '../../utils/apiError';
 import toast from 'react-hot-toast';
 
@@ -40,17 +41,20 @@ export default function ReservationsPage() {
   const [date, setDate] = useState(todayISO());
   const [statusFilter, setStatusFilter] = useState('');
 
+  // Newest request wins: switching dates quickly, or a live catch-up, must
+  // not be overwritten by a slower older response
+  const latest = useLatestRequest();
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = {};
       if (date) params.date = date;
       if (statusFilter) params.status = statusFilter;
-      const { data } = await getReservations(params);
+      const { data } = await latest(getReservations(params));
       setReservations(data.reservations || []);
-    } catch (err) { toast.error(`Couldn't load reservations: ${getApiError(err)}`); }
+    } catch (err) { if (!isStale(err)) toast.error(`Couldn't load reservations: ${getApiError(err)}`); }
     finally { setLoading(false); }
-  }, [date, statusFilter]);
+  }, [date, statusFilter, latest]);
 
   useEffect(() => { load(); }, [load]);
 

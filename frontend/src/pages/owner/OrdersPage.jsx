@@ -7,6 +7,7 @@ import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwne
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
+import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
@@ -93,16 +94,17 @@ export default function OrdersPage() {
   // Tracks order IDs currently being mutated — prevents double-tap / concurrent updates
   const inFlightRef = useRef(new Set());
 
+  const latest = useLatestRequest();
   const loadOrders = useCallback(async () => {
     try {
-      const { data } = await getOrders({ limit: 200 });
+      const { data } = await latest(getOrders({ limit: 200 }));
       setOrders(data.orders || []);
-    } catch {
-      toast.error('Could not load orders — check your connection and refresh.');
+    } catch (err) {
+      if (!isStale(err)) toast.error('Could not load orders — check your connection and refresh.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [latest]);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 

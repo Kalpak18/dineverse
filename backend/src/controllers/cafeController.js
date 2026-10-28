@@ -214,7 +214,14 @@ exports.getCafeMenu = asyncHandler(async (req, res) => {
     ),
     db.query(
       `SELECT id, category_id, name, description, price, image_url, is_veg, is_available, display_order,
-              tags, track_stock, stock_quantity, low_stock_threshold, translations
+              tags, track_stock, stock_quantity, low_stock_threshold, translations,
+              -- Same sources as the add-on lookup: without any, "ADD" adds
+              -- instantly instead of waiting on that lookup
+              (EXISTS (SELECT 1 FROM item_modifier_groups img JOIN modifier_groups g ON g.id = img.group_id AND g.cafe_id = $1
+                        WHERE img.item_id = menu_items.id)
+               OR EXISTS (SELECT 1 FROM category_modifier_groups cmg JOIN modifier_groups g ON g.id = cmg.group_id AND g.cafe_id = $1
+                          WHERE cmg.category_id = menu_items.category_id)
+               OR EXISTS (SELECT 1 FROM item_variants v WHERE v.item_id = menu_items.id AND v.is_available = true)) AS has_options
        FROM menu_items
        WHERE cafe_id = $1 AND is_available = true
        ORDER BY display_order ASC, name ASC`,

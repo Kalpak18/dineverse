@@ -4,6 +4,7 @@ import { getKitchenOrders, updateOrderStatus, updateItemStatus, setKitchenMode, 
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/useSocketIO';
+import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { getApiError } from '../../utils/apiError';
@@ -886,17 +887,18 @@ export default function KitchenPage() {
   const [pinnedIds, setPinnedIds]          = useState(null); // null = no pin (show all matching)
   const now = useTimer();
 
+  const latest = useLatestRequest();
   const fetchOrders = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
     try {
       // Dedicated feed: every active order (no page limit) with veg/prep fields
-      const { data } = await getKitchenOrders();
+      const { data } = await latest(getKitchenOrders());
       setOrders(data.orders.filter((o) => KITCHEN_STATUSES.includes(o.status)));
       setStations(data.stations || []);
       if (isRefresh) toast('Orders refreshed', { icon: '✓', style: { background: '#1f2937', color: '#fff' } });
-    } catch (err) { toast.error(`Couldn't load orders: ${getApiError(err)}`); }
+    } catch (err) { if (!isStale(err)) toast.error(`Couldn't load orders: ${getApiError(err)}`); }
     finally { setLoading(false); setRefreshing(false); }
-  }, []);
+  }, [latest]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 

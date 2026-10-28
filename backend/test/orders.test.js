@@ -2,7 +2,7 @@
 // tokens (bug #5), delivery rules (bug #6).
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
-const { startServer, api, createCafe, createMenuItem, placeOrder } = require('./helpers');
+const { startServer, api, createCafe, createMenuItem, placeOrder, login } = require('./helpers');
 
 let srv;
 before(async () => { srv = await startServer(); });
@@ -111,4 +111,26 @@ test('order lines are capped at 100 units', async () => {
   });
   assert.equal((await place(100)).status, 201);
   assert.equal((await place(101)).status, 400);
+});
+
+test('menu flags items with add-ons, and an add-on change shows up at once', async () => {
+  const cafe = await createCafe(srv.db);
+  const plain = await createMenuItem(srv.db, cafe.id, 'Chai', 30);
+  const pizza = await createMenuItem(srv.db, cafe.id, 'Pizza', 300);
+  const { token } = await login(srv.base, cafe.email);
+  const menuItems = async () => {
+    const r = await api(srv.base, 'GET', `/cafes/${cafe.slug}/menu`);
+    const all = r.body.menu.flatMap((c) => [...c.items, ...(c.subcategories || []).flatMap((s) => s.items)]);
+    return Object.fromEntries(all.map((i) => [i.name, i.has_options]));
+  };
+  // Uncategorised items aren't listed; give both a category
+  const cat = (await srv.db.query(`INSERT INTO categories (cafe_id, name) VALUES ($1, 'Food') RETURNING id`, [cafe.id])).rows[0];
+  await srv.db.query('UPDATE menu_items SET category_id = $1 WHERE cafe_id = $2', [cat.id, cafe.id]);
+  assert.deepEqual(await menuItems(), { Chai: false, Pizza: false }); // also warms the menu cache
+
+  const group = await api(srv.base, 'POST', '/modifiers/groups', { token, body: { name: 'Toppings' } });
+  assert.ok(group.status < 300, JSON.stringify(group.body));
+  const set = await api(srv.base, 'PUT', `/modifiers/items/${pizza.id}/groups`, { token, body: { group_ids: [group.body.group.id] } });
+  assert.equal(set.status, 200, JSON.stringify(set.body));
+  assert.deepEqual(await menuItems(), { Chai: false, Pizza: true }); // not the cached copy
 });

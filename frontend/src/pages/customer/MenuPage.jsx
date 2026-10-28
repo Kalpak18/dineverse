@@ -220,13 +220,26 @@ export default function MenuPage() {
     else updateQty(item.id, getItemQty(item.id) - 1);
   };
 
+  // Add-on lookups per item, kept for the visit: after the first tap, "+"
+  // adds instantly (taps made while a lookup was in flight used to be lost)
+  const modifierCache = useRef(new Map());
+
   const handleAddItem = async (item) => {
+    // The menu says when an item has no add-ons: add it straight away
+    if (item.has_options === false) { addItem(item); return; }
+    const known = modifierCache.current.get(item.id);
+    if (known) {
+      if (known.groups.length === 0 && known.variants.length === 0) addItem(item);
+      else openModifierDialog(item, known.groups, known.variants);
+      return;
+    }
     if (fetchingItemId === item.id) return;
     setFetchingItemId(item.id);
     try {
       const res = await getPublicItemModifiers(slug, item.id);
       const groups = res.data.groups || [];
       const variants = res.data.variants || [];
+      modifierCache.current.set(item.id, { groups, variants });
       if (groups.length === 0 && variants.length === 0) { addItem(item); return; }
       openModifierDialog(item, groups, variants);
     } catch {
