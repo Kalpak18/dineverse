@@ -76,6 +76,7 @@ export const STRINGS = {
     'status.served': 'Served',
     'status.paid': 'Paid',
     'order.paidOnline': 'Paid online ✓ — no need to pay at the counter',
+    'order.payAtCounter': 'Please pay {amount} at the counter (cash, UPI or card)',
     'status.cancelled': 'Cancelled',
     // Split
     'split.title': '➗ Split the bill',
@@ -154,6 +155,7 @@ export const STRINGS = {
     'status.served': 'परोस दिया',
     'status.paid': 'भुगतान हुआ',
     'order.paidOnline': 'ऑनलाइन भुगतान हो गया ✓ — काउंटर पर भुगतान की ज़रूरत नहीं',
+    'order.payAtCounter': 'कृपया {amount} काउंटर पर चुकाएँ (नकद, UPI या कार्ड)',
     'status.cancelled': 'रद्द',
     'split.title': '➗ बिल बाँटें',
     'split.people': 'टेबल पर कितने लोग',
@@ -231,6 +233,7 @@ export const STRINGS = {
     'status.served': 'वाढले',
     'status.paid': 'पैसे भरले',
     'order.paidOnline': 'ऑनलाइन पैसे भरले ✓ — काउंटरवर भरण्याची गरज नाही',
+    'order.payAtCounter': 'कृपया {amount} काउंटरवर भरा (रोख, UPI किंवा कार्ड)',
     'status.cancelled': 'रद्द',
     'split.title': '➗ बिल वाटून घ्या',
     'split.people': 'टेबलवर किती जण',

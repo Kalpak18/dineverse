@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
+const { clearSetting } = require('../utils/platformSettings');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
@@ -499,6 +500,7 @@ exports.updateSetting = asyncHandler(async (req, res) => {
     [key, valueToStore, description || null, is_public || null, req.adminId]
   );
 
+  await clearSetting(key); // applies immediately on public paths
   logger.info('Admin updated setting: %s', key);
   ok(res, { setting: result.rows[0] }, 'Setting updated');
 });
@@ -685,8 +687,10 @@ exports.getCommissionReport = asyncHandler(async (req, res) => {
        COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'auto_deducted'), 0) AS online_commission_collected,
        COALESCE(COUNT(*)                FILTER (WHERE o.commission_status = 'auto_deducted'), 0) AS online_orders,
 
-       -- Cash: commission owed by café to DineVerse
-       COALESCE(SUM(o.commission_amount) FILTER (WHERE o.commission_status = 'cash_due'), 0) AS cash_commission_owed,
+       -- Cash: commission owed by café to DineVerse, net of DineVerse-funded
+       -- offer discounts (same figure the owner sees and pays)
+       GREATEST(COALESCE(SUM(o.commission_amount - COALESCE(o.platform_discount_amount, 0))
+                FILTER (WHERE o.commission_status = 'cash_due'), 0), 0) AS cash_commission_owed,
        COALESCE(COUNT(*)                FILTER (WHERE o.commission_status = 'cash_due'), 0) AS cash_orders_pending,
 
        -- Previously collected cash commissions
@@ -750,7 +754,7 @@ exports.collectCashCommission = asyncHandler(async (req, res) => {
 
     // Lock and fetch all cash_due orders for this café in the period
     const ordersRes = await client.query(
-      `SELECT id, final_amount, commission_amount, created_at
+      `SELECT id, final_amount, commission_amount, platform_discount_amount, created_at
        FROM orders
        WHERE cafe_id = $1
          AND status = 'paid'
@@ -768,7 +772,10 @@ exports.collectCashCommission = asyncHandler(async (req, res) => {
 
     const orderIds     = ordersRes.rows.map((r) => r.id);
     const totalGmv     = ordersRes.rows.reduce((s, r) => s + parseFloat(r.final_amount), 0);
-    const totalComm    = ordersRes.rows.reduce((s, r) => s + parseFloat(r.commission_amount), 0);
+    const grossComm    = ordersRes.rows.reduce((s, r) => s + parseFloat(r.commission_amount), 0);
+    const credit       = ordersRes.rows.reduce((s, r) => s + parseFloat(r.platform_discount_amount || 0), 0);
+    // What the café actually remits: commission minus DineVerse-funded discounts
+    const totalComm    = Math.max(0, grossComm - credit);
     const now          = new Date();
 
     // Mark orders as collected
@@ -795,7 +802,8 @@ exports.collectCashCommission = asyncHandler(async (req, res) => {
         totalGmv.toFixed(2),
         totalComm.toFixed(2),
         payment_reference || null,
-        notes || null,
+        [notes, credit > 0 ? `Commission ₹${grossComm.toFixed(2)} − DineVerse offer credit ₹${credit.toFixed(2)}` : null]
+          .filter(Boolean).join(' · ') || null,
       ]
     );
 

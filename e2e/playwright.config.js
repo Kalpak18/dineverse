@@ -23,8 +23,13 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
     serviceWorkers: 'block', // the PWA service worker would cache between tests
   },
+  // Counter-only payments are the default. The online-payment tests flip the
+  // platform switch on, so they run as a second phase once everything else
+  // has finished.
   projects: [
-    { name: 'phone',   use: { ...devices['Pixel 7'] } },
-    { name: 'desktop', use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'phone',   testIgnore: /payments\.spec/, use: { ...devices['Pixel 7'] } },
+    { name: 'desktop', testIgnore: /payments\.spec/, use: { viewport: { width: 1440, height: 900 } } },
+    { name: 'online-phone',   testMatch: /payments\.spec/, dependencies: ['phone', 'desktop'], use: { ...devices['Pixel 7'] } },
+    { name: 'online-desktop', testMatch: /payments\.spec/, dependencies: ['phone', 'desktop'], use: { viewport: { width: 1440, height: 900 } } },
   ],
 });

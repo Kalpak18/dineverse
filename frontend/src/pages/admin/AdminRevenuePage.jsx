@@ -34,10 +34,15 @@ export default function AdminRevenuePage() {
   useEffect(() => { load(); }, []); // eslint-disable-line
 
   const handleCollect = async (cafe) => {
-    if (!window.confirm(`Mark all outstanding cash commission from "${cafe.name}" as collected?\n\nAmount: ₹${fmt(cafe.cash_commission_owed)}`)) return;
+    // The café's "I've paid" report (Support tickets) carries the UPI/bank reference
+    const reference = window.prompt(
+      `Mark ₹${fmt(cafe.cash_commission_owed)} platform fee from "${cafe.name}" as received?\n\n` +
+      'Only confirm once the money is in DineVerse\'s account.\nUPI / bank reference (UTR):'
+    );
+    if (reference === null) return; // cancelled
     setCollecting(cafe.id);
     try {
-      const res = await adminCollectCommission({ cafe_id: cafe.id });
+      const res = await adminCollectCommission({ cafe_id: cafe.id, payment_reference: reference.trim() || undefined });
       toast.success(res.data.message || 'Commission marked as collected');
       load();
     } catch (err) {

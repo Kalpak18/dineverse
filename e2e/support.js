@@ -167,7 +167,20 @@ async function fakeRazorpay(page, mode = 'pay') {
   }));
 }
 
+// Platform admin JWT (HS256 with the API's secret)
+function adminToken(adminId = crypto.randomUUID()) {
+  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+  const body = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ role: 'ADMIN', adminId, exp: Math.floor(Date.now() / 1000) + 3600 })}`;
+  return `${body}.${crypto.createHmac('sha256', state().jwtSecret).update(body).digest('base64url')}`;
+}
+
+// Platform switch for customer online payments (default off = counter only)
+async function setOnlinePayments(enabled) {
+  const r = await api('PUT', '/admin/settings/online_order_payments', { token: adminToken(), body: { value: { enabled } } });
+  if (r.status !== 200) throw new Error(`setOnlinePayments ${r.status} ${JSON.stringify(r.body)}`);
+}
+
 module.exports = {
   state, db, q, api, seedCafe, login, signIn, placeOrder, orderViaUi, advance, webhook, fakeRazorpay,
-  rzpCalls, sign, watchPage, PASSWORD,
+  adminToken, setOnlinePayments, rzpCalls, sign, watchPage, PASSWORD,
 };

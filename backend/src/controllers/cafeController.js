@@ -2,6 +2,14 @@ const db = require('../config/database');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
+const { onlineOrderPaymentsEnabled } = require('../utils/platformSettings');
+
+// Customers may pay online only when the platform switch is on AND the café's
+// Razorpay Route account is active; otherwise they pay at the counter
+const withPaymentMode = async (cafe) => ({
+  ...cafe,
+  online_payments: !!cafe.razorpay_route_enabled && await onlineOrderPaymentsEnabled(),
+});
 
 // Public: get café by slug (for customer-facing pages)
 exports.getCafeBySlug = asyncHandler(async (req, res) => {
@@ -11,7 +19,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   // old key's 60s TTL expires.
   const cacheKey = `cafev2:${slug}`;
   const cached = await cache.get(cacheKey);
-  if (cached) return ok(res, { cafe: cached });
+  if (cached) return ok(res, { cafe: await withPaymentMode(cached) });
 
   const result = await db.query(
     `SELECT c.id, c.name, c.slug, c.description, c.address, c.phone, c.logo_url, c.cover_image_url,
@@ -38,7 +46,7 @@ exports.getCafeBySlug = asyncHandler(async (req, res) => {
   );
   if (result.rows.length === 0) return fail(res, 'Café not found', 404);
   await cache.set(cacheKey, result.rows[0], 60_000);
-  ok(res, { cafe: result.rows[0] });
+  ok(res, { cafe: await withPaymentMode(result.rows[0]) });
 });
 
 // Public: explore cafés by city

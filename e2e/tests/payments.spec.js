@@ -2,7 +2,9 @@
 // replaced by a stand-in that signs payments like Razorpay would; the API
 // talks to the Razorpay stub. Everything between them is real.
 const { test, expect } = require('../fixtures');
-const { seedCafe, login, orderViaUi, advance, webhook, fakeRazorpay, rzpCalls, q } = require('../support');
+const { seedCafe, login, orderViaUi, advance, webhook, fakeRazorpay, rzpCalls, q, setOnlinePayments } = require('../support');
+
+test.beforeAll(() => setOnlinePayments(true)); // runs after the counter-only phase
 
 async function servedOrder(page) {
   const c = await seedCafe({ route: true });

@@ -60,7 +60,7 @@ export default function ReservationsPage() {
       setReservations((prev) => [reservation, ...prev]);
       toast('New reservation!', { icon: '📅', style: { background: '#1f2937', color: '#fff' } });
     }
-  });
+  }, { onReconnect: load }); // catch up on anything missed while not connected
 
   const handleStatus = async (id, status) => {
     try {

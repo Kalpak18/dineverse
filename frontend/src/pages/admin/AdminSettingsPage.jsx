@@ -261,12 +261,85 @@ function BroadcastPanel() {
   );
 }
 
+// ─── Payments: online switch + where cafés remit the platform fee ─────
+const REMIT_FIELDS = [
+  ['upi_id',         'DineVerse UPI ID',      'e.g. dineverse@okaxis'],
+  ['payee_name',     'Payee name (UPI)',      'DineVerse'],
+  ['account_name',   'Bank account name',     ''],
+  ['account_number', 'Bank account number',   ''],
+  ['ifsc',           'IFSC',                  ''],
+  ['bank_name',      'Bank name',             ''],
+  ['note',           'Note shown to cafés',   'e.g. Please remit by the 5th of every month'],
+];
+
+function PaymentsSettings({ online, remittance, onSave, saving }) {
+  const [enabled, setEnabled] = useState(online?.enabled === true);
+  const [remit, setRemit]     = useState(() => Object.fromEntries(REMIT_FIELDS.map(([k]) => [k, remittance?.[k] || ''])));
+
+  const toggle = () => {
+    const next = !enabled;
+    if (next && !window.confirm('Turn ON online payments for customers?\n\nOnly cafés with an active Razorpay payout account will show "Pay via UPI". Razorpay live keys and the webhook must be set up first.')) return;
+    setEnabled(next);
+    onSave('online_order_payments', { enabled: next });
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-white font-semibold">Online payments for customers</h3>
+          <p className="text-gray-400 text-xs mt-0.5 max-w-md">
+            Off: customers pay at the counter, and every café remits DineVerse's platform fee using the details below.
+            On: cafés with a Razorpay payout account also let customers pay online, and the fee is deducted automatically.
+          </p>
+        </div>
+        <button
+          type="button" role="switch" aria-checked={enabled} aria-label="Online payments for customers"
+          onClick={toggle} disabled={saving === 'online_order_payments'}
+          className={`w-12 h-7 rounded-full relative flex-shrink-0 transition-colors ${enabled ? 'bg-brand-600' : 'bg-gray-700'}`}
+        >
+          <span className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+        </button>
+      </div>
+      <p className={`text-sm font-semibold ${enabled ? 'text-green-400' : 'text-amber-400'}`}>
+        {enabled ? '● Online payments are ON' : '● Counter payments only'}
+      </p>
+
+      <div className="border-t border-gray-800 pt-5 space-y-3">
+        <div>
+          <h3 className="text-white font-semibold">Platform fee remittance</h3>
+          <p className="text-gray-400 text-xs mt-0.5">Shown on every owner's Billing page with a one-tap UPI payment link.</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {REMIT_FIELDS.map(([key, label, placeholder]) => (
+            <label key={key} className={`text-xs text-gray-400 ${key === 'note' ? 'sm:col-span-2' : ''}`}>
+              {label}
+              <input
+                className="mt-1 w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white"
+                placeholder={placeholder} value={remit[key]}
+                onChange={(e) => setRemit((r) => ({ ...r, [key]: e.target.value }))}
+              />
+            </label>
+          ))}
+        </div>
+        <button
+          onClick={() => onSave('remittance', Object.fromEntries(Object.entries(remit).map(([k, v]) => [k, v.trim()])))}
+          disabled={saving === 'remittance'}
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+        >
+          {saving === 'remittance' ? 'Saving…' : 'Save remittance details'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────
 export default function AdminSettingsPage() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(null); // key being saved
-  const [activeTab, setActiveTab] = useState('emoji');
+  const [activeTab, setActiveTab] = useState('payments');
 
   useEffect(() => {
     adminGetSettings()
@@ -296,6 +369,7 @@ export default function AdminSettingsPage() {
   if (loading) return <LoadingSpinner />;
 
   const tabs = [
+    { id: 'payments',     label: '💳 Payments' },
     { id: 'emoji',        label: '🍽️ Category Emojis' },
     { id: 'announcement', label: '📢 Announcement' },
     { id: 'broadcast',    label: '📨 Broadcast Email' },
@@ -328,6 +402,14 @@ export default function AdminSettingsPage() {
       </div>
 
       <div className="bg-gray-900 border border-gray-800 rounded-2xl p-6">
+        {activeTab === 'payments' && (
+          <PaymentsSettings
+            online={settings?.online_order_payments?.value}
+            remittance={settings?.remittance?.value}
+            onSave={handleSave}
+            saving={saving}
+          />
+        )}
         {activeTab === 'emoji' && (
           <EmojiMapEditor
             initial={settings?.category_emoji_map?.value}

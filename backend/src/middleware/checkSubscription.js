@@ -10,11 +10,11 @@ module.exports = async function checkSubscription(req, res, next) {
       'SELECT commission_rate FROM cafes WHERE id = $1',
       [req.rootCafeId || req.cafeId]
     );
-    req.commissionRate = result.rows[0]?.commission_rate ?? 5;
+    req.commissionRate = result.rows[0]?.commission_rate ?? 2;
     req.subscription = { plan_type: 'active', plan_tier: 'premium' }; // treat all as premium
   } catch (err) {
     logger.warn('checkSubscription (commission lookup) failed: %s', err.message);
-    req.commissionRate = 5;
+    req.commissionRate = 2;
     req.subscription = { plan_type: 'active', plan_tier: 'premium' };
   }
   next();

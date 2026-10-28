@@ -6,11 +6,14 @@ const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const {
   startServer, api, createCafe, createMenuItem, login, placeOrder, payOrder, sleep,
-  RZP_SECRET, RZP_WEBHOOK_SECRET,
+  setOnlinePayments, RZP_SECRET, RZP_WEBHOOK_SECRET,
 } = require('./helpers');
 
 let srv;
-before(async () => { srv = await startServer(); });
+before(async () => {
+  srv = await startServer();
+  await setOnlinePayments(srv.base, true); // these tests cover the online-payment paths
+});
 after(async () => { await srv.stop(); });
 
 const routeCafe = () => createCafe(srv.db, { razorpay_account_id: 'acc_X', razorpay_route_enabled: true });

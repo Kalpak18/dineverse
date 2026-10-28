@@ -109,7 +109,8 @@ export default function OrdersPage() {
   useSocketIO(
     cafe?.id,
     (order) => {
-      setOrders((prev) => [order, ...prev]);
+      // A catch-up refetch may already have brought this order in
+      setOrders((prev) => (prev.some((o) => o.id === order.id) ? prev : [order, ...prev]));
       const token = fmtToken(order.daily_order_number, order.order_type);
       toast.success(`New order ${token} from ${order.customer_name}!`);
       // Native OS notification when running as Electron desktop app
@@ -122,7 +123,9 @@ export default function OrdersPage() {
       setOrders((prev) =>
         prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o)
       );
-    }
+    },
+    null,
+    { onReconnect: loadOrders } // catch up on anything missed while not connected
   );
 
   // Opens BillingModal — builds bill object at click-time so the modal opens

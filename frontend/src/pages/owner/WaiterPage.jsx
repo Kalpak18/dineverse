@@ -71,7 +71,9 @@ export default function WaiterPage() {
           return prev.filter((o) => o.id !== updated.id);
         return prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o);
       });
-    }
+    },
+    null,
+    { onReconnect: fetchOrders } // catch up on anything missed while not connected
   );
 
   // Staff confirmed / moved a party's table

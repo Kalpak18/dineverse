@@ -1,6 +1,6 @@
 const { body, validationResult } = require('express-validator');
 const crypto = require('crypto');
-const Razorpay = require('razorpay');
+const { razorpay } = require('../services/razorpayClient');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 const { ok, fail, validationFail } = require('../utils/respond');
@@ -10,6 +10,7 @@ const { notify } = require('../services/notificationService');
 const { sendToOwners } = require('./pushController');
 const { generateOrderToken, hasOrderToken, sentOrderTokens, safeEqual } = require('../utils/orderToken');
 const { refundPrepaidOrder, refundOrderItem } = require('../services/refundService');
+const { onlineOrderPaymentsEnabled } = require('../utils/platformSettings');
 const { geocodeAddress } = require('../services/geocodingService');
 
 // Orders placed before migration 074 have no customer_token — let them
@@ -75,10 +76,6 @@ function scheduleBlock(opening_hours, tz) {
   return null; // within open window
 }
 
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID     || process.env.RAZORPAY_TEST_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET,
-});
 
 // ─── Public: Customer places an order ─────────────────────────
 // Haversine distance in km between two lat/lng points
@@ -983,6 +980,19 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   if (status === 'paid' && payment_mode && validModes.includes(payment_mode)) {
     setClauses.push(`payment_mode = $${idx++}`);
     params.push(payment_mode);
+  } else if (status === 'paid') {
+    setClauses.push(`payment_mode = COALESCE(payment_mode, 'cash')`);
+  }
+  if (status === 'paid') {
+    // DineVerse's fee is recorded in the same statement as the payment, so a
+    // paid order can never be missing it. Prepaid through DineVerse's Razorpay:
+    // the platform already holds the fee (Route pays the café only the net).
+    // Money the café collected itself (cash/UPI/card at the counter) leaves
+    // the fee due from the café.
+    setClauses.push(
+      'commission_amount = COALESCE(platform_fee, 0)',
+      `commission_status = CASE WHEN payment_verified THEN 'auto_deducted' ELSE 'cash_due' END`,
+    );
   }
   // Split bill: each share's amount + how it was paid (counter modes only)
   if (status === 'paid' && payment_mode === 'split' && payment_splits !== undefined) {
@@ -1076,35 +1086,12 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   if (status === 'paid' && fromStatus !== 'paid') {
     db.query(
-      `SELECT customer_phone, final_amount, platform_fee, payment_verified, payment_mode
+      `SELECT customer_phone, final_amount, commission_amount, commission_status, payment_mode
        FROM orders WHERE id = $1`, [id]
     ).then(async (fullOrder) => {
       if (!fullOrder.rows.length) return;
-      const { customer_phone, final_amount, platform_fee, payment_verified,
-              payment_mode: dbPaymentMode } = fullOrder.rows[0];
-
-      const commissionAmount = parseFloat(platform_fee || 0);
-      const resolvedMode     = payment_mode || dbPaymentMode || 'cash';
-      // Prepaid through DineVerse's Razorpay: the platform already holds the
-      // commission (Route pays the café only the net). Only money the café
-      // collected itself (cash/UPI/card at the counter) leaves commission due.
-      // Keying this off razorpay_transfer_id billed prepaid orders twice.
-      const commissionStatus = payment_verified ? 'auto_deducted' : 'cash_due';
-
-      await db.query(
-        `UPDATE orders
-         SET commission_amount  = $1,
-             commission_status  = $2,
-             payment_mode       = COALESCE(payment_mode, $3)
-         WHERE id = $4`,
-        [commissionAmount, commissionStatus, resolvedMode, id]
-      ).catch((e) => logger.warn('commission write failed: %s', e.message));
-
-      logger.info(
-        'Order %s paid: ₹%s commission — status=%s mode=%s',
-        id, commissionAmount, commissionStatus, resolvedMode
-      );
-
+      const { customer_phone, final_amount, commission_amount, commission_status, payment_mode: mode } = fullOrder.rows[0];
+      logger.info('Order %s paid: ₹%s commission — status=%s mode=%s', id, commission_amount, commission_status, mode);
       require('./loyaltyController').earnPoints(req.cafeId, id, customer_phone, final_amount);
     }).catch((e) => logger.warn('post-paid hooks failed for order %s: %s', id, e.message));
   }
@@ -1457,6 +1444,11 @@ async function getOrderWithItems(orderId, cafeId = null) {
 // ─── Public: Create Razorpay order for food payment ───────────
 exports.createOrderPayment = asyncHandler(async (req, res) => {
   const { slug, id } = req.params;
+  // Counter-only mode: no new online payments (verify still settles any
+  // checkout that was already open when the switch was turned off)
+  if (!(await onlineOrderPaymentsEnabled())) {
+    return fail(res, 'Online payment is not available — please pay at the counter', 403);
+  }
 
   // Fetch the order, verify it belongs to this slug and is payable
   const result = await db.query(

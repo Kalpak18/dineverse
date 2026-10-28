@@ -1006,11 +1006,13 @@ export default function ProfilePage() {
       {activeTab === 'account' && (
         <div className="space-y-6">
 
-          {/* Payout Account */}
+          {/* Payout Account — only once DineVerse opens online payments
+              (until then customers pay at the counter) */}
+          {routeStatus?.available !== false && (
           <div className="card space-y-4">
             <div>
               <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Payout Account</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Connect your bank so customer payments go directly to you. DineVerse retains 1% as platform fee.</p>
+              <p className="text-xs text-gray-400 mt-0.5">Connect your bank so customer payments go directly to you. DineVerse's platform fee is deducted automatically.</p>
             </div>
 
             {routeStatus === null && <p className="text-sm text-gray-400">Loading…</p>}
@@ -1076,6 +1078,7 @@ export default function ProfilePage() {
               </form>
             )}
           </div>
+          )}
 
           {/* Outlets / Branches */}
           {!cafe?.parent_cafe_id && (

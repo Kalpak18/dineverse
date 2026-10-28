@@ -1,10 +1,11 @@
-const Razorpay = require('razorpay');
+const { razorpay, isConfigured: razorpayConfigured } = require('../services/razorpayClient');
 const crypto = require('crypto');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 const { ok, fail } = require('../utils/respond');
 const asyncHandler = require('../utils/asyncHandler');
 const cache = require('../utils/cache');
+const { getSetting, onlineOrderPaymentsEnabled } = require('../utils/platformSettings');
 
 // ─── Pricing config ───────────────────────────────────────────
 // Basic (Essential): ₹499/mo | Premium (Kitchen Pro): ₹999/mo
@@ -31,11 +32,6 @@ const PLANS = {
   yearly:   { label: '1 Year Plan',  price_paise:  598800, months: 12, tier: 'basic' },
 };
 
-// Support both RAZORPAY_KEY_ID (production) and RAZORPAY_TEST_KEY_ID (legacy/dev)
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID     || process.env.RAZORPAY_TEST_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET,
-});
 
 // ─── GET /api/payments/plans ──────────────────────────────────
 // Returns available plans + current subscription info
@@ -417,6 +413,8 @@ exports.getRouteStatus = asyncHandler(async (req, res) => {
     account_id:     cafe.razorpay_account_id || null,
     status:         cafe.razorpay_account_status || 'not_connected',
     route_enabled:  cafe.razorpay_route_enabled || false,
+    // false = counter-only mode; the owner app hides payout onboarding
+    available:      await onlineOrderPaymentsEnabled(),
   });
 });
 
@@ -434,6 +432,9 @@ exports.connectRoute = asyncHandler(async (req, res) => {
 
   if (!legal_business_name || !contact_name) {
     return fail(res, 'legal_business_name and contact_name are required', 400);
+  }
+  if (!(await onlineOrderPaymentsEnabled())) {
+    return fail(res, 'Online payments are not open yet — customers pay at the counter for now', 403);
   }
 
   const cafeRes = await db.query(
@@ -607,7 +608,7 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
     ),
   ]);
 
-  const rate           = parseFloat(cafeRes.rows[0]?.commission_rate ?? 5);
+  const rate           = parseFloat(cafeRes.rows[0]?.commission_rate ?? 2);
   const s              = summaryRes.rows[0];
   const cashGross      = parseFloat(s.cash_commission_owed);
   const cashCredit     = parseFloat(s.platform_discount_credit);
@@ -649,6 +650,12 @@ exports.getCommissionSummary = asyncHandler(async (req, res) => {
     total_platform_credit:     totalCredit,            // cash + online combined
     dineverse_owes_owner:      dineVerseOwesOwner,     // > 0 when credit exceeds cash commission owed
     cash_net_yours:            parseFloat(s.cash_net_yours),
+
+    // ── How to remit ──
+    remit: {
+      online:  razorpayConfigured(),                       // "Pay via Razorpay" button
+      details: await getSetting('remittance', null),        // UPI / bank set by admin
+    },
 
     // ── Monthly + recent ──
     monthly_breakdown: monthlyRes.rows.map((r) => ({
@@ -838,4 +845,33 @@ exports.verifyCommissionPayment = asyncHandler(async (req, res) => {
     settled_orders: updated.rows.length,
     payment_id:     razorpay_payment_id,
   }, 'Commission payment recorded — thank you!');
+});
+
+// ─── POST /api/payments/commission/notify ─────────────────────
+// Owner paid the platform fee by UPI / bank transfer: tell the DineVerse
+// team (as a support ticket) so they can confirm it and mark it collected.
+exports.notifyCommissionPayment = asyncHandler(async (req, res) => {
+  const cafeId = req.rootCafeId || req.cafeId;
+  const amount = parseFloat(req.body.amount);
+  const reference = String(req.body.reference || '').trim().slice(0, 100);
+  const method = ['upi', 'bank', 'cash', 'other'].includes(req.body.method) ? req.body.method : 'upi';
+  if (!(amount > 0) || amount > 1e7) return fail(res, 'Enter the amount you paid');
+  if (reference.length < 4) return fail(res, 'Enter the UPI / bank reference number (UTR)');
+
+  const { rows: [cafe] } = await db.query('SELECT name, email FROM cafes WHERE id = $1', [cafeId]);
+  const owed = (await commissionOwedPaise(cafeId)) / 100;
+  const { rows: [ticket] } = await db.query(
+    `INSERT INTO support_tickets (cafe_id, cafe_name, cafe_email, subject, message)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, subject, status, created_at`,
+    [cafeId, cafe.name, cafe.email,
+     `Platform fee paid: ₹${amount.toFixed(2)} (${method.toUpperCase()})`,
+     `${cafe.name} reports paying ₹${amount.toFixed(2)} by ${method.toUpperCase()}.\n` +
+     `Reference / UTR: ${reference}\n` +
+     `Outstanding when reported: ₹${owed.toFixed(2)}\n\n` +
+     'Check the payment arrived, then use Admin → Revenue → Mark Collected with this reference.'],
+  );
+  if (req.io) req.io.to('admin_room').emit('new_ticket', ticket);
+  logger.info('Commission payment reported: cafe %s ₹%s ref %s', cafeId, amount.toFixed(2), reference);
+  ok(res, { ticket }, 'Thanks! We will confirm your payment shortly.', 201);
 });

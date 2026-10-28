@@ -1,11 +1,7 @@
-const Razorpay = require('razorpay');
+const { razorpay } = require('./razorpayClient');
 const db = require('../config/database');
 const logger = require('../utils/logger');
 
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID     || process.env.RAZORPAY_TEST_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET,
-});
 
 const toPaise = (rupees) => Math.round(parseFloat(rupees) * 100);
 

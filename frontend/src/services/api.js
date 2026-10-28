@@ -117,6 +117,7 @@ export const getPaymentHistory = () => api.get('/payments/history');
 export const getCommissionSummary         = ()     => api.get('/payments/commission');
 export const createCommissionPaymentOrder = ()     => api.post('/payments/commission/pay');
 export const verifyCommissionPaymentResult= (data) => api.post('/payments/commission/verify', data);
+export const reportCommissionPayment     = (data) => api.post('/payments/commission/notify', data);
 
 // ─── Razorpay Route (Owner payout account) ────────────────────
 export const getRouteStatus  = () => api.get('/payments/route/status');

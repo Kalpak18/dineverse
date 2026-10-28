@@ -108,7 +108,8 @@ test('expired access token is renewed silently', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => localStorage.getItem('dineverse_token'))).not.toBe(expired);
 });
 
-test('realtime connection drops: orders missed meanwhile appear after reconnect', async ({ page }) => {
+for (const screen of ['kitchen', 'orders']) {
+test(`${screen} screen: orders placed while the live connection is down appear after reconnect`, async ({ page }) => {
   test.setTimeout(90_000);
   const c = await seedCafe();
   let down = false;
@@ -121,8 +122,7 @@ test('realtime connection drops: orders missed meanwhile appear after reconnect'
   await page.route(/socket\.io\/.*transport=polling/, (r) => (down ? r.abort('internetdisconnected') : r.continue()));
 
   await signIn(page, c.cafe.email);
-  await page.goto('/owner/kitchen');
-  const lane = page.getByRole('region', { name: 'New orders' });
+  await page.goto(`/owner/${screen}`);
   await placeOrder(c.slug, [c.item['Cold Coffee'].id], { customer_name: 'Live' });
   await expect(page.getByText('Live').filter({ visible: true }).first()).toBeVisible();
 
@@ -133,5 +133,5 @@ test('realtime connection drops: orders missed meanwhile appear after reconnect'
   await page.waitForTimeout(3000);
   down = false;
   await expect(page.getByText('Missed').filter({ visible: true }).first()).toBeVisible({ timeout: 20_000 });
-  expect(lane).toBeTruthy();
 });
+}

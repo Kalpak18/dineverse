@@ -548,7 +548,8 @@ export default function OrderConfirmation() {
           const isReady      = order.status === 'ready' ||
             (order.order_type === 'takeaway' && order.status === 'served');
           // Customer can pay online when food is served (dine-in) or ready (takeaway)
-          const canPayOnline = cafeInfo?.razorpay_route_enabled && (
+          // online_payments: platform switch on AND café payout account active
+          const canPayOnline = cafeInfo?.online_payments && (
             (order.status === 'served' && order.order_type === 'dine-in') ||
             (order.status === 'ready'  && order.order_type === 'takeaway') ||
             order.status === 'ready'
@@ -842,6 +843,13 @@ export default function OrderConfirmation() {
                       Card / other payment methods
                     </button>
                   </div>
+                )}
+
+                {/* Counter payment — the default while online payment is off */}
+                {!canPayOnline && isAccepted && !order.payment_verified && (
+                  <p className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold text-center px-3 py-2.5">
+                    💵 {t('order.payAtCounter', { amount: c(order.final_amount || order.total_amount) })}
+                  </p>
                 )}
 
                 {/* Digital receipt — only after payment */}

@@ -33,7 +33,8 @@ function freePort() {
   });
 }
 
-async function startServer() {
+// overrides: extra env for the API process; noStub: run the real razorpay SDK
+async function startServer({ noStub = false, ...overrides } = {}) {
   const dbName = `dineverse_test_${process.pid}_${Date.now()}`;
   const admin = new Pool({ connectionString: ADMIN_URL });
   await admin.query(`CREATE DATABASE "${dbName}"`);
@@ -49,7 +50,8 @@ async function startServer() {
   const port = await freePort();
   const serverLog = path.join(os.tmpdir(), `${dbName}.server.log`);
   const logFd = fs.openSync(serverLog, 'w');
-  const child = spawn('node', ['-r', path.join(__dirname, 'razorpayStub.js'), 'src/app.js'], {
+  const args = noStub ? ['src/app.js'] : ['-r', path.join(__dirname, 'razorpayStub.js'), 'src/app.js'];
+  const child = spawn('node', args, {
     cwd: ROOT,
     stdio: ['ignore', logFd, logFd],
     env: {
@@ -65,6 +67,7 @@ async function startServer() {
       RZP_LOG: rzpLog,
       REDIS_URL: '',
       RESEND_API_KEY: '',
+      ...overrides,
     },
   });
 
@@ -177,7 +180,15 @@ async function payOrder(base, slug, order) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const adminToken = () => signToken({ role: 'ADMIN', adminId: crypto.randomUUID() });
+
+// Platform switch: customers pay for food online (off by default = counter only)
+async function setOnlinePayments(base, enabled) {
+  const r = await api(base, 'PUT', '/admin/settings/online_order_payments', { token: adminToken(), body: { value: { enabled } } });
+  if (r.status !== 200) throw new Error(`setOnlinePayments failed: ${r.status} ${JSON.stringify(r.body)}`);
+}
+
 module.exports = {
   startServer, api, createCafe, createStaff, createMenuItem, login, signToken, claims,
-  placeOrder, payOrder, sleep, RZP_SECRET, RZP_WEBHOOK_SECRET,
+  placeOrder, payOrder, sleep, adminToken, setOnlinePayments, RZP_SECRET, RZP_WEBHOOK_SECRET,
 };

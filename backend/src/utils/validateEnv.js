@@ -22,16 +22,17 @@ module.exports = function validateEnv() {
   // Razorpay: support both RAZORPAY_KEY_ID (prod) and RAZORPAY_TEST_KEY_ID (legacy/dev)
   const hasRazorpay = (process.env.RAZORPAY_KEY_ID || process.env.RAZORPAY_TEST_KEY_ID) &&
                       (process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_TEST_KEY_SECRET);
+  // Razorpay is optional: without it customers pay at the counter and cafés
+  // remit the platform fee by UPI / bank transfer
   if (!hasRazorpay) {
-    logger.warn('[STARTUP] Razorpay keys not set — online payments will fail');
+    logger.warn('[STARTUP] Razorpay keys not set — online payments and plan purchases are off (counter payments only)');
   }
 
   // In production, test keys must not be used — they accept test-mode HMAC signatures
-  if (process.env.NODE_ENV === 'production') {
-    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-      logger.error('[STARTUP] RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET are required in production. Set them in your environment variables.');
-      process.exit(1);
-    }
+  if (process.env.NODE_ENV === 'production' && hasRazorpay
+      && (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET)) {
+    logger.error('[STARTUP] Production must use RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET (live keys), not the test-key variables.');
+    process.exit(1);
   }
 
   // Razorpay webhook secret — needed to verify webhook payloads from Razorpay servers

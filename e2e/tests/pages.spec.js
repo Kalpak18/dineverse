@@ -1,7 +1,7 @@
 // Every screen, phone and desktop: renders, no runtime errors or CSP
 // violations, and nothing wider than the screen (no sideways scrolling).
 const { test, expect } = require('../fixtures');
-const { seedCafe, signIn, placeOrder, watchPage } = require('../support');
+const { seedCafe, signIn, placeOrder, watchPage, adminToken, q } = require('../support');
 
 const OWNER_PAGES = ['dashboard', 'orders', 'waiter', 'messages', 'kitchen', 'reservations', 'tables', 'waitlist', 'shift',
   'menu', 'inventory', 'modifiers', 'schedule', 'offers', 'ratings', 'analytics', 'customers', 'loyalty',
@@ -77,6 +77,29 @@ test('public and customer screens', async ({ page }) => {
   await check('confirmation');
   await page.goto(`/cafe/${c.slug}/my-orders`);
   await check('my-orders');
+  expect(bad).toEqual([]);
+  expect(problems).toEqual([]);
+});
+
+test('admin screens', async ({ page }) => {
+  const problems = watchPage(page);
+  const [dev] = await q(
+    `INSERT INTO developers (name, email, password_hash) VALUES ('E2E Admin', $1, 'x') RETURNING id`,
+    [`admin-${Date.now()}-${Math.random()}@t.com`]
+  );
+  await page.goto('/');
+  await page.evaluate((t) => localStorage.setItem('dineverse_admin_token', t), adminToken(dev.id));
+  const bad = [];
+  for (const p of ['dashboard', 'cafes', 'revenue', 'tickets', 'analytics', 'offers', 'settings']) {
+    await page.goto(`/admin/${p}`);
+    await page.waitForLoadState('networkidle');
+    await expect(page, p).toHaveURL(new RegExp(`/admin/${p}`));
+    if (await page.getByText(/Something went wrong/i).count()) bad.push(`${p}: error boundary`);
+    const o = await overflow(page);
+    if (o.page > 1 || o.wide.length) bad.push(`${p}: overflow ${o.page}px ${o.wide.join(', ')}`);
+  }
+  await page.goto('/admin/settings');
+  await expect(page.getByRole('switch', { name: 'Online payments for customers' })).toHaveAttribute('aria-checked', 'false');
   expect(bad).toEqual([]);
   expect(problems).toEqual([]);
 });

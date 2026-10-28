@@ -130,7 +130,9 @@ io.use((socket, next) => {
 io.on('connection', (socket) => {
   logger.debug('Socket connected: %s', socket.id);
 
-  socket.on('join_cafe', (cafeId) => {
+  // ack (optional): tells the screen it is now in the room, so it can refetch
+  // anything that happened before the join took effect
+  socket.on('join_cafe', (cafeId, ack) => {
     // The café room carries live orders with customer PII. Require an
     // OWNER/STAFF token for this exact café (or ADMIN) — anonymous sockets
     // and riders (whose tokens also carry cafeId) are refused.
@@ -142,10 +144,12 @@ io.on('connection', (socket) => {
     if (!allowed) {
       logger.debug('Socket %s denied cafe:%s', socket.id, cafeId);
       socket.emit('join_denied', { room: 'cafe' });
+      if (typeof ack === 'function') ack({ ok: false });
       return;
     }
     socket.join(`cafe:${cafeId}`);
     logger.debug('Socket %s joined cafe:%s', socket.id, cafeId);
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   // Customers join this room to receive live café status (open/closed) updates

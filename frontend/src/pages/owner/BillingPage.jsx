@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getCommissionSummary, createCommissionPaymentOrder, verifyCommissionPaymentResult } from '../../services/api';
+import { getCommissionSummary, createCommissionPaymentOrder, verifyCommissionPaymentResult, reportCommissionPayment } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -174,24 +174,25 @@ export default function BillingPage() {
                 {platformCredit > 0 && <span className="ml-2 text-sm font-normal text-purple-600">(after ₹{fmt(platformCredit)} DineVerse credit)</span>}
               </p>
               <p className="text-sm text-orange-700 mt-0.5">
-                Customers paid this as a service charge on their cash/UPI/card bills — you collected it on DineVerse's behalf. Remit it here any time, or it's settled at month end.
+                Customers paid this as a service charge on their bills — you collected it on DineVerse's behalf. Please remit it at least once a month.
               </p>
             </div>
           </div>
-          <button
-            onClick={handlePayCommission}
-            disabled={paying}
-            className="mt-4 w-full py-3 rounded-xl bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white font-bold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {paying ? (
-              <>
-                <span className="inline-block w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Opening Razorpay…
-              </>
-            ) : (
-              <>💳 Remit ₹{fmt(cashOwed)} via Razorpay</>
-            )}
-          </button>
+          <RemitPanel
+            amount={cashOwed}
+            cafeName={cafe?.name}
+            details={data.remit?.details}
+            onReported={load}
+          />
+          {data.remit?.online && (
+            <button
+              onClick={handlePayCommission}
+              disabled={paying}
+              className="mt-3 w-full min-h-[44px] py-3 rounded-xl border-2 border-orange-300 text-orange-700 font-bold text-sm transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {paying ? 'Opening Razorpay…' : <>💳 Or pay ₹{fmt(cashOwed)} by card / netbanking (Razorpay)</>}
+            </button>
+          )}
         </div>
       ) : (
         <div className="rounded-2xl border border-green-200 bg-green-50 p-4 flex items-center gap-3">
@@ -222,9 +223,10 @@ export default function BillingPage() {
       {tab === 'overview' && (
         <div className="space-y-4">
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${onlineReceived > 0 || onlineSettled > 0 ? 'sm:grid-cols-2' : ''}`}>
 
-            {/* Online stream */}
+            {/* Online stream — only once customers have paid online */}
+            {(onlineReceived > 0 || onlineSettled > 0) && (
             <div className="rounded-2xl border border-green-200 bg-green-50 p-5 space-y-4">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-green-100 flex items-center justify-center text-lg">🏦</div>
@@ -247,6 +249,7 @@ export default function BillingPage() {
                 When a customer pays online, Razorpay splits it instantly — your share goes to your bank, DineVerse's {rate}% fee goes to us. Zero effort on your part.
               </p>
             </div>
+            )}
 
             {/* Cash/UPI/Card stream */}
             <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5 space-y-4">
@@ -415,6 +418,109 @@ export default function BillingPage() {
         </div>
       )}
 
+    </div>
+  );
+}
+
+// How a café pays DineVerse its platform fee without Razorpay: UPI (opens the
+// UPI app with the amount filled in) or bank transfer, then reports the
+// reference so the DineVerse team can confirm it and mark the fees collected.
+function RemitPanel({ amount, cafeName, details, onReported }) {
+  const [form, setForm]       = useState(null); // null = closed
+  const [sending, setSending] = useState(false);
+  const upi  = details?.upi_id?.trim();
+  const bank = details?.account_number?.trim();
+  const upiLink = upi && `upi://pay?${new URLSearchParams({
+    pa: upi, pn: details.payee_name || 'DineVerse', am: Number(amount).toFixed(2), cu: 'INR',
+    tn: `DineVerse platform fee - ${cafeName || ''}`.slice(0, 50),
+  })}`;
+
+  const copy = (text) => navigator.clipboard?.writeText(text)
+    .then(() => toast.success('Copied'))
+    .catch(() => toast.error('Could not copy'));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSending(true);
+    try {
+      await reportCommissionPayment({ amount: parseFloat(form.amount), reference: form.reference, method: form.method });
+      toast.success('Thanks! We will confirm your payment shortly.');
+      setForm(null);
+      onReported?.();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not send — please try again');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-3">
+      {!upi && !bank && (
+        <p className="text-sm text-orange-800 bg-white/70 rounded-xl px-3 py-2.5">
+          DineVerse will share payment details with you. Once you have paid, tap “I've paid” below.
+        </p>
+      )}
+      {upi && (
+        <div className="rounded-xl bg-white border border-orange-200 p-3 space-y-2">
+          <a href={upiLink} className="flex items-center justify-center gap-2 w-full min-h-[48px] rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm">
+            📱 Pay ₹{fmt(amount)} with any UPI app
+          </a>
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-gray-600 min-w-0 truncate">UPI ID: <strong className="text-gray-900">{upi}</strong></span>
+            <button type="button" onClick={() => copy(upi)} className="min-h-[40px] px-3 rounded-lg border border-gray-200 text-xs font-semibold flex-shrink-0">Copy</button>
+          </div>
+        </div>
+      )}
+      {bank && (
+        <div className="rounded-xl bg-white border border-orange-200 p-3 text-sm text-gray-700 space-y-1">
+          <p className="font-semibold text-gray-900">Bank transfer</p>
+          {details.account_name && <p>Name: <strong>{details.account_name}</strong></p>}
+          <p className="flex items-center justify-between gap-2">
+            <span className="min-w-0 truncate">A/c: <strong>{bank}</strong></span>
+            <button type="button" onClick={() => copy(bank)} className="min-h-[40px] px-3 rounded-lg border border-gray-200 text-xs font-semibold flex-shrink-0">Copy</button>
+          </p>
+          {details.ifsc && <p>IFSC: <strong>{details.ifsc}</strong>{details.bank_name && ` · ${details.bank_name}`}</p>}
+        </div>
+      )}
+      {details?.note && <p className="text-xs text-orange-700">{details.note}</p>}
+
+      {!form ? (
+        <button
+          type="button"
+          onClick={() => setForm({ amount: Number(amount).toFixed(2), reference: '', method: upi ? 'upi' : 'bank' })}
+          className="w-full min-h-[44px] rounded-xl border-2 border-orange-300 bg-white text-orange-700 font-bold text-sm"
+        >
+          ✅ I've paid — send the reference
+        </button>
+      ) : (
+        <form onSubmit={submit} className="rounded-xl bg-white border border-orange-200 p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-xs text-gray-600">Amount paid (₹)
+              <input type="number" min="1" step="0.01" required className="input mt-1 w-full"
+                value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} />
+            </label>
+            <label className="text-xs text-gray-600">Paid by
+              <select className="input mt-1 w-full" value={form.method} onChange={(e) => setForm((f) => ({ ...f, method: e.target.value }))}>
+                <option value="upi">UPI</option>
+                <option value="bank">Bank transfer</option>
+                <option value="cash">Cash</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+          </div>
+          <label className="block text-xs text-gray-600">UPI / bank reference number (UTR)
+            <input required minLength={4} maxLength={100} className="input mt-1 w-full" placeholder="e.g. 412345678901"
+              value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} />
+          </label>
+          <div className="flex gap-2">
+            <button type="submit" disabled={sending} className="flex-1 min-h-[44px] rounded-xl bg-orange-500 text-white font-bold text-sm disabled:opacity-60">
+              {sending ? 'Sending…' : 'Send to DineVerse'}
+            </button>
+            <button type="button" onClick={() => setForm(null)} className="min-h-[44px] px-4 rounded-xl border border-gray-200 text-sm">Cancel</button>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

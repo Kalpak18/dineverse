@@ -4,7 +4,7 @@ const requireOwner = require('../middleware/requireOwner');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { getPlans, createOrder, verifyPayment, getHistory, webhookHandler,
         getRouteStatus, connectRoute, enableRoute, getCommissionSummary,
-        createCommissionPayment, verifyCommissionPayment } = require('../controllers/paymentController');
+        createCommissionPayment, verifyCommissionPayment, notifyCommissionPayment } = require('../controllers/paymentController');
 
 // Razorpay webhook — no auth, raw body already parsed by express.raw() in app.js
 router.post('/webhook', webhookHandler);
@@ -19,6 +19,8 @@ router.post('/verify',       authenticate, requireOwner, authLimiter, verifyPaym
 // Commission payments — owner pays owed cash commission to DineVerse
 router.post('/commission/pay',    authenticate, requireOwner, authLimiter, createCommissionPayment);
 router.post('/commission/verify', authenticate, requireOwner, authLimiter, verifyCommissionPayment);
+// Paid by UPI / bank transfer instead — reported for the admin to confirm
+router.post('/commission/notify', authenticate, requireOwner, authLimiter, notifyCommissionPayment);
 
 // Razorpay Route — café payout account management
 router.get ('/route/status',  authenticate, requireOwner, getRouteStatus);

@@ -49,7 +49,13 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
 
     const socket = socketRef.current;
 
-    socket.emit('join_cafe', cafeId);
+    // Once the server confirms the join, let the page refetch: orders placed
+    // after its first load but before the join took effect (or while the
+    // socket was down) never reach this screen as events.
+    const join = () => socket.emit('join_cafe', cafeId, (res) => {
+      if (res?.ok) onReconnectRef.current?.();
+    });
+    if (socket.connected) join(); // otherwise the connect handler joins
 
     const handleNewOrder = (order) => {
       playNotificationSound();
@@ -64,13 +70,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
       if (onNewReservationRef.current) onNewReservationRef.current(reservation);
     };
 
-    // Events emitted while the socket was down are lost — let the page refetch
-    let connectedOnce = socket.connected;
-    const handleConnect = () => {
-      socket.emit('join_cafe', cafeId); // rejoin room on reconnect
-      if (connectedOnce && onReconnectRef.current) onReconnectRef.current();
-      connectedOnce = true;
-    };
+    const handleConnect = join; // first connect and every reconnect
 
     const handleConnectError = (error) => {
       console.error('Socket connection error:', error);
