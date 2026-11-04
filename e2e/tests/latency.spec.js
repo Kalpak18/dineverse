@@ -58,7 +58,7 @@ test('pages become usable quickly on a throttled 4G phone', async ({ page, brows
   await signIn(owner, c.cafe.email);
   const kitchen = await timed(async () => {
     await owner.goto('/owner/kitchen');
-    await expect(owner.getByRole('region', { name: 'New orders' })).toBeVisible();
+    await expect(owner.getByRole('heading', { name: 'Kitchen', level: 1 })).toBeVisible();
   });
   console.log(`owner kitchen screen usable ${kitchen.ms.toFixed(0)}ms`);
   expect(kitchen.ms).toBeLessThan(4000);

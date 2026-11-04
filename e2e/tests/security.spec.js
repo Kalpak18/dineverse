@@ -94,7 +94,7 @@ test('stored XSS in names, notes and chat never executes (screens and print pop-
   await api('POST', `/orders/cafe/${c.slug}/orders/${order.id}/messages`, {
     headers: { 'x-order-token': order.customer_token }, body: { message: payload },
   });
-  await context.addInitScript(() => { window.open = ((open) => function (...a) { const w = open.apply(window, a); if (w) w.print = () => {}; return w; })(window.open); });
+  await context.addInitScript(() => { window.print = () => {}; });
 
   await signIn(page, c.cafe.email);
   for (const path of ['/owner/orders', '/owner/kitchen', '/owner/messages', '/owner/dashboard']) {
@@ -104,10 +104,12 @@ test('stored XSS in names, notes and chat never executes (screens and print pop-
   }
   await page.goto('/owner/orders');
   await expect(page.getByText(/Asha<img/).filter({ visible: true }).first()).toBeVisible(); // shown as text
-  const [kot] = await Promise.all([page.waitForEvent('popup'), page.getByRole('button', { name: '📋 KOT' }).click()]);
-  await kot.waitForLoadState();
-  expect(await kot.evaluate(() => window.__xss)).toBeUndefined();
-  expect(await kot.locator('img').count()).toBe(0);
+  // The printout is laid out inside the page itself
+  await page.getByRole('button', { name: '📋 KOT' }).click();
+  const printout = page.locator('#dv-print-root');
+  await expect(printout).toContainText('Asha<img');
+  expect(await printout.locator('img, script').count()).toBe(0);
+  expect(await page.evaluate(() => window.__xss)).toBeUndefined();
 });
 
 test('forged or tampered sessions are thrown out to the login page', async ({ page }) => {

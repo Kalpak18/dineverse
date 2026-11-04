@@ -1,33 +1,50 @@
-import toast from 'react-hot-toast';
+// Prints a receipt, KOT or serving slip from the current page: the document
+// goes into a print-only container and the browser's print dialog opens —
+// no pop-up window. On screen the container stays hidden and the app is
+// untouched; while printing, only the document is shown.
+// The HTML is a full document whose <style> applies only to the printout.
+// It must not rely on scripts: the site's CSP blocks inline JS.
+const ROOT_ID = 'dv-print-root';
 
-// Opens a print pop-up for receipts, KOTs and serving slips.
-// The HTML must not contain <script> or inline on* handlers: the site's CSP
-// blocks inline scripts (and pop-ups inherit it), so printing and the PRINT
-// button are wired from here instead.
-//   autoPrint   — open the print dialog once the document has rendered
-//   printButton — id of a button in the HTML that should print
-// Returns false (and tells the user) if the browser blocked the pop-up.
-export function openPrintWindow(html, { features = 'width=400,height=600', autoPrint = false, printButton = null } = {}) {
-  const w = window.open('', '_blank', features);
-  if (!w) {
-    toast.error('Pop-up blocked — allow pop-ups for this site to print');
-    return false;
-  }
-  w.document.write(html);
-  w.document.close();
+export function printDocument(html) {
+  document.getElementById(ROOT_ID)?.remove();
+  document.getElementById(`${ROOT_ID}-style`)?.remove();
 
-  const print = () => {
-    w.focus();
-    w.onafterprint = () => w.close();
-    w.print();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script').forEach((el) => el.remove());
+  const css = [...doc.querySelectorAll('style')].map((s) => s.textContent).join('\n');
+
+  const root = document.createElement('div');
+  root.id = ROOT_ID;
+  root.innerHTML = doc.body.innerHTML;
+
+  const style = document.createElement('style');
+  style.id = `${ROOT_ID}-style`;
+  style.textContent = `#${ROOT_ID} { display: none; }
+@media print {
+  body > *:not(#${ROOT_ID}) { display: none !important; }
+  #${ROOT_ID} { display: block; }
+${css}
+}`;
+  document.body.append(style, root);
+
+  const cleanup = () => {
+    root.remove();
+    style.remove();
+    window.removeEventListener('afterprint', cleanup);
   };
-  if (printButton) w.document.getElementById(printButton)?.addEventListener('click', print);
-  if (autoPrint) {
-    // Give fonts/images a moment to lay out before the dialog snapshots the page
-    if (w.document.readyState === 'complete') setTimeout(print, 300);
-    else w.addEventListener('load', () => setTimeout(print, 300));
-  } else {
-    w.focus();
+  window.addEventListener('afterprint', cleanup);
+
+  // Print right away when nothing needs loading (still inside the tap, which
+  // some phone browsers require); otherwise give a logo a moment to load
+  const pending = [...root.querySelectorAll('img')].filter((img) => !img.complete);
+  if (!pending.length) {
+    window.print();
+    return;
   }
-  return true;
+  const loaded = Promise.all(pending.map((img) => new Promise((done) => {
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+  })));
+  Promise.race([loaded, new Promise((done) => setTimeout(done, 1500))]).then(() => window.print());
 }

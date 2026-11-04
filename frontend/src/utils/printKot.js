@@ -1,5 +1,5 @@
 import { tableName } from './tableName';
-import { openPrintWindow } from './printWindow';
+import { printDocument } from './printWindow';
 
 /**
  * printKot — prints a Kitchen Order Ticket for a single item.
@@ -111,7 +111,7 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
 </body>
 </html>`;
 
-  openPrintWindow(html, { features: 'width=380,height=500,toolbar=0,menubar=0,scrollbars=1', autoPrint: true });
+  printDocument(html);
 }
 
 /**
@@ -167,17 +167,10 @@ export function printFullKot(kot, cafeName) {
   <hr class="sep"/>
   <table><tbody>${itemRows}</tbody></table>
   <hr class="sep"/>
-  <div style="text-align:center;margin-top:8px;">
-    <button id="print-btn"
-      style="font-family:'Courier New',monospace;font-size:12px;font-weight:bold;padding:7px 24px;
-             border:2px solid #000;border-radius:4px;background:#000;color:#fff;cursor:pointer;letter-spacing:1px;">
-      PRINT KOT
-    </button>
-  </div>
 </body>
 </html>`;
 
-  openPrintWindow(html, { features: 'width=380,height=520,toolbar=0,menubar=0,scrollbars=1', printButton: 'print-btn' });
+  printDocument(html);
 }
 
 function escHtml(str) {

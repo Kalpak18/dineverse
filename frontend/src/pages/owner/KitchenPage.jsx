@@ -5,6 +5,7 @@ import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../.
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/useSocketIO';
 import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
+import { printDocument } from '../../utils/printWindow';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
 import { getApiError } from '../../utils/apiError';
@@ -75,24 +76,10 @@ function printKitchenToken(order, cafeName, servedItems = null) {
   <table><tbody>${itemRows}</tbody></table>
   <hr class="sep"/>
   ${order.notes ? `<div class="notes">📝 ${esc(order.notes)}</div>` : ''}
-  <div style="text-align:center;margin-top:10px;">
-    <button id="print-btn" style="font-family:'Courier New',monospace;font-size:13px;font-weight:bold;padding:8px 28px;border:2px solid #000;border-radius:6px;background:#000;color:#fff;cursor:pointer;">🖨 PRINT</button>
-  </div>
 </body>
 </html>`;
 
-  // Caller shows its own toast when blocked; never alert() — it freezes the KDS
-  const w = window.open('', '_blank', 'width=380,height=580,toolbar=0,menubar=0,scrollbars=0');
-  if (!w) return false;
-  w.document.write(html);
-  w.document.close();
-  // CSP blocks inline handlers, so wire the PRINT button from here
-  w.document.getElementById('print-btn')?.addEventListener('click', () => {
-    w.onafterprint = () => w.close();
-    w.print();
-  });
-  w.focus();
-  return true;
+  printDocument(html);
 }
 
 const OVERDUE_MS = 20 * 60 * 1000;       // 20 min = overdue
@@ -858,10 +845,13 @@ export default function KitchenPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [soundEnabled, setSoundEnabled]   = usePersisted(SOUND_PREF_KEY, true); // shared with the bell menu
   const [fullscreen, setFullscreen]       = useState(false);
-  // 'rail' = NEW → COOKING → READY lanes (default on devices with no saved choice)
-  const [viewMode, setViewMode]           = usePersisted('kds_viewmode', 'rail');
-  // Last 5 bumps for Recall: { id, from }
+  // 'combined' = By Table (default). 'rail' = Lanes, available from the
+  // toolbar. Key bumped (v2) so screens that got Lanes as a default reset.
+  const [viewMode, setViewMode]           = usePersisted('kds_viewmode_v2', 'combined');
+  // Last 5 status changes for Undo: { id, from }
   const [recallStack, setRecallStack]     = useState([]);
+  // Serving slips print only when the kitchen turns this on
+  const [autoSlip, setAutoSlip]           = usePersisted('kds_auto_slip', false);
   const [stations, setStations]           = useState([]); // e.g. ['Bar', 'Tandoor'] from menu categories
   const [density, setDensity]             = usePersisted('kds_density', 'comfortable');
   const [tvMode, setTvMode]               = usePersisted('kds_tv', false);
@@ -936,7 +926,7 @@ export default function KitchenPage() {
       const next = kitchenNext(from, order.order_type);
       if (!next) return;
       await updateOrderStatus(order.id, next);
-      setRecallStack((st) => [{ id: order.id, from }, ...st].slice(0, 5));
+      noteChange([{ order, from, next }]);
       setOrders((prev) => KITCHEN_STATUSES.includes(next)
         ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
         : prev.filter((o) => o.id !== order.id));
@@ -947,18 +937,43 @@ export default function KitchenPage() {
     }
   };
 
-  const handleRecall = async () => {
-    const [last, ...rest] = recallStack;
-    if (!last) return;
+  // Put orders back where they were (one step back is always allowed)
+  const undoChanges = async (changes) => {
+    const ids = new Set(changes.map((c) => c.id));
+    setRecallStack((st) => st.filter((c) => !ids.has(c.id)));
     try {
-      await updateOrderStatus(last.id, last.from);
-      setRecallStack(rest);
-      toast('Recalled', { icon: '↶', style: { background: '#1f2937', color: '#fff' } });
+      for (const c of changes) await updateOrderStatus(c.id, c.from);
+      toast('Undone', { icon: '↶', style: { background: '#1f2937', color: '#fff' } });
     } catch (err) {
-      toast.error(`Couldn't recall: ${getApiError(err)}`);
-      setRecallStack(rest); // stale entry (order moved on elsewhere)
+      toast.error(`Couldn't undo: ${getApiError(err)}`); // order moved on elsewhere
     }
     fetchOrders(); // a served ticket comes back, items reload
+  };
+
+  const handleRecall = () => recallStack[0] && undoChanges([recallStack[0]]);
+
+  // Every status change can be taken back: Undo toast for a few seconds,
+  // then the toolbar Undo (last 5 changes)
+  const noteChange = (all) => {
+    const changes = all.filter((c) => c.from !== 'pending'); // accepting can't be taken back
+    if (!changes.length) return;
+    setRecallStack((st) => [...changes.map((c) => ({ id: c.order.id, from: c.from })), ...st].slice(0, 5));
+    const label = { preparing: 'Cooking', ready: 'Ready', served: 'Served', confirmed: 'Accepted' };
+    const text = changes.length === 1
+      ? `#${String(changes[0].order.daily_order_number).padStart(2, '0')} → ${label[changes[0].next] || changes[0].next}`
+      : `${changes.length} orders → ${label[changes[0].next] || changes[0].next}`;
+    toast((t) => (
+      <span className="flex items-center gap-3">
+        {text}
+        <button
+          type="button"
+          onClick={() => { toast.dismiss(t.id); undoChanges(changes.map((c) => ({ id: c.order.id, from: c.from }))); }}
+          className="min-h-[36px] px-3 rounded-lg bg-white text-gray-900 text-sm font-bold"
+        >
+          Undo
+        </button>
+      </span>
+    ), { duration: 8000, style: { background: '#1f2937', color: '#fff' } });
   };
 
   // Station screen: the header moves only this station's items — NEW starts
@@ -980,11 +995,10 @@ export default function KitchenPage() {
     return handleItemUpdate(order.id, item.id, 'ready');
   };
 
-  // One serving slip per order when it becomes ready — never one per item
+  // One serving slip per order when it becomes ready — only if the kitchen
+  // turned slips on (🧾 in the toolbar)
   const printReadySlip = (order) => {
-    if (!printKitchenToken(order, cafe?.name)) {
-      toast.error('Pop-up blocked — allow pop-ups for this site to print serving slips');
-    }
+    if (autoSlip) printKitchenToken(order, cafe?.name);
   };
 
   const handleAdvance = async (order) => {
@@ -992,6 +1006,7 @@ export default function KitchenPage() {
     if (!next) return;
     try {
       await updateOrderStatus(order.id, next);
+      noteChange([{ order, from: order.status, next }]);
       if (!KITCHEN_STATUSES.includes(next)) {
         setOrders((prev) => prev.filter((o) => o.id !== order.id));
       } else {
@@ -1059,6 +1074,7 @@ export default function KitchenPage() {
   const handleAdvanceAll = async (groupOrders) => {
     const toAdvance = groupOrders.filter((o) => kitchenNext(o.status, o.order_type));
     if (!toAdvance.length) return;
+    const changes = toAdvance.map((order) => ({ order, from: order.status, next: kitchenNext(order.status, order.order_type) }));
     try {
       await Promise.all(toAdvance.map(async (order) => {
         const next = kitchenNext(order.status, order.order_type);
@@ -1070,6 +1086,7 @@ export default function KitchenPage() {
             : prev.filter((o) => o.id !== order.id)
         );
       }));
+      noteChange(changes);
     } catch (err) { toast.error(`Couldn't advance some orders: ${getApiError(err)}`); }
   };
 
@@ -1141,9 +1158,7 @@ export default function KitchenPage() {
         if (!KITCHEN_STATUSES.includes(last.data.order.status)) return prev.filter((o) => o.id !== orderId);
         return prev.map((o) => (o.id === orderId ? last.data.order : o));
       });
-      if (!printKitchenToken(last.data.order, cafe?.name, Array.from(selected))) {
-        toast.error('Pop-up blocked — allow pop-ups for this site to print serving slips');
-      }
+      if (autoSlip) printKitchenToken(last.data.order, cafe?.name, Array.from(selected));
       setSelectedItems((prev) => ({ ...prev, [orderId]: new Set() }));
       toast.success(`${selected.size} item${selected.size > 1 ? 's' : ''} served`);
     } catch (err) {
@@ -1471,6 +1486,21 @@ export default function KitchenPage() {
               </button>
             </>
           )}
+
+          {viewMode !== 'rail' && !railStation && (
+            <button onClick={handleRecall} disabled={!recallStack.length}
+              aria-label="Undo last change" title="Undo the last status change"
+              className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold flex-shrink-0 bg-gray-800 text-gray-200 disabled:opacity-30`}>
+              ↶ <span className="hidden sm:inline">Undo</span>
+            </button>
+          )}
+
+          <button onClick={() => setAutoSlip((v) => !v)}
+            aria-label="Print serving slips" aria-pressed={autoSlip}
+            title={autoSlip ? 'Serving slips print when an order is ready — tap to stop' : 'Tap to print a serving slip when an order is ready'}
+            className={`${TB} min-w-[44px] min-h-[44px] px-3 py-2 rounded-xl text-sm flex-shrink-0 ${autoSlip ? 'bg-green-800 text-green-300' : 'bg-gray-800 text-gray-500'}`}>
+            🧾
+          </button>
 
           {/* Split kitchen toggle */}
           <button

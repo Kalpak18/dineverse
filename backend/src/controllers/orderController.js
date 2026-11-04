@@ -808,6 +808,9 @@ exports.getOrders = asyncHandler(async (req, res) => {
               o.order_type, o.status, o.kitchen_mode, o.accepted,
               o.total_amount, o.tax_amount, o.tax_rate, o.discount_amount,
               o.tip_amount, o.delivery_fee, o.final_amount,
+              -- the bill shows the platform charge line; without these its
+              -- lines didn't add up to the total
+              o.platform_fee, o.platform_fee_rate, o.platform_discount_amount,
               o.payment_verified, o.cancellation_reason, o.payment_mode, o.cash_received, o.payment_splits,
               o.notes, o.created_at, o.updated_at,
               o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at

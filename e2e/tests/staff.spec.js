@@ -4,24 +4,22 @@ const { seedCafe, signIn, login, placeOrder, advance, q } = require('../support'
 
 const twoItems = (c) => [c.item['Paneer Tikka'].id, c.item['Cold Coffee'].id];
 
-// window.print never opens a dialog in tests; count calls instead
+// Printing happens in the page itself (no pop-up window). Tests don't open a
+// real dialog: they count print() calls and read what was laid out to print.
 async function stubPrint(page) {
   await page.addInitScript(() => {
-    const open = window.open;
     window.__printed = 0;
-    window.open = function (...a) {
-      const w = open.apply(window, a);
-      if (w) w.print = () => { window.__printed += 1; };
-      return w;
-    };
+    window.print = () => { window.__printed += 1; };
   });
 }
+const printout = (page) => page.locator('#dv-print-root');
 
 test('kitchen Lanes: start cooking, recall, station filter', async ({ page }) => {
   const c = await seedCafe();
   const order = (await placeOrder(c.slug, twoItems(c), { table_token: c.tables['1'].qr_token })).order;
   await signIn(page, c.cafe.email);
   await page.goto('/owner/kitchen');
+  await page.getByRole('button', { name: 'Lanes view' }).click(); // By Table is the default
 
   // Phones show one lane at a time behind tabs; wide screens show all three
   const lane = (name) => page.getByRole('region', { name: `${name} orders` });
@@ -49,12 +47,13 @@ test('kitchen screen picks up a new order live', async ({ page }) => {
   const c = await seedCafe();
   await signIn(page, c.cafe.email);
   await page.goto('/owner/kitchen');
+  await page.getByRole('button', { name: 'Lanes view' }).click();
   await expect(page.getByRole('region', { name: 'New orders' })).toContainText('No tickets');
   await placeOrder(c.slug, twoItems(c), { table_token: c.tables['2'].qr_token });
   await expect(page.getByRole('region', { name: 'New orders' })).toContainText('Table 2');
 });
 
-test('KOT and bill print pop-ups render and print under the CSP', async ({ page, context }) => {
+test('KOT and bill print from the page itself — no pop-up window, no CSP errors', async ({ page, context }) => {
   const c = await seedCafe();
   await placeOrder(c.slug, twoItems(c), { table_token: c.tables['1'].qr_token });
   await stubPrint(page);
@@ -62,18 +61,59 @@ test('KOT and bill print pop-ups render and print under the CSP', async ({ page,
   await page.goto('/owner/orders');
 
   const cspErrors = [];
+  let popups = 0;
   context.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) cspErrors.push(m.text()); });
+  context.on('page', () => { popups += 1; });
 
-  const [kot] = await Promise.all([page.waitForEvent('popup'), page.getByRole('button', { name: '📋 KOT' }).click()]);
-  await expect(kot.locator('body')).toContainText('Paneer Tikka');
-  await kot.getByRole('button', { name: 'PRINT KOT' }).click(); // wired from the app, not an inline handler
-  await expect.poll(() => page.evaluate(() => window.__printed)).toBeGreaterThanOrEqual(1);
+  await page.getByRole('button', { name: '📋 KOT' }).click();
+  await expect.poll(() => page.evaluate(() => window.__printed)).toBe(1);
+  await expect(printout(page)).toContainText('Paneer Tikka');
+  await expect(printout(page)).toBeHidden(); // only visible on paper, never on screen
 
   await page.getByRole('button', { name: '🖨️ Bill' }).click(); // opens the billing sheet
-  const [bill] = await Promise.all([page.waitForEvent('popup'), page.getByRole('button', { name: '🖨️ Print Draft Bill' }).click()]);
-  await expect(bill.locator('body')).toContainText('346.80');
-  await expect.poll(() => page.evaluate(() => window.__printed)).toBeGreaterThanOrEqual(2);
+  await page.getByRole('button', { name: '🖨️ Print Draft Bill' }).click();
+  await expect.poll(() => page.evaluate(() => window.__printed)).toBe(2);
+  // The bill leads with the café; the order number is a small detail line
+  await expect(printout(page).locator('.cafe-name')).toHaveText('Spice Route');
+  await expect(printout(page)).toContainText('346.80');
+  await expect(printout(page)).toContainText(/Platform charge \(2%\)\s*₹6\.80/); // lines add up to the total
+  await expect(printout(page)).toContainText(/Order\s*#1 · Table 1/);
+  await expect(printout(page)).not.toContainText('ORDER TOKEN');
+  expect(await printout(page).count()).toBe(1); // replaces the KOT, never piles up
+
+  expect(popups).toBe(0);
   expect(cspErrors).toEqual([]);
+});
+
+test('kitchen: a mistaken "Served" can be undone (toast and toolbar)', async ({ page }) => {
+  const c = await seedCafe();
+  const { token } = await login(c.cafe.email);
+  const a = (await placeOrder(c.slug, twoItems(c), { table_token: c.tables['1'].qr_token, customer_name: 'Asha' })).order;
+  const b = (await placeOrder(c.slug, twoItems(c), { table_token: c.tables['2'].qr_token, customer_name: 'Ravi' })).order;
+  await advance(token, a.id, 'ready');
+  await advance(token, b.id, 'ready');
+  const status = async (id) => (await q('SELECT status FROM orders WHERE id = $1', [id]))[0].status;
+
+  await signIn(page, c.cafe.email);
+  await page.goto('/owner/kitchen'); // By Table is the default view
+  await expect(page.getByRole('button', { name: 'By Table view' })).toHaveAttribute('aria-pressed', 'true');
+
+  const asha = page.getByText('Asha').filter({ visible: true }).first();
+  await expect(asha).toBeVisible();
+  await page.getByRole('button', { name: 'Mark as Served →' }).first().click();
+  await expect.poll(() => Promise.all([status(a.id), status(b.id)])).toContain('served');
+  const servedId = (await status(a.id)) === 'served' ? a.id : b.id;
+
+  // Undo from the toast
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect.poll(() => status(servedId)).toBe('ready');
+  await expect(page.getByText(servedId === a.id ? 'Asha' : 'Ravi').filter({ visible: true }).first()).toBeVisible();
+
+  // …or later from the toolbar, after the toast has gone
+  await page.getByRole('button', { name: 'Mark as Served →' }).first().click();
+  await expect.poll(() => Promise.all([status(a.id), status(b.id)])).toContain('served');
+  await page.getByRole('button', { name: 'Undo last change' }).click();
+  await expect.poll(() => Promise.all([status(a.id), status(b.id)])).toEqual(['ready', 'ready']);
 });
 
 test('split bill: shares must add up, then the table is paid with the split recorded', async ({ page }) => {

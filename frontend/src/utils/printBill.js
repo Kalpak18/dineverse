@@ -1,8 +1,10 @@
 import { tableName } from './tableName';
-import { openPrintWindow } from './printWindow';
+import { printDocument } from './printWindow';
 
 /**
- * printBill — opens a GST-compliant 80mm thermal receipt in a new window and prints.
+ * printBill — prints a GST-compliant 80mm thermal receipt (opens the print dialog).
+ * The café is the headline; the order token is just one detail line, so a
+ * bill never looks like a kitchen ticket.
  *
  * Compliant with:
  *  - Indian GST invoice rules (CGST + SGST split, GSTIN, SAC code 996331)
@@ -124,15 +126,19 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     }
     p { line-height: 1.5; }
 
-    /* ── Header ── */
+    /* ── Header: the café is the headline ── */
+    .brand { text-align: center; padding-bottom: 4px; }
+    .logo { display: block; max-height: 52px; max-width: 60%; margin: 0 auto 4px; object-fit: contain; filter: grayscale(1); }
     .cafe-name {
-      font-size: 15px;
-      font-weight: bold;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 21px;
+      font-weight: 900;
+      line-height: 1.15;
       text-align: center;
-      text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.5px;
+      word-break: break-word;
     }
-    .sub { font-size: 10px; text-align: center; line-height: 1.6; }
+    .sub { font-size: 10px; text-align: center; line-height: 1.5; margin-top: 3px; color: #222; }
     .bill-title {
       text-align: center;
       font-size: 11px;
@@ -207,29 +213,16 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 <body>
 
   <!-- ── Café Header ── -->
-  <p class="cafe-name">${escHtml(cafe?.name || 'Café')}</p>
-  <div class="sub">
-    ${cafe?.address  ? `<p>${escHtml(cafe.address)}</p>`            : ''}
-    ${cafe?.phone    ? `<p>Ph: ${escHtml(cafe.phone)}</p>`          : ''}
-    ${cafe?.email    ? `<p>${escHtml(cafe.email)}</p>`              : ''}
-    ${cafe?.gst_number
-      ? `<p>GSTIN: ${escHtml(cafe.gst_number.toUpperCase())}</p>`   : ''}
-    ${cafe?.pan_number
-      ? `<p>PAN: ${escHtml(cafe.pan_number.toUpperCase())}</p>`      : ''}
-    ${cafe?.fssai_number
-      ? `<p>FSSAI No: ${escHtml(cafe.fssai_number)}</p>`            : ''}
-  </div>
-
-  <!-- ── Order Number Token (large, prominent) ── -->
-  <div style="border:2px solid #000;border-radius:6px;text-align:center;padding:6px 4px;margin:6px 0;">
-    <div style="font-size:9px;font-weight:bold;letter-spacing:2px;text-transform:uppercase;color:#555;margin-bottom:2px;">
-      ORDER TOKEN
-    </div>
-    <div style="font-size:36px;font-weight:900;letter-spacing:2px;line-height:1;">
-      #${dailyNum}
-    </div>
-    <div style="font-size:9px;color:#777;margin-top:2px;">
-      ${bill.isTakeaway ? '🥡 TAKEAWAY' : `🍽️ ${escHtml(tableName(bill.table_number).toUpperCase())}`}
+  <div class="brand">
+    ${cafe?.logo_url ? `<img class="logo" src="${escHtml(cafe.logo_url)}" alt="" />` : ''}
+    <p class="cafe-name">${escHtml(cafe?.name || 'Café')}</p>
+    <div class="sub">
+      ${cafe?.address  ? `<p>${escHtml(cafe.address)}</p>`            : ''}
+      ${cafe?.phone    ? `<p>Ph: ${escHtml(cafe.phone)}</p>`          : ''}
+      ${cafe?.gst_number
+        ? `<p>GSTIN: ${escHtml(cafe.gst_number.toUpperCase())}</p>`   : ''}
+      ${cafe?.fssai_number
+        ? `<p>FSSAI No: ${escHtml(cafe.fssai_number)}</p>`            : ''}
     </div>
   </div>
 
@@ -238,13 +231,9 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 
   <!-- ── Invoice Meta ── -->
   <div class="meta">
-    <div class="row"><span>Invoice No</span><span>${escHtml(invoiceNo)}</span></div>
-    <div class="row"><span>Date</span><span>${dateStr}</span></div>
-    <div class="row"><span>Time</span><span>${timeStr}</span></div>
-    <div class="row">
-      <span>Type</span>
-      <span>${bill.isTakeaway ? 'Takeaway' : `Dine-In · ${escHtml(tableName(bill.table_number))}`}</span>
-    </div>
+    <div class="row"><span>Bill No</span><span>${escHtml(invoiceNo)}</span></div>
+    <div class="row"><span>Date</span><span>${dateStr}, ${timeStr}</span></div>
+    <div class="row"><span>Order</span><span>#${escHtml(dailyNum)} · ${bill.isTakeaway ? 'Takeaway' : escHtml(tableName(bill.table_number))}</span></div>
     ${customerName ? `<div class="row"><span>Customer</span><span>${escHtml(customerName)}</span></div>` : ''}
     ${hasGst ? `<div class="row"><span>SAC Code</span><span>996331</span></div>` : ''}
   </div>
@@ -364,7 +353,7 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 </body>
 </html>`;
 
-  openPrintWindow(html, { features: 'width=420,height=750,toolbar=0,menubar=0,scrollbars=1', autoPrint: true });
+  printDocument(html);
 }
 
 function fmt(n) {
