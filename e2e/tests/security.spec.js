@@ -104,8 +104,12 @@ test('stored XSS in names, notes and chat never executes (screens and print pop-
   }
   await page.goto('/owner/orders');
   await expect(page.getByText(/Asha<img/).filter({ visible: true }).first()).toBeVisible(); // shown as text
-  // The printout is laid out inside the page itself
+  // KOT preview (sandboxed) and the printout itself
   await page.getByRole('button', { name: '📋 KOT' }).click();
+  const preview = page.getByRole('dialog', { name: 'KOT preview' }).frameLocator('iframe');
+  await expect(preview.locator('body')).toContainText('Asha<img');
+  expect(await preview.locator('img, script').count()).toBe(0);
+  await page.getByRole('dialog', { name: 'KOT preview' }).getByRole('button', { name: '🖨️ Print' }).click();
   const printout = page.locator('#dv-print-root');
   await expect(printout).toContainText('Asha<img');
   expect(await printout.locator('img, script').count()).toBe(0);

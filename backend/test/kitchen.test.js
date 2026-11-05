@@ -91,3 +91,38 @@ test('items carry their category station (subcategories inherit) and the feed li
   const cleared = await api(srv.base, 'PATCH', `/menu/categories/${drinks.body.category.id}`, { token, body: { station: '' } });
   assert.equal(cleared.body.category.station, null);
 });
+
+test('a status change returns the whole order with fresh item states (no stale ticks)', async () => {
+  const item = await createMenuItem(srv.db, cafe.id, 'Dosa', 90);
+  const order = await placeOrder(srv.base, cafe.slug, item.id);
+  await bump(order.id, 'confirmed');
+  await bump(order.id, 'preparing');
+  const r = await bump(order.id, 'ready');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.order.status, 'ready');
+  assert.ok(Array.isArray(r.body.order.items), 'items included');
+  assert.deepEqual(r.body.order.items.map((i) => i.item_status), ['ready']);
+  assert.ok('station' in r.body.order.items[0], 'same item shape as the kitchen feed');
+});
+
+test('switching an order to individual mode keeps cooking progress', async () => {
+  const a = await createMenuItem(srv.db, cafe.id, 'Idli', 60);
+  const order = await placeOrder(srv.base, cafe.slug, a.id, { items: [{ menu_item_id: a.id, quantity: 1 }, { menu_item_id: a.id, quantity: 2 }] });
+  await bump(order.id, 'confirmed');
+  await bump(order.id, 'preparing');
+  const before = await items(order.id);
+  const r = await api(srv.base, 'PATCH', `/orders/${order.id}/kitchen-mode`, { token: owner, body: { mode: 'individual' } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(await items(order.id), before); // was reset to pending
+  const accepted = (await srv.db.query('SELECT bool_and(accepted) AS ok FROM order_items WHERE order_id = $1', [order.id])).rows[0].ok;
+  assert.equal(accepted, true); // already-accepted order stays accepted
+});
+
+test('many simultaneous kitchen status changes all succeed', async () => {
+  // Status changes read the full order after saving — they must hand back
+  // their pooled connection first or a busy kitchen starves the pool
+  const item = await createMenuItem(srv.db, cafe.id, 'Vada', 40);
+  const orders = await Promise.all(Array.from({ length: 30 }, () => placeOrder(srv.base, cafe.slug, item.id)));
+  const results = await Promise.all(orders.map((o) => bump(o.id, 'confirmed')));
+  assert.deepEqual(results.map((r) => r.status).filter((s) => s !== 200), []);
+});

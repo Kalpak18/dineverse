@@ -924,6 +924,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   // serialize here instead of both passing the transition check simultaneously.
   // hashtext() maps the UUID string to a 32-bit int for pg_try_advisory_xact_lock.
   const client = await db.pool.connect();
+  let released = false;
   try {
     await client.query('BEGIN');
     const lockRes = await client.query(
@@ -1066,6 +1067,10 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   }
 
   await client.query('COMMIT');
+  // Done with the transaction: hand the connection back before the reads
+  // below borrow their own (holding it starves the pool under load)
+  client.release();
+  released = true;
 
   // Log the status transition (fire-and-forget)
   db.query(
@@ -1078,8 +1083,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
   ).catch((err) => logger.warn('order_events insert failed for order %s: %s', id, err.message));
 
   const updatedOrder = result.rows[0];
+  // Staff screens get the whole order with its items: moving an order also
+  // moves its items, and a status-only payload left item ticks stale on the
+  // kitchen screen. The customer's room keeps the slim payload (no phone etc.).
+  const fullOrder = await getOrderWithItems(id, req.cafeId).catch(() => null);
+  const staffOrder = fullOrder ? { ...updatedOrder, ...fullOrder } : updatedOrder;
   if (req.io) {
-    req.io.to(`cafe:${req.cafeId}`).emit('order_updated', updatedOrder);
+    req.io.to(`cafe:${req.cafeId}`).emit('order_updated', staffOrder);
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
@@ -1099,13 +1109,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     }).catch((e) => logger.warn('post-paid hooks failed for order %s: %s', id, e.message));
   }
 
-  ok(res, { order: updatedOrder });
+  ok(res, { order: staffOrder });
 
   } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (!released) await client.query('ROLLBACK').catch(() => {});
     throw err;
   } finally {
-    client.release();
+    if (!released) client.release();
   }
 });
 
@@ -1756,12 +1766,14 @@ exports.setKitchenMode = asyncHandler(async (req, res) => {
     [mode, id]
   );
 
-  // When switching to individual: reset item statuses to pending so the kitchen
-  // sees a clean slate. Do NOT auto-accept — the kitchen must explicitly accept
-  // or reject each item (or the whole order) before cooking can begin.
+  // Switching to individual keeps the kitchen's progress (it used to reset
+  // every item to pending, wiping what was already cooking or ready). Items of
+  // an order the kitchen already accepted count as accepted; a still-pending
+  // order waits for per-item accept/reject.
   if (mode === 'individual') {
     await db.query(
-      "UPDATE order_items SET item_status = 'pending', accepted = false WHERE order_id = $1",
+      `UPDATE order_items SET accepted = (SELECT status <> 'pending' FROM orders WHERE id = $1)
+       WHERE order_id = $1 AND item_status <> 'cancelled'`,
       [id]
     );
   }

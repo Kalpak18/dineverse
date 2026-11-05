@@ -9,6 +9,7 @@ import AdminLayout from './components/AdminLayout';
 import CafeLayout from './components/CafeLayout';
 import LoadingSpinner from './components/LoadingSpinner';
 import InstallBanner from './components/InstallBanner';
+import PrintPreview from './components/PrintPreview';
 
 // ─── Lazy page bundles ────────────────────────────────────────────────────────
 // Each group becomes its own JS chunk. The browser downloads only the chunk
@@ -170,6 +171,8 @@ export default function App() {
       {/* Always mounted (not a catch-all route) so Electron deep links work on
           every page and the real 404 route below can match */}
       <ElectronBridge />
+      {/* Bills / KOTs open here first: Print · WhatsApp · Share · Close */}
+      <PrintPreview />
       {/* Single Suspense boundary: shows a spinner while any lazy chunk loads */}
       <Suspense fallback={<LoadingSpinner />}>
         <Routes>

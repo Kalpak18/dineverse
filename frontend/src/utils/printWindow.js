@@ -1,12 +1,23 @@
-// Prints a receipt, KOT or serving slip from the current page: the document
-// goes into a print-only container and the browser's print dialog opens —
-// no pop-up window. On screen the container stays hidden and the app is
-// untouched; while printing, only the document is shown.
-// The HTML is a full document whose <style> applies only to the printout.
-// It must not rely on scripts: the site's CSP blocks inline JS.
+// Bills, KOTs and serving slips are shown in an in-app preview first
+// (components/PrintPreview.jsx) with Print / WhatsApp / Share / Close — never
+// straight into the phone's print screen, which feels like leaving the app.
+// The HTML is a full document whose <style> applies only to the printout. It
+// must not rely on scripts: the site's CSP blocks inline JS.
 const ROOT_ID = 'dv-print-root';
+export const PRINT_EVENT = 'dv:print-preview';
 
-export function printDocument(html) {
+let previewMounted = false;
+export const setPreviewMounted = (mounted) => { previewMounted = mounted; };
+
+// share: { text, phone } — a plain-text copy for WhatsApp / the share sheet
+export function printDocument(html, { title = 'Print', share = null } = {}) {
+  if (!previewMounted) return printNow(html); // no preview host (shouldn't happen)
+  window.dispatchEvent(new CustomEvent(PRINT_EVENT, { detail: { html, title, share } }));
+}
+
+// Opens the browser's print dialog for the document, from this page: it goes
+// into a print-only container (hidden on screen; only it is shown on paper).
+export function printNow(html) {
   document.getElementById(ROOT_ID)?.remove();
   document.getElementById(`${ROOT_ID}-style`)?.remove();
 

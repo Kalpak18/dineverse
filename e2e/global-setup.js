@@ -35,7 +35,8 @@ module.exports = async () => {
   const dbUrl = Object.assign(new URL(adminUrl), { pathname: `/${dbName}` }).toString();
   execFileSync('node', ['scripts/migrate.js'], { cwd: BACKEND, env: { ...process.env, DATABASE_URL: dbUrl }, stdio: 'ignore' });
 
-  if (!process.env.E2E_SKIP_BUILD) {
+  // E2E_SKIP_BUILD=1 reuses the last e2e build (only valid if nothing rebuilt frontend/dist since)
+  if (process.env.E2E_SKIP_BUILD !== '1') {
     execFileSync('npx', ['vite', 'build'], {
       cwd: FRONTEND, stdio: 'ignore',
       env: { ...process.env, VITE_BACKEND_URL: apiOrigin, VITE_API_URL: '' },

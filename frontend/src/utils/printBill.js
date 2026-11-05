@@ -353,7 +353,24 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
 </body>
 </html>`;
 
-  printDocument(html);
+  // Plain-text copy for WhatsApp / share (digital bills are common in India)
+  const shareText = [
+    `*${cafe?.name || 'Bill'}*`,
+    `${hasGst ? 'Tax Invoice' : 'Bill'} ${invoiceNo} · ${dateStr}, ${timeStr}`,
+    `Order #${dailyNum} · ${bill.isTakeaway ? 'Takeaway' : tableName(bill.table_number)}`,
+    '',
+    ...(bill.aggregatedItems || []).map((i) => `${i.qty} × ${i.name} — ${sym}${fmt(i.total)}`),
+    '',
+    ...(hasGst ? [`CGST ${sym}${fmt(cgst)} · SGST ${sym}${fmt(sgst)}`] : []),
+    ...(platformFee > 0 ? [`Platform charge ${sym}${fmt(platformFee)}`] : []),
+    ...(discountAmt > 0 ? [`Discount -${sym}${fmt(discountAmt)}`] : []),
+    `*Total ${sym}${fmt(total)}*${isPending ? '' : ` · Paid (${modeLabel})`}`,
+    ...(cafe?.gst_number ? [`GSTIN ${cafe.gst_number.toUpperCase()}`] : []),
+    '',
+    cafe?.bill_footer || 'Thank you for your visit!',
+  ].join('\n').replace(/&#[0-9]+;|&[a-z]+;/g, (e) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"' }[e] || e));
+  const phone = bill.orders?.[0]?.customer_phone || bill.customerPhone || '';
+  printDocument(html, { title: isPending ? 'Bill' : 'Receipt', share: { text: shareText, phone } });
 }
 
 function fmt(n) {

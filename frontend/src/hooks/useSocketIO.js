@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../utils/socketUrl';
 import { ownerSocketAuth } from '../utils/socketAuth';
@@ -12,6 +12,15 @@ function getAudioContext() {
   return audioCtx;
 }
 
+// Browsers keep sound off until someone taps the page. Screens that must not
+// miss an order (kitchen) show a "tap to turn on sound" prompt until then.
+export function soundIsLocked() {
+  try { return getAudioContext().state !== 'running'; } catch { return false; }
+}
+export function unlockSound() {
+  try { return getAudioContext().resume(); } catch { return Promise.resolve(); }
+}
+
 /**
  * useSocketIO — persistent Socket.io connection hook
  * Handles auto-reconnection, room management, and event listeners.
@@ -19,9 +28,11 @@ function getAudioContext() {
  * cafeId changes) so navigating between owner pages doesn't pile up sockets.
  * onReconnect runs after every (re)join of the café room; return its fetch
  * promise so live events arriving meanwhile are applied after it.
+ * Returns { connected } so a screen can warn when it isn't receiving live updates.
  */
 export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation, { onReconnect, events } = {}) {
   const socketRef = useRef(null);
+  const [connected, setConnected] = useState(true);
   const onNewOrderRef = useRef(onNewOrder);
   const onOrderUpdatedRef = useRef(onOrderUpdated);
   const onNewReservationRef = useRef(onNewReservation);
@@ -90,9 +101,11 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
       if (onNewReservationRef.current) onNewReservationRef.current(reservation);
     });
 
-    const handleConnect = join; // first connect and every reconnect
+    const handleConnect = () => { setConnected(true); join(); }; // first connect and every reconnect
+    const handleDisconnect = () => setConnected(false);
 
     const handleConnectError = (error) => {
+      setConnected(false);
       console.error('Socket connection error:', error);
     };
 
@@ -100,6 +113,7 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
     socket.on('order_updated', handleOrderUpdated);
     socket.on('new_reservation', handleNewReservation);
     socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     const extraNames = Object.keys(eventsRef.current || {});
     const extraHandlers = extraNames.map((name) => {
@@ -113,12 +127,15 @@ export function useSocketIO(cafeId, onNewOrder, onOrderUpdated, onNewReservation
       socket.off('order_updated', handleOrderUpdated);
       socket.off('new_reservation', handleNewReservation);
       socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
       socket.off('connect_error', handleConnectError);
       extraHandlers.forEach(([name, h]) => socket.off(name, h));
       socket.disconnect(); // also leaves every room server-side
       socketRef.current = null;
     };
   }, [cafeId]);
+
+  return { connected };
 }
 
 // Each tune: array of [freq, startSec, stopSec, waveType?]

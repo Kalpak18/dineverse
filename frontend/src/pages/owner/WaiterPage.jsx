@@ -69,7 +69,8 @@ export default function WaiterPage() {
     },
     (updated) => {
       setOrders((prev) => {
-        if (!ACTIVE_STATUSES.includes(updated.status))
+        // Updates without a status (table moves, rider events) only merge
+        if (updated.status && !ACTIVE_STATUSES.includes(updated.status))
           return prev.filter((o) => o.id !== updated.id);
         return prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o);
       });

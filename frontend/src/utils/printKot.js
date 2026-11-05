@@ -111,7 +111,7 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
 </body>
 </html>`;
 
-  printDocument(html);
+  printDocument(html, { title: 'KOT' });
 }
 
 /**
@@ -170,7 +170,7 @@ export function printFullKot(kot, cafeName) {
 </body>
 </html>`;
 
-  printDocument(html);
+  printDocument(html, { title: 'KOT' });
 }
 
 function escHtml(str) {

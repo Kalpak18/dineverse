@@ -53,9 +53,9 @@ test('kitchen screen picks up a new order live', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'New orders' })).toContainText('Table 2');
 });
 
-test('KOT and bill print from the page itself — no pop-up window, no CSP errors', async ({ page, context }) => {
+test('KOT and bill open an in-app preview: Print, WhatsApp, Back/Close stay in the app', async ({ page, context }) => {
   const c = await seedCafe();
-  await placeOrder(c.slug, twoItems(c), { table_token: c.tables['1'].qr_token });
+  await placeOrder(c.slug, twoItems(c), { table_token: c.tables['1'].qr_token, customer_phone: '9876543210' });
   await stubPrint(page);
   await signIn(page, c.cafe.email);
   await page.goto('/owner/orders');
@@ -65,21 +65,38 @@ test('KOT and bill print from the page itself — no pop-up window, no CSP error
   context.on('console', (m) => { if (/Content Security Policy/i.test(m.text())) cspErrors.push(m.text()); });
   context.on('page', () => { popups += 1; });
 
+  // KOT: preview first, nothing printed until asked
   await page.getByRole('button', { name: '📋 KOT' }).click();
+  const kot = page.getByRole('dialog', { name: 'KOT preview' });
+  await expect(kot).toBeVisible();
+  await expect(kot.frameLocator('iframe').locator('body')).toContainText('Paneer Tikka');
+  expect(await page.evaluate(() => window.__printed)).toBe(0);
+  await kot.getByRole('button', { name: '🖨️ Print' }).click();
   await expect.poll(() => page.evaluate(() => window.__printed)).toBe(1);
   await expect(printout(page)).toContainText('Paneer Tikka');
-  await expect(printout(page)).toBeHidden(); // only visible on paper, never on screen
+  await expect(printout(page)).toBeHidden(); // only on paper, never on screen
 
+  // The phone's Back button closes the preview and stays on Orders
+  await page.goBack();
+  await expect(kot).toBeHidden();
+  await expect(page).toHaveURL(/\/owner\/orders/);
+
+  // Bill: café is the headline; WhatsApp carries the bill text
   await page.getByRole('button', { name: '🖨️ Bill' }).click(); // opens the billing sheet
   await page.getByRole('button', { name: '🖨️ Print Draft Bill' }).click();
-  await expect.poll(() => page.evaluate(() => window.__printed)).toBe(2);
-  // The bill leads with the café; the order number is a small detail line
-  await expect(printout(page).locator('.cafe-name')).toHaveText('Spice Route');
-  await expect(printout(page)).toContainText('346.80');
-  await expect(printout(page)).toContainText(/Platform charge \(2%\)\s*₹6\.80/); // lines add up to the total
-  await expect(printout(page)).toContainText(/Order\s*#1 · Table 1/);
-  await expect(printout(page)).not.toContainText('ORDER TOKEN');
-  expect(await printout(page).count()).toBe(1); // replaces the KOT, never piles up
+  const bill = page.getByRole('dialog', { name: 'Bill preview' });
+  const doc = bill.frameLocator('iframe');
+  await expect(doc.locator('.cafe-name')).toHaveText('Spice Route');
+  await expect(doc.locator('body')).toContainText(/Order\s*#1 · Table 1/);
+  await expect(doc.locator('body')).toContainText(/Platform charge \(2%\)\s*₹6\.80/); // lines add up
+  await expect(doc.locator('body')).not.toContainText('ORDER TOKEN');
+  const wa = await bill.getByRole('link', { name: /WhatsApp/ }).getAttribute('href');
+  expect(wa).toMatch(/^https:\/\/wa\.me\/919876543210\?text=/);
+  expect(decodeURIComponent(wa)).toContain('Total ₹346.80');
+  await bill.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(bill).toBeHidden();
+  await expect(page).toHaveURL(/\/owner\/orders/);
+  expect(await page.evaluate(() => window.__printed)).toBe(1); // Close never prints
 
   expect(popups).toBe(0);
   expect(cspErrors).toEqual([]);

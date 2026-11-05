@@ -104,8 +104,8 @@ test('call waiter and request bill reach floor staff live', async ({ page, brows
 
   await panel.getByRole('button', { name: 'On my way' }).first().click();
   await expect(panel.getByRole('button', { name: 'On my way' })).toHaveCount(1);
-  const open = await q(`SELECT count(*)::int AS n FROM service_requests WHERE cafe_id = $1 AND acknowledged_at IS NULL`, [c.cafe.id]);
-  expect(open[0].n).toBe(1);
+  await expect.poll(async () => (await q(
+    `SELECT count(*)::int AS n FROM service_requests WHERE cafe_id = $1 AND acknowledged_at IS NULL`, [c.cafe.id]))[0].n).toBe(1);
   await staffCtx.close();
 });
 

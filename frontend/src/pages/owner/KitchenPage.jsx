@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { getKitchenOrders, updateOrderStatus, updateItemStatus, setKitchenMode, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, reorderOrderItems, setItemPrepTime } from '../../services/api';
+import { getKitchenOrders, getOrderById, updateOrderStatus, updateItemStatus, acceptOrder, rejectOrder, acceptItem, rejectItem, cancelOrderItem, setItemPrepTime } from '../../services/api';
 import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../../utils/prepTime';
 import { useAuth } from '../../context/AuthContext';
-import { useSocketIO, playNotificationSound, SOUND_PREF_KEY } from '../../hooks/useSocketIO';
+import { useSocketIO, playNotificationSound, SOUND_PREF_KEY, soundIsLocked, unlockSound } from '../../hooks/useSocketIO';
 import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import { printDocument } from '../../utils/printWindow';
 import { fmtToken, fmtTime } from '../../utils/formatters';
@@ -79,7 +79,7 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 </body>
 </html>`;
 
-  printDocument(html);
+  printDocument(html, { title: 'Serving slip' });
 }
 
 const OVERDUE_MS = 20 * 60 * 1000;       // 20 min = overdue
@@ -850,6 +850,14 @@ export default function KitchenPage() {
   const [viewMode, setViewMode]           = usePersisted('kds_viewmode_v2', 'combined');
   // Last 5 status changes for Undo: { id, from }
   const [recallStack, setRecallStack]     = useState([]);
+  // Reliability: when the screen last heard from the server, and kitchen
+  // actions still waiting for it (retried until they land)
+  const [lastSync, setLastSync]           = useState(() => Date.now());
+  const [saving, setSaving]               = useState(0);
+  const [retrying, setRetrying]           = useState(false);
+  const [online, setOnline]               = useState(() => navigator.onLine !== false);
+  const [soundLocked, setSoundLocked]     = useState(() => soundIsLocked());
+  const [showOffline, setShowOffline]     = useState(false);
   // Serving slips print only when the kitchen turns this on
   const [autoSlip, setAutoSlip]           = usePersisted('kds_auto_slip', false);
   const [stations, setStations]           = useState([]); // e.g. ['Bar', 'Tandoor'] from menu categories
@@ -885,6 +893,7 @@ export default function KitchenPage() {
       const { data } = await latest(getKitchenOrders());
       setOrders(data.orders.filter((o) => KITCHEN_STATUSES.includes(o.status)));
       setStations(data.stations || []);
+      setLastSync(Date.now());
       if (isRefresh) toast('Orders refreshed', { icon: '✓', style: { background: '#1f2937', color: '#fff' } });
     } catch (err) { if (!isStale(err)) toast.error(`Couldn't load orders: ${getApiError(err)}`); }
     finally { setLoading(false); setRefreshing(false); }
@@ -892,7 +901,63 @@ export default function KitchenPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  useSocketIO(
+  // Show the server's copy of an order (or take it off once it has left the
+  // kitchen). Updates without a status — table moves, rider events — only
+  // merge: they must never make an order disappear.
+  const applyOrder = useCallback((order) => {
+    if (!order?.id) return;
+    setOrders((prev) => {
+      if (order.status && !KITCHEN_STATUSES.includes(order.status)) return prev.filter((o) => o.id !== order.id);
+      if (prev.some((o) => o.id === order.id)) return prev.map((o) => (o.id === order.id ? { ...o, ...order } : o));
+      // e.g. a served order brought back by Undo on another screen
+      return order.status && order.items ? [...prev, order] : prev;
+    });
+  }, []);
+
+  // Every kitchen action goes through here so a tap is never lost:
+  // - no answer (Wi-Fi blip, server restarting): keep retrying, shown as "Saving…"
+  // - the server refuses (another screen moved it first, or our earlier try
+  //   did land): look at the order — if it is already where this tap wanted
+  //   it, that's success; otherwise show the latest state with a short note
+  const send = useCallback(async (orderId, call, isDone) => {
+    setSaving((n) => n + 1);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          const { data } = await call();
+          setLastSync(Date.now());
+          return data;
+        } catch (err) {
+          const status = err?.response?.status;
+          if (status && status < 500 && status !== 408 && status !== 429) {
+            const fresh = await getOrderById(orderId).then((r) => r.data.order).catch(() => null);
+            if (fresh) applyOrder(fresh);
+            if (fresh && isDone?.(fresh)) return { order: fresh };
+            toast(fresh ? 'Already changed on another screen — showing the latest' : getApiError(err),
+              { icon: '↻', style: { background: '#1f2937', color: '#fff' } });
+            if (!fresh) fetchOrders();
+            return null;
+          }
+          setRetrying(true);
+          await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 5000)));
+        }
+      }
+    } finally {
+      setSaving((n) => n - 1);
+    }
+  }, [applyOrder, fetchOrders]);
+
+  useEffect(() => { if (!saving) setRetrying(false); }, [saving]);
+
+  // Closing the tab while a change is still being saved would lose it
+  useEffect(() => {
+    if (!saving) return undefined;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [saving]);
+
+  const { connected } = useSocketIO(
     cafe?.id,
     (order) => {
       if (KITCHEN_STATUSES.includes(order.status)) {
@@ -904,50 +969,105 @@ export default function KitchenPage() {
         playNotificationSound(); // shared player: honours mute, one sound per order
         toast('New order!', { icon: '🔔', style: { background: '#1f2937', color: '#fff' } });
       }
+      setLastSync(Date.now());
     },
     (updated) => {
-      setOrders((prev) => {
-        if (!KITCHEN_STATUSES.includes(updated.status)) return prev.filter((o) => o.id !== updated.id);
-        return prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o);
-      });
+      applyOrder(updated);
+      setLastSync(Date.now());
     },
     undefined,
     // Orders placed during a Wi-Fi blip never arrive as events — refetch
     { onReconnect: () => fetchOrders() }
   );
 
+  // ── Staying live ──────────────────────────────────────────────
+  const live = connected && online;
+  useEffect(() => {
+    const goOnline = () => { setOnline(true); fetchOrders(); };
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, [fetchOrders]);
+  // Not receiving live updates: check for orders every 20 s until it's back,
+  // and warn after a few seconds (short blips shouldn't flash a banner)
+  useEffect(() => {
+    if (live) { setShowOffline(false); return undefined; }
+    const warn = setTimeout(() => setShowOffline(true), 4000);
+    const poll = setInterval(() => fetchOrders(), 20000);
+    return () => { clearTimeout(warn); clearInterval(poll); };
+  }, [live, fetchOrders]);
+
+  // Kitchen screens run all day: keep the display from sleeping
+  useEffect(() => {
+    let lock = null;
+    const request = () => navigator.wakeLock?.request('screen').then((l) => { lock = l; }).catch(() => {});
+    const onVisible = () => { if (document.visibilityState === 'visible') request(); };
+    request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { document.removeEventListener('visibilitychange', onVisible); lock?.release?.().catch(() => {}); };
+  }, []);
+
+  // Browsers mute sound until the first tap — any tap on the screen turns it on
+  useEffect(() => {
+    const unlock = () => unlockSound().then(() => setSoundLocked(soundIsLocked())).catch(() => {});
+    document.addEventListener('pointerdown', unlock);
+    return () => document.removeEventListener('pointerdown', unlock);
+  }, []);
+
+  const secsSinceSync = Math.max(0, Math.round((now - lastSync) / 1000));
+  const statusBars = (
+    <>
+      {showOffline && (
+        <div role="alert" className="flex-shrink-0 bg-red-600 text-white px-4 py-2 flex items-center justify-between gap-3 text-sm font-bold">
+          <span>⚠️ Offline — new orders may not show. Last updated {secsSinceSync < 60 ? 'under a minute' : `${Math.round(secsSinceSync / 60)} min`} ago.</span>
+          <button type="button" onClick={() => fetchOrders(true)} className="min-h-[40px] px-3 rounded-lg bg-white/20 flex-shrink-0">Retry now</button>
+        </div>
+      )}
+      {soundEnabled && soundLocked && (
+        <button type="button" onClick={() => unlockSound().then(() => setSoundLocked(soundIsLocked()))}
+          className="flex-shrink-0 w-full bg-amber-500 text-gray-950 px-4 py-2 text-sm font-bold text-left">
+          🔇 Sound is off until you tap the screen — tap here to hear new orders
+        </button>
+      )}
+      {saving > 0 && (
+        <div role="status" className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-bold shadow-lg ${retrying ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-100'}`}>
+          {retrying ? '⏳ Not saved yet — retrying…' : '⏳ Saving…'}
+        </div>
+      )}
+    </>
+  );
+
   // Lanes view: tap a ticket header to move it to the next lane. NEW covers
   // pending + confirmed ('confirmed' means nothing to a cook), so a NEW
   // ticket goes straight to cooking.
   const handleBump = async (order) => {
-    try {
-      let from = order.status;
-      if (from === 'pending') { await updateOrderStatus(order.id, 'confirmed'); from = 'confirmed'; }
-      const next = kitchenNext(from, order.order_type);
-      if (!next) return;
-      await updateOrderStatus(order.id, next);
-      noteChange([{ order, from, next }]);
-      setOrders((prev) => KITCHEN_STATUSES.includes(next)
-        ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
-        : prev.filter((o) => o.id !== order.id));
-      if (next === 'ready') printReadySlip(order);
-    } catch (err) {
-      toast.error(`Couldn't update order: ${getApiError(err)}`);
-      fetchOrders();
+    let current = order;
+    if (current.status === 'pending') {
+      const accepted = await send(order.id, () => updateOrderStatus(order.id, 'confirmed'), (o) => o.status !== 'pending');
+      if (!accepted) return;
+      current = accepted.order;
     }
+    const from = current.status;
+    const next = kitchenNext(from, current.order_type);
+    if (!next) return;
+    const data = await send(order.id, () => updateOrderStatus(order.id, next), (o) => o.status === next);
+    if (!data) return;
+    applyOrder(data.order);
+    noteChange([{ order: current, from, next }]);
+    if (next === 'ready') printReadySlip(data.order);
   };
 
   // Put orders back where they were (one step back is always allowed)
   const undoChanges = async (changes) => {
     const ids = new Set(changes.map((c) => c.id));
     setRecallStack((st) => st.filter((c) => !ids.has(c.id)));
-    try {
-      for (const c of changes) await updateOrderStatus(c.id, c.from);
-      toast('Undone', { icon: '↶', style: { background: '#1f2937', color: '#fff' } });
-    } catch (err) {
-      toast.error(`Couldn't undo: ${getApiError(err)}`); // order moved on elsewhere
+    let undone = 0;
+    for (const c of changes) {
+      const data = await send(c.id, () => updateOrderStatus(c.id, c.from), (o) => o.status === c.from);
+      if (data) { applyOrder(data.order); undone += 1; } // a served ticket comes back
     }
-    fetchOrders(); // a served ticket comes back, items reload
+    if (undone) toast('Undone', { icon: '↶', style: { background: '#1f2937', color: '#fff' } });
   };
 
   const handleRecall = () => recallStack[0] && undoChanges([recallStack[0]]);
@@ -1004,26 +1124,20 @@ export default function KitchenPage() {
   const handleAdvance = async (order) => {
     const next = kitchenNext(order.status, order.order_type);
     if (!next) return;
-    try {
-      await updateOrderStatus(order.id, next);
-      noteChange([{ order, from: order.status, next }]);
-      if (!KITCHEN_STATUSES.includes(next)) {
-        setOrders((prev) => prev.filter((o) => o.id !== order.id));
-      } else {
-        setOrders((prev) => prev.map((o) => o.id === order.id ? { ...o, status: next } : o));
-      }
-      if (next === 'ready') printReadySlip(order);
-    } catch (err) { toast.error(`Couldn't update order: ${getApiError(err)}`); }
+    const data = await send(order.id, () => updateOrderStatus(order.id, next), (o) => o.status === next);
+    if (!data) return;
+    applyOrder(data.order);
+    noteChange([{ order, from: order.status, next }]);
+    if (next === 'ready') printReadySlip(data.order);
   };
 
   const handleItemUpdate = async (orderId, itemId, status) => {
     const prevStatus = orders.find((o) => o.id === orderId)?.status;
-    try {
-      const { data } = await updateItemStatus(orderId, itemId, status);
-      setOrders((prev) => {
-        if (!KITCHEN_STATUSES.includes(data.order.status)) return prev.filter((o) => o.id !== orderId);
-        return prev.map((o) => (o.id === orderId ? data.order : o));
-      });
+    const data = await send(orderId, () => updateItemStatus(orderId, itemId, status),
+      (o) => (o.items || []).some((i) => i.id === itemId && i.item_status === status));
+    if (!data) return;
+    {
+      applyOrder(data.order);
 
       // Server starts the ETA from the item's default prep time; only ask when
       // the menu item has none
@@ -1036,8 +1150,6 @@ export default function KitchenPage() {
       if (status === 'ready' && data.order.status === 'ready' && prevStatus !== 'ready') {
         printReadySlip(data.order);
       }
-    } catch (err) {
-      toast.error('Failed to update item status');
     }
   };
 
@@ -1074,36 +1186,30 @@ export default function KitchenPage() {
   const handleAdvanceAll = async (groupOrders) => {
     const toAdvance = groupOrders.filter((o) => kitchenNext(o.status, o.order_type));
     if (!toAdvance.length) return;
-    const changes = toAdvance.map((order) => ({ order, from: order.status, next: kitchenNext(order.status, order.order_type) }));
-    try {
-      await Promise.all(toAdvance.map(async (order) => {
-        const next = kitchenNext(order.status, order.order_type);
-        await updateOrderStatus(order.id, next);
-        if (next === 'ready') printReadySlip(order);
-        setOrders((prev) =>
-          KITCHEN_STATUSES.includes(next)
-            ? prev.map((o) => (o.id === order.id ? { ...o, status: next } : o))
-            : prev.filter((o) => o.id !== order.id)
-        );
-      }));
-      noteChange(changes);
-    } catch (err) { toast.error(`Couldn't advance some orders: ${getApiError(err)}`); }
+    const done = await Promise.all(toAdvance.map(async (order) => {
+      const next = kitchenNext(order.status, order.order_type);
+      const data = await send(order.id, () => updateOrderStatus(order.id, next), (o) => o.status === next);
+      if (!data) return null;
+      applyOrder(data.order);
+      if (next === 'ready') printReadySlip(data.order);
+      return { order, from: order.status, next };
+    }));
+    noteChange(done.filter(Boolean));
   };
 
   const handleAcceptOrder = async (orderId) => {
-    try {
-      const { data } = await acceptOrder(orderId);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-      toast.success('Order accepted');
-    } catch (err) { toast.error(`Couldn't accept order: ${getApiError(err)}`); }
+    const data = await send(orderId, () => acceptOrder(orderId), (o) => o.status !== 'pending');
+    if (!data) return;
+    applyOrder(data.order);
+    toast.success('Order accepted');
   };
 
   const handleAcceptItem = async (orderId, itemId) => {
-    try {
-      const { data } = await acceptItem(orderId, itemId);
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? data.order : o)));
-      toast.success('Item accepted');
-    } catch (err) { toast.error(`Couldn't accept item: ${getApiError(err)}`); }
+    const data = await send(orderId, () => acceptItem(orderId, itemId),
+      (o) => (o.items || []).some((i) => i.id === itemId && i.accepted));
+    if (!data) return;
+    applyOrder(data.order);
+    toast.success('Item accepted');
   };
 
   const handleRejectItemSubmit = async () => {
@@ -1362,6 +1468,7 @@ export default function KitchenPage() {
 
     return (
       <div className="h-full bg-gray-950 text-white flex flex-col overflow-hidden">
+        {statusBars}
         {/* Station header */}
         <div className={`flex-shrink-0 flex items-center gap-3 px-4 py-3 ${headerBg} border-b ${borderCol}`}>
           <span className={`w-4 h-4 rounded ${dotBg} flex-shrink-0`} />
@@ -1420,6 +1527,7 @@ export default function KitchenPage() {
   // ── NORMAL UNIFIED / SPLIT VIEW ──
   return (
     <div className="h-full bg-gray-950 text-white flex flex-col overflow-hidden">
+      {statusBars}
 
       {/* ── Header ── */}
       {/* Phone: title row, then a scrollable toolbar row. md+: one row. */}
