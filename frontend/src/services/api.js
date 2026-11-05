@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { loadOrders } from '../utils/cafeOrderStorage';
+import { reportRequest } from '../utils/networkHealth';
 
 // Dev: Vite proxy sends /api → localhost:5000 (no env var needed)
 // Production: set VITE_API_URL=https://your-api.example.com/api
@@ -64,8 +65,10 @@ const AUTH_ENDPOINTS = ['/auth/login', '/auth/refresh', '/auth/register', '/auth
 // if the refresh token itself is rejected.
 // On network error (no response) → retry GET requests once (safe, idempotent).
 api.interceptors.response.use(
-  (res) => res,
+  (res) => { reportRequest(true); return res; },
   async (err) => {
+    // No response at all = the connection, not the server (screens show it)
+    if (!axios.isCancel(err)) reportRequest(!!err.response);
     const cfg = err.config;
     if (err.response?.status === 401 && cfg && !cfg._authRetry &&
         localStorage.getItem('dineverse_token') &&
@@ -223,7 +226,7 @@ const orderAuth = (slug, id) => {
   const token = loadOrders(slug).find((o) => o.id === id)?.customer_token;
   return token ? { headers: { 'X-Order-Token': token } } : undefined;
 };
-export const placeOrder = (slug, data) => api.post(`/orders/cafe/${slug}/orders`, data);
+export const placeOrder = (slug, data, config) => api.post(`/orders/cafe/${slug}/orders`, data, config);
 export const getDeliveryQuote = (slug, data) => api.post(`/orders/cafe/${slug}/delivery-quote`, data);
 // Call waiter / request bill — customer (needs the order secret) and staff sides
 export const requestService     = (slug, id, type) => api.post(`/orders/cafe/${slug}/orders/${id}/service-request`, { type }, orderAuth(slug, id));

@@ -13,6 +13,8 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import QuantityControl from '../../components/QuantityControl';
 import CustomerTour from '../../components/CustomerTour';
 import { useT, localized } from '../../i18n';
+import toast from 'react-hot-toast';
+import { tableName } from '../../utils/tableName';
 
 const FALLBACK_EMOJI_MAP = {
   momos: '🥟', pizza: '🍕', burger: '🍔', biryani: '🍚',
@@ -36,6 +38,10 @@ function getCategoryEmoji(name, emojiMap = FALLBACK_EMOJI_MAP) {
   }
   return DEFAULT_EMOJI;
 }
+
+// Dishes the café tagged as popular get a "Bestseller" ribbon and a section
+const BESTSELLER_TAGS = ['bestseller', 'best seller', 'popular', 'recommended', 'must try', "chef's special", 'chef special'];
+const isBestseller = (item) => Array.isArray(item.tags) && item.tags.some((tag) => BESTSELLER_TAGS.includes(String(tag).toLowerCase()));
 
 function FoodDot({ isVeg }) {
   const { t } = useT();
@@ -79,6 +85,8 @@ export default function MenuPage() {
   const allOrders = loadOrders(slug);
   const activeOrders = allOrders.filter((o) => !['paid', 'cancelled'].includes(o.status));
   const c = (n) => fmtCurrency(n, session?.currency || cafe?.currency || 'INR');
+  // Menu prices read like a menu: ₹120, not ₹120.00 (paise only when present)
+  const cMenu = (n) => (Number.isInteger(Number(n)) ? c(n).replace(/[.,]00$/, '') : c(n));
 
   useEffect(() => {
     getPublicSetting('category_emoji_map')
@@ -361,11 +369,46 @@ export default function MenuPage() {
     return true;
   };
 
-  const handleCategorySelect = (catId) => {
-    setSelectedCatId(catId);
-    setSearch('');
-    contentRef.current?.scrollTo({ top: 0, behavior: 'instant' });
+
+
+  // ── Continuous menu: which section is on screen, jump to one, MENU list ──
+  const [activeSection, setActiveSection] = useState(null);
+  const [menuSheet, setMenuSheet] = useState(false);
+  const STICKY_OFFSET = 128; // sticky search + category tabs
+  // A section's position inside the scrolling menu
+  const sectionTop = (root, el) => root.scrollTop + el.getBoundingClientRect().top - root.getBoundingClientRect().top;
+  const jumpTo = (id) => {
+    const root = contentRef.current;
+    const el = root?.querySelector(`[data-section="${id}"]`);
+    if (!root || !el) return;
+    setActiveSection(id);
+    root.scrollTo({ top: sectionTop(root, el) - STICKY_OFFSET + 4, behavior: 'smooth' });
   };
+  useEffect(() => {
+    const root = contentRef.current;
+    if (!root || loading) return undefined;
+    // Highlight the tab of the section at the top of the screen
+    const onScroll = () => {
+      const els = [...root.querySelectorAll('[data-section]')];
+      let current = els[0]?.dataset.section || null;
+      for (const el of els) if (sectionTop(root, el) - STICKY_OFFSET <= root.scrollTop + 8) current = el.dataset.section;
+      // At the very bottom the last (short) section can't reach the top
+      if (els.length && root.scrollTop + root.clientHeight >= root.scrollHeight - 4) current = els[els.length - 1].dataset.section;
+      setActiveSection((prev) => (prev === current ? prev : current));
+    };
+    onScroll();
+    root.addEventListener('scroll', onScroll, { passive: true });
+    return () => root.removeEventListener('scroll', onScroll);
+  }, [loading, menu, foodFilter, search]);
+  // Keep the active tab visible in the tab strip — scroll only the strip
+  // sideways (scrollIntoView would also move the menu and cancel a jump)
+  useEffect(() => {
+    const strip = contentRef.current?.querySelector('nav[aria-label="Menu categories"]');
+    const tab = strip?.querySelector('[aria-current="true"]');
+    if (!strip || !tab) return;
+    const left = tab.offsetLeft - (strip.clientWidth - tab.offsetWidth) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }, [activeSection]);
 
   if (!session) return <Navigate to={`/cafe/${slug}`} replace />;
   if (loadError && !loading) return (
@@ -383,10 +426,40 @@ export default function MenuPage() {
   if (loading) return <LoadingSpinner />;
 
   const isSearching = search.trim().length > 0;
-  const selectedCat = menu.find((c) => c.id === selectedCatId);
+  const sections = categories
+    .map((cat) => ({
+      ...cat,
+      direct: (cat.items || []).filter(filterItem),
+      subs: (cat.subcategories || [])
+        .map((sub) => ({ ...sub, visible: sub.items.filter(filterItem) }))
+        .filter((sub) => sub.visible.length > 0),
+    }))
+    .map((cat) => ({ ...cat, count: cat.direct.length + cat.subs.reduce((n, sub) => n + sub.visible.length, 0) }))
+    .filter((cat) => cat.count > 0);
+  const bestsellers = categories.flatMap((cat) => allCatItems(cat)).filter((i) => filterItem(i) && isBestseller(i)).slice(0, 8);
+  const status = (() => { void scheduleTick; return getScheduleStatus(cafe?.opening_hours, cafe?.timezone, !!cafeOpen); })();
+  const todayHours = getTodayHours(cafe?.opening_hours, cafe?.timezone);
+
+  const row = (item, extra = {}) => (
+    <MenuItemRow
+      key={item.id}
+      item={item}
+      qty={getItemQty(item.id)}
+      onAdd={() => handleAddItem(item)}
+      onOpen={() => setDetailItem(item)}
+      fetching={fetchingItemId === item.id}
+      onUpdateQty={(qty) => {
+        const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
+        if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
+        else updateQty(item.id, qty);
+      }}
+      c={cMenu}
+      {...extra}
+    />
+  );
 
   return (
-    <div className="max-w-2xl mx-auto bg-white flex flex-col overflow-hidden" style={{ height: '100dvh' }}>
+    <div ref={contentRef} className="max-w-2xl mx-auto bg-gray-50 overflow-y-auto overscroll-contain" style={{ height: '100dvh' }}>
       <CustomerTour />
 
       {cafe && (
@@ -412,89 +485,60 @@ export default function MenuPage() {
         </Helmet>
       )}
 
-      {/* ── Header ── */}
-      <header className="flex-shrink-0 relative overflow-hidden" style={{ minHeight: 72 }}>
-        {/* Background layer */}
-        <div
-          className="absolute inset-0"
-          style={
-            cafe?.cover_image_url
-              ? { backgroundImage: `url(${cafe.cover_image_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-              : { background: 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)' }
-          }
-        />
-        {cafe?.cover_image_url && <div className="absolute inset-0 bg-black/60" />}
-
-        {/* Content */}
-        <div className="relative px-4 pt-4 pb-3 flex items-center gap-3">
-          {/* Logo */}
-          {cafe?.logo_url ? (
-            <img src={cafe.logo_url} alt={cafe.name} className="w-11 h-11 rounded-2xl object-cover flex-shrink-0 shadow-lg ring-2 ring-white/30" />
-          ) : (
-            <div className="w-11 h-11 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center font-black text-lg text-white flex-shrink-0 ring-2 ring-white/30">
-              {cafe?.name?.charAt(0)}
+      {/* ── Café header: cover, logo, name, status, table ── */}
+      <header className="relative">
+        <div className="h-28 sm:h-36"
+          style={cafe?.cover_image_url
+            ? { backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,.05), rgba(0,0,0,.45)), url(${cafe.cover_image_url})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { background: 'linear-gradient(135deg, #fb923c 0%, #ea580c 55%, #9a3412 100%)' }} />
+        <div className="relative -mt-12 mx-3 bg-white rounded-2xl shadow-md p-4">
+          <div className="flex items-start gap-3">
+            {cafe?.logo_url ? (
+              <img src={cafe.logo_url} alt="" className="w-14 h-14 rounded-xl object-cover flex-shrink-0 ring-1 ring-gray-100" />
+            ) : (
+              <div className="w-14 h-14 rounded-xl bg-orange-100 text-orange-700 flex items-center justify-center font-black text-2xl flex-shrink-0">
+                {cafe?.name?.charAt(0)}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <h1 className="text-lg font-extrabold text-gray-900 leading-tight truncate">{cafe?.name}</h1>
+              {(cafe?.address || cafe?.city) && (
+                <p className="text-xs text-gray-500 truncate mt-0.5">{[cafe.address, cafe.city].filter(Boolean).join(', ')}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                <span className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                  !status.isOpen ? 'bg-red-50 text-red-700' : status.closingSoon ? 'bg-amber-50 text-amber-700' : 'bg-green-50 text-green-700'}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${!status.isOpen ? 'bg-red-500' : status.closingSoon ? 'bg-amber-500' : 'bg-green-500'}`} />
+                  {!status.isOpen ? 'Closed' : status.closingSoon ? 'Closing soon' : 'Open'}
+                  {todayHours && status.isOpen && !status.closingSoon ? ` · ${todayHours}` : ''}
+                </span>
+                {cafe?.avg_rating > 0 && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-green-700 text-white">★ {cafe.avg_rating}</span>
+                )}
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                  {session?.order_type === 'takeaway' ? '🥡 Takeaway' : `🪑 ${tableName(session?.table_number)}`}
+                </span>
+              </div>
             </div>
-          )}
-
-          {/* Cafe + customer info */}
-          <div className="flex-1 min-w-0">
-            <h1 className="text-[15px] font-extrabold text-white leading-tight truncate tracking-tight">{cafe?.name}</h1>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className="text-[11px] text-white/70 truncate">
-                {session?.customer_name}
-              </span>
-              <span className="text-white/40 text-[10px]">·</span>
-              <span className="text-[11px] text-white/70">
-                {session?.order_type === 'takeaway' ? '🥡 Takeaway' : `🪑 ${session?.table_number}`}
-              </span>
-            </div>
+            {activeOrders.length > 0 && (
+              <button type="button" onClick={() => navigate(`/cafe/${slug}/confirmation`)}
+                className="flex-shrink-0 text-[11px] font-bold px-2.5 py-1.5 rounded-full bg-teal-50 text-teal-700 border border-teal-200">
+                📋 {activeOrders.length} active
+              </button>
+            )}
           </div>
-
-          {/* Active orders pill */}
-          {activeOrders.length > 0 && (
-            <button
-              onClick={() => navigate(`/cafe/${slug}/confirmation`)}
-              className="flex-shrink-0 flex items-center gap-1.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white text-[11px] font-bold px-3 py-1.5 rounded-full transition-colors border border-white/20"
-            >
-              📋 {activeOrders.length} active
-            </button>
+          {!status.isOpen && (
+            <p className="mt-3 text-xs font-semibold text-red-700 bg-red-50 rounded-lg px-3 py-2">{status.reason} — you can browse, ordering opens when the café does.</p>
+          )}
+          {status.isOpen && status.closingSoon && (
+            <p className="mt-3 text-xs font-semibold text-amber-800 bg-amber-50 rounded-lg px-3 py-2">⚠️ {status.reason}</p>
           )}
         </div>
       </header>
 
-      {/* ── Status Banner ── */}
-      {(() => {
-        void scheduleTick;
-        const status = getScheduleStatus(cafe?.opening_hours, cafe?.timezone, cafeOpen ? true : false);
-        const todayHours = getTodayHours(cafe?.opening_hours, cafe?.timezone);
-        if (!status.isOpen) {
-          return (
-            <div className="flex items-center justify-between gap-2 bg-red-600 px-4 py-2 text-xs flex-shrink-0">
-              <span className="text-white font-semibold">🔴 {status.reason} — browsing only</span>
-              {todayHours && <span className="text-red-200 text-[10px]">{todayHours}</span>}
-            </div>
-          );
-        }
-        if (status.closingSoon) {
-          return (
-            <div className="flex items-center gap-2 bg-amber-500 px-4 py-2 text-xs text-white font-semibold flex-shrink-0">
-              ⚠️ {status.reason}
-            </div>
-          );
-        }
-        if (todayHours) {
-          return (
-            <div className="flex items-center gap-2 bg-emerald-600 px-4 py-2 text-xs text-white flex-shrink-0">
-              🟢 <span className="font-medium">Open today:</span> {todayHours}
-            </div>
-          );
-        }
-        return null;
-      })()}
-
-      {/* ── Offers Banner ── */}
+      {/* ── Offers ── */}
       {bannerOffers.length > 0 && (
-        <div className="flex-shrink-0 bg-gradient-to-r from-orange-50 to-amber-50 border-b border-orange-100 px-3 py-2 overflow-x-auto">
+        <div className="px-3 pt-3 overflow-x-auto">
           <div className="flex gap-2 w-max">
             {bannerOffers.map((o) => {
               const isPlatform = o.funded_by === 'platform';
@@ -503,19 +547,15 @@ export default function MenuPage() {
                 : o.offer_type === 'bogo' ? 'Buy 2 Get 1 Free'
                 : `${c(o.discount_value)} OFF`;
               return (
-                <div key={o.id} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 whitespace-nowrap border shadow-sm ${
-                  isPlatform ? 'bg-purple-50 border-purple-200' : 'bg-white border-orange-200'
-                }`}>
-                  <span className="text-xs">{isPlatform ? '⚡' : '🏷️'}</span>
-                  <span className={`text-xs font-bold ${isPlatform ? 'text-purple-700' : 'text-orange-700'}`}>{label}</span>
-                  {isPlatform && <span className="text-xs font-semibold text-purple-500">DineVerse</span>}
-                  {o.offer_type === 'first_order' && <span className="text-[10px] text-gray-500">First order</span>}
-                  {o.min_order_amount > 0 && <span className="text-[10px] text-gray-500">on {c(o.min_order_amount)}+</span>}
-                  {o.coupon_code && (
-                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isPlatform ? 'bg-purple-100 text-purple-600' : 'bg-orange-100 text-orange-600'}`}>
-                      {o.coupon_code}
-                    </span>
-                  )}
+                <div key={o.id} className={`flex items-center gap-2 rounded-xl px-3 py-2 border bg-white shadow-sm ${isPlatform ? 'border-purple-200' : 'border-orange-200'}`}>
+                  <span className={`text-lg ${isPlatform ? 'text-purple-600' : 'text-orange-600'}`} aria-hidden="true">%</span>
+                  <div className="leading-tight">
+                    <p className={`text-xs font-extrabold ${isPlatform ? 'text-purple-700' : 'text-orange-700'}`}>{label}</p>
+                    <p className="text-[10px] text-gray-500">
+                      {o.offer_type === 'first_order' ? 'First order' : o.min_order_amount > 0 ? `On ${c(o.min_order_amount)}+` : 'On every order'}
+                      {o.coupon_code ? <> · <span className="font-mono font-bold">{o.coupon_code}</span></> : null}
+                    </p>
+                  </div>
                 </div>
               );
             })}
@@ -523,304 +563,169 @@ export default function MenuPage() {
         </div>
       )}
 
-      {/* ── Search + Filter bar ── */}
-      <div className="flex-shrink-0 bg-white px-3 py-2.5 border-b border-gray-100 space-y-2.5">
-        <div className="relative">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">🔍</span>
-          <input
-            type="text"
-            placeholder={t('menu.search')}
-            className="w-full bg-gray-100 rounded-2xl pl-9 pr-9 py-2.5 text-sm outline-none focus:ring-2 focus:ring-brand-300 focus:bg-white transition-colors"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700 text-base leading-none"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        <div className="flex gap-2">
+      {/* ── Sticky: search, veg filter, category tabs ── */}
+      <div className="sticky top-0 z-20 bg-gray-50/95 backdrop-blur pt-3 pb-2 mt-1 border-b border-gray-200/70">
+        <div className="px-3 flex items-center gap-2">
+          <div className="relative flex-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none" aria-hidden="true">🔍</span>
+            <input
+              type="text"
+              placeholder={t('menu.search')}
+              className="w-full bg-white border border-gray-200 rounded-xl pl-9 pr-9 h-11 text-sm outline-none focus:ring-2 focus:ring-orange-300"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-1 top-1/2 -translate-y-1/2 w-9 h-9 text-gray-400">✕</button>
+            )}
+          </div>
           {[
-            { key: 'all', label: t('menu.filterAll'), icon: null, active: 'bg-gray-900 text-white' },
-            { key: 'veg', label: t('menu.filterVeg'), icon: '🟢', active: 'bg-green-600 text-white' },
-            { key: 'nonveg', label: t('menu.filterNonVeg'), icon: '🔴', active: 'bg-red-600 text-white' },
+            { key: 'veg', label: t('menu.filterVeg'), dot: 'bg-green-600', on: 'border-green-600 bg-green-50 text-green-800' },
+            { key: 'nonveg', label: t('menu.filterNonVeg'), dot: 'bg-red-600', on: 'border-red-600 bg-red-50 text-red-800' },
           ].map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFoodFilter(f.key)}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                foodFilter === f.key ? f.active : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              {f.icon && <span className="text-[10px]">{f.icon}</span>}
+            <button key={f.key} type="button" aria-pressed={foodFilter === f.key}
+              onClick={() => setFoodFilter((cur) => (cur === f.key ? 'all' : f.key))}
+              className={`flex-shrink-0 h-11 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 ${foodFilter === f.key ? f.on : 'border-gray-200 bg-white text-gray-700'}`}>
+              <span className={`w-2.5 h-2.5 rounded-sm ${f.dot}`} aria-hidden="true" />
               {f.label}
             </button>
           ))}
         </div>
+        {!isSearching && (
+          <nav aria-label="Menu categories" className="mt-2 px-3 overflow-x-auto">
+            <div className="flex gap-1.5 w-max">
+              {comboOffers.length > 0 && (
+                <button type="button" onClick={() => jumpTo('__deals__')}
+                  className={`h-9 px-3 rounded-full text-xs font-bold whitespace-nowrap ${activeSection === '__deals__' ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
+                  🎁 {t('menu.deals')}
+                </button>
+              )}
+              {sections.map((cat) => (
+                <button key={cat.id} type="button" onClick={() => jumpTo(cat.id)} aria-current={activeSection === cat.id ? 'true' : undefined}
+                  className={`h-9 px-3 rounded-full text-xs font-bold whitespace-nowrap ${activeSection === cat.id ? 'bg-gray-900 text-white' : 'bg-white border border-gray-200 text-gray-700'}`}>
+                  {getCategoryEmoji(cat.name, emojiMap)} {localized(cat, 'name', lang)}
+                </button>
+              ))}
+            </div>
+          </nav>
+        )}
       </div>
 
-      {/* ── Body: Sidebar + Content ── */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* ── Category Sidebar ── */}
-        <aside className="w-[72px] bg-gray-50 border-r border-gray-100 overflow-y-auto flex-shrink-0 overscroll-contain">
-          {comboOffers.length > 0 && (() => {
-            const isActive = selectedCatId === '__deals__' && !isSearching;
-            return (
-              <button
-                onClick={() => handleCategorySelect('__deals__')}
-                className={`relative w-full flex flex-col items-center gap-1.5 pt-3 pb-2.5 px-1 border-b border-gray-100/80 transition-all ${
-                  isActive ? 'bg-white' : 'hover:bg-gray-100/60'
-                }`}
-              >
-                {isActive && <span className="absolute left-0 top-4 bottom-4 w-[3px] bg-brand-500 rounded-r-full" />}
-                <div className={`w-11 h-11 rounded-xl overflow-hidden flex items-center justify-center transition-transform ${
-                  isActive ? 'ring-2 ring-brand-400 ring-offset-1 scale-105' : ''
-                } bg-gradient-to-br from-orange-100 to-amber-100`}>
-                  <span className="text-xl">🎁</span>
-                </div>
-                <span className={`text-[9px] text-center leading-snug font-semibold w-full px-0.5 transition-colors ${
-                  isActive ? 'text-brand-700' : 'text-gray-500'
-                }`}>{t('menu.deals')}</span>
-              </button>
-            );
-          })()}
-
-          {categories.map((cat) => {
-            const isActive = cat.id === selectedCatId && !isSearching;
-            const emoji = getCategoryEmoji(cat.name, emojiMap);
-            return (
-              <button
-                key={cat.id}
-                onClick={() => handleCategorySelect(cat.id)}
-                className={`relative w-full flex flex-col items-center gap-1.5 pt-3 pb-2.5 px-1 border-b border-gray-100/80 transition-all ${
-                  isActive ? 'bg-white' : 'hover:bg-gray-100/60'
-                }`}
-              >
-                {isActive && <span className="absolute left-0 top-4 bottom-4 w-[3px] bg-brand-500 rounded-r-full" />}
-                <div className={`w-11 h-11 rounded-xl overflow-hidden transition-all ${
-                  isActive ? 'ring-2 ring-brand-400 ring-offset-1 scale-105' : ''
-                }`}>
-                  {cat.thumbnail ? (
-                    <img src={cat.thumbnail} alt={cat.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className={`w-full h-full flex items-center justify-center text-xl ${
-                      isActive ? 'bg-brand-50' : 'bg-white'
-                    }`}>
-                      {emoji}
-                    </div>
-                  )}
-                </div>
-                <span className={`text-[9px] text-center leading-snug line-clamp-2 w-full px-0.5 font-semibold transition-colors ${
-                  isActive ? 'text-brand-700' : 'text-gray-500'
-                }`}>{localized(cat, 'name', lang)}</span>
-              </button>
-            );
-          })}
-          {/* Bottom padding for scroll */}
-          <div className="h-8" />
-        </aside>
-
-        {/* ── Items Content ── */}
-        <main ref={contentRef} className="flex-1 overflow-y-auto overscroll-contain" style={{ background: '#f8f8f8', paddingBottom: itemCount > 0 || activeOrders?.length > 0 ? 'calc(120px + env(safe-area-inset-bottom))' : undefined }}>
-
-          {/* ── Deals panel ── */}
-          {!isSearching && selectedCatId === '__deals__' ? (
-            <>
-              <div className="px-4 py-3 bg-white border-b border-gray-100">
-                <p className="text-sm font-bold text-gray-900">Deals &amp; Combos</p>
-                <p className="text-xs text-gray-400 mt-0.5">{comboOffers.length} combo{comboOffers.length !== 1 ? 's' : ''} available</p>
+      <main style={{ paddingBottom: 'calc(150px + env(safe-area-inset-bottom))' }}>
+        {isSearching ? (
+          /* ── Search results ── */
+          <section className="mt-2">
+            <p className="px-4 py-2 text-xs text-gray-500">
+              <span className="font-semibold text-gray-900">{displayItems.length}</span> result{displayItems.length !== 1 ? 's' : ''} for “<span className="text-orange-600">{search}</span>”
+            </p>
+            {displayItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+                <span className="text-5xl mb-3" aria-hidden="true">🔍</span>
+                <p className="text-sm font-semibold text-gray-700">No dishes match</p>
+                <p className="text-xs text-gray-400 mt-1">Try another word, or clear the search to see the full menu.</p>
+                <button type="button" onClick={() => setSearch('')} className="mt-4 min-h-[40px] text-xs text-orange-600 font-bold border border-orange-300 px-4 rounded-full">Clear search</button>
               </div>
-              <div className="px-3 pt-3 space-y-3 pb-4">
-                {comboOffers.map((offer) => {
-                  const rawItems = offer.combo_items
-                    ? (typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items)
-                    : [];
-                  const resolvedItems = rawItems
-                    .map((ci) => {
-                      const menuItem = allMenuItems.find((m) => String(m.id) === String(ci.menu_item_id || ci.id));
-                      return menuItem ? { ...menuItem, comboQty: ci.quantity || 1 } : null;
-                    })
-                    .filter(Boolean);
-                  const normalPrice = resolvedItems.reduce((sum, i) => sum + parseFloat(i.price) * i.comboQty, 0);
-                  const savings = normalPrice > 0 ? normalPrice - parseFloat(offer.combo_price) : 0;
-
-                  return (
-                    <div key={offer.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-                      <div className="bg-gradient-to-r from-brand-500 to-orange-500 px-4 py-3.5 flex items-center justify-between">
-                        <div className="flex-1 min-w-0 pr-3">
-                          <p className="font-bold text-white text-sm leading-tight">{offer.name}</p>
-                          {offer.description && <p className="text-xs text-white/80 mt-0.5 leading-snug">{offer.description}</p>}
+            ) : (
+              <div className="bg-white">{displayItems.map((item) => row(item, { categoryLabel: item._catName }))}</div>
+            )}
+          </section>
+        ) : (
+          <>
+            {/* ── Deals & combos ── */}
+            {comboOffers.length > 0 && (
+              <section data-section="__deals__" className="mt-3">
+                <h2 className="px-4 py-2 text-base font-extrabold text-gray-900">🎁 {t('menu.deals')}</h2>
+                <div className="px-3 space-y-3">
+                  {comboOffers.map((offer) => {
+                    const rawItems = offer.combo_items
+                      ? (typeof offer.combo_items === 'string' ? JSON.parse(offer.combo_items) : offer.combo_items)
+                      : [];
+                    const resolvedItems = rawItems
+                      .map((ci) => {
+                        const menuItem = allMenuItems.find((m) => String(m.id) === String(ci.menu_item_id || ci.id));
+                        return menuItem ? { ...menuItem, comboQty: ci.quantity || 1 } : null;
+                      })
+                      .filter(Boolean);
+                    const normalPrice = resolvedItems.reduce((sum, i) => sum + parseFloat(i.price) * i.comboQty, 0);
+                    const savings = normalPrice > 0 ? normalPrice - parseFloat(offer.combo_price) : 0;
+                    return (
+                      <div key={offer.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-orange-100">
+                        <div className="px-4 py-3 flex items-start justify-between gap-3 bg-gradient-to-r from-orange-50 to-amber-50">
+                          <div className="min-w-0">
+                            <p className="font-extrabold text-gray-900 text-sm">{offer.name}</p>
+                            {offer.description && <p className="text-xs text-gray-600 mt-0.5">{offer.description}</p>}
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="font-black text-gray-900 text-lg leading-none">{c(offer.combo_price)}</p>
+                            {savings > 0 && <p className="text-[11px] font-bold text-green-700 mt-1">Save {c(savings)}</p>}
+                          </div>
                         </div>
-                        <div className="text-right flex-shrink-0">
-                          <p className="font-black text-white text-xl leading-none">{c(offer.combo_price)}</p>
-                          {savings > 0 && <p className="text-[11px] text-white/80 mt-0.5">Save {c(savings)}</p>}
+                        {resolvedItems.length > 0 && (
+                          <ul className="px-4 py-2.5 space-y-1.5">
+                            {resolvedItems.map((item) => (
+                              <li key={item.id} className="flex items-center gap-2 text-sm text-gray-800">
+                                <FoodDot isVeg={item.is_veg} />
+                                <span className="flex-1">{localized(item, 'name', lang)}</span>
+                                {item.comboQty > 1 && <span className="text-gray-400 text-xs">×{item.comboQty}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="px-4 pb-3">
+                          <button type="button"
+                            onClick={() => { resolvedItems.forEach((item) => { for (let i = 0; i < item.comboQty; i++) addItem(item); }); toast.success('Combo added'); }}
+                            disabled={resolvedItems.length === 0}
+                            className="w-full min-h-[44px] rounded-xl bg-orange-500 active:bg-orange-600 text-white text-sm font-bold disabled:opacity-40">
+                            Add combo
+                          </button>
                         </div>
                       </div>
-                      {resolvedItems.length > 0 && (
-                        <div className="px-4 py-3 space-y-2.5 border-b border-gray-100">
-                          {resolvedItems.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2.5">
-                              <FoodDot isVeg={item.is_veg} />
-                              <span className="flex-1 text-sm text-gray-800 font-medium">{localized(item, 'name', lang)}</span>
-                              {item.comboQty > 1 && <span className="text-gray-400 text-xs">×{item.comboQty}</span>}
-                              {savings > 0 && <span className="text-gray-400 text-xs line-through">{c(parseFloat(item.price) * item.comboQty)}</span>}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      <div className="px-4 py-3">
-                        <button
-                          onClick={() => { resolvedItems.forEach((item) => { for (let i = 0; i < item.comboQty; i++) addItem(item); }); }}
-                          disabled={resolvedItems.length === 0}
-                          className="w-full py-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white text-sm font-bold transition-colors disabled:opacity-40"
-                        >
-                          Add Combo to Cart
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="h-32" />
-            </>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
-          ) : isSearching ? (
-            /* ── Search results ── */
-            <>
-              <div className="px-4 py-3 bg-white border-b border-gray-100">
-                <p className="text-xs text-gray-500">
-                  <span className="font-semibold text-gray-900">{displayItems.length}</span>
-                  {' '}result{displayItems.length !== 1 ? 's' : ''} for "
-                  <span className="text-brand-600">{search}</span>"
+            {/* ── Bestsellers ── */}
+            {bestsellers.length > 0 && (
+              <section className="mt-3">
+                <h2 className="px-4 py-2 text-base font-extrabold text-gray-900">⭐ Bestsellers</h2>
+                <div className="bg-white">{bestsellers.map((item) => row(item))}</div>
+              </section>
+            )}
+
+            {/* ── Every category, one continuous menu ── */}
+            {sections.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 px-6 text-center">
+                <span className="text-5xl mb-3" aria-hidden="true">🍽️</span>
+                <p className="text-sm font-semibold text-gray-700">
+                  {foodFilter !== 'all' ? 'Nothing here for this filter' : 'The menu is being updated — please check back soon'}
                 </p>
+                {foodFilter !== 'all' && (
+                  <button type="button" onClick={() => setFoodFilter('all')} className="mt-4 min-h-[40px] text-xs text-orange-600 font-bold border border-orange-300 px-4 rounded-full">Show all dishes</button>
+                )}
               </div>
-              {displayItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-20 px-6">
-                  <span className="text-5xl mb-4">🔍</span>
-                  <p className="text-sm text-center font-semibold text-gray-600">No dishes found</p>
-                  <p className="text-xs text-gray-400 mt-1 text-center">Try a different keyword</p>
-                  <button onClick={() => setSearch('')} className="mt-4 text-xs text-brand-600 font-bold border border-brand-300 px-4 py-1.5 rounded-full hover:bg-brand-50 transition-colors">
-                    Clear search
-                  </button>
-                </div>
-              ) : (
-                <div className="pb-3 pt-1">
-                  {displayItems.map((item) => (
-                    <MenuItemRow
-                      key={item.id}
-                      item={item}
-                      qty={getItemQty(item.id)}
-                      categoryLabel={item._catName}
-                      onAdd={() => handleAddItem(item)}
-                      onOpen={() => setDetailItem(item)}
-                      fetching={fetchingItemId === item.id}
-                      onUpdateQty={(qty) => {
-                        const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
-                        if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
-                        else updateQty(item.id, qty);
-                      }}
-                      c={c}
-                    />
+            ) : sections.map((cat) => (
+              <section key={cat.id} data-section={cat.id} className="mt-3 scroll-mt-32">
+                <h2 className="px-4 py-2 flex items-baseline justify-between">
+                  <span className="text-base font-extrabold text-gray-900">{localized(cat, 'name', lang)}</span>
+                  <span className="text-xs text-gray-400">{cat.count} item{cat.count !== 1 ? 's' : ''}</span>
+                </h2>
+                <div className="bg-white">
+                  {cat.direct.map((item) => row(item))}
+                  {cat.subs.map((sub) => (
+                    <div key={sub.id}>
+                      <h3 className="px-4 pt-3 pb-1 text-xs font-bold uppercase tracking-wider text-gray-400">{localized(sub, 'name', lang)}</h3>
+                      {sub.visible.map((item) => row(item))}
+                    </div>
                   ))}
                 </div>
-              )}
-              <div className="h-32" />
-            </>
-
-          ) : (
-            /* ── Category tree view ── */
-            <>
-              {/* Category title */}
-              <div className="px-4 py-3 bg-white border-b border-gray-100">
-                <p className="text-sm font-bold text-gray-900">{localized(selectedCat, 'name', lang)}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {selectedCat ? allCatItems(selectedCat).filter(filterItem).length : 0} item
-                  {(allCatItems(selectedCat || { items: [], subcategories: [] }).filter(filterItem).length !== 1) ? 's' : ''} available
-                </p>
-              </div>
-
-              {selectedCat && (() => {
-                const directItems = (selectedCat.items || []).filter(filterItem);
-                const subs = (selectedCat.subcategories || [])
-                  .map((s) => ({ ...s, filteredItems: s.items.filter(filterItem) }))
-                  .filter((s) => s.filteredItems.length > 0);
-                const totalVisible = directItems.length + subs.reduce((n, s) => n + s.filteredItems.length, 0);
-
-                if (totalVisible === 0) {
-                  return (
-                    <div className="flex flex-col items-center justify-center py-20 px-6">
-                      <span className="text-5xl mb-4">🍽️</span>
-                      <p className="text-sm text-center font-semibold text-gray-600">
-                        No items available{foodFilter !== 'all' ? ' for selected filter' : ''}
-                      </p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="pb-3">
-                    {directItems.length > 0 && (
-                      <div className="pt-1">
-                        {directItems.map((item) => (
-                          <MenuItemRow
-                            key={item.id}
-                            item={item}
-                            qty={getItemQty(item.id)}
-                            onAdd={() => handleAddItem(item)}
-                      onOpen={() => setDetailItem(item)}
-                            fetching={fetchingItemId === item.id}
-                            onUpdateQty={(qty) => {
-                              const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
-                              if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
-                              else updateQty(item.id, qty);
-                            }}
-                            c={c}
-                          />
-                        ))}
-                      </div>
-                    )}
-
-                    {subs.map((sub) => (
-                      <div key={sub.id}>
-                        {/* Subcategory divider */}
-                        <div className="flex items-center gap-3 px-4 py-2 mt-1">
-                          <div className="h-px flex-1 bg-gray-200" />
-                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{localized(sub, 'name', lang)}</span>
-                          <div className="h-px flex-1 bg-gray-200" />
-                        </div>
-                        {sub.filteredItems.map((item) => (
-                          <MenuItemRow
-                            key={item.id}
-                            item={item}
-                            qty={getItemQty(item.id)}
-                            onAdd={() => handleAddItem(item)}
-                      onOpen={() => setDetailItem(item)}
-                            fetching={fetchingItemId === item.id}
-                            onUpdateQty={(qty) => {
-                              const combos = cartItems.filter((ci) => (ci.menu_item_id || ci.id) === item.id);
-                              if (combos.length > 0) { const last = combos[combos.length - 1]; updateQty(last.id, last.quantity - 1); }
-                              else updateQty(item.id, qty);
-                            }}
-                            c={c}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              <div className="h-32" />
-            </>
-          )}
-        </main>
-      </div>
+              </section>
+            ))}
+          </>
+        )}
+      </main>
 
       {/* Item detail sheet — rendered regardless of cart state (portals to body) */}
       {detailItem && (
@@ -835,32 +740,46 @@ export default function MenuPage() {
         />
       )}
 
-      {/* ── Floating bottom buttons ── */}
-      {(itemCount > 0 || activeOrders.length > 0) && (
-        <div className="fixed left-0 right-0 px-3 z-20 max-w-2xl mx-auto flex flex-col gap-2" style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}>
-          {activeOrders.length > 0 && (
-            <button
-              onClick={() => navigate(`/cafe/${slug}/confirmation`)}
-              className="w-full bg-white border border-teal-200 text-teal-700 font-semibold text-sm py-3 rounded-2xl shadow-lg flex items-center justify-center gap-2"
-            >
-              📋 Track My Orders
-              <span className="bg-teal-100 text-teal-700 text-xs font-bold px-2 py-0.5 rounded-full">
-                {activeOrders.length}
-              </span>
-            </button>
-          )}
-          {itemCount > 0 && (
-            <button
-              onClick={() => navigate(`/cafe/${slug}/cart`)}
-              className="w-full btn-primary flex items-center justify-between shadow-xl rounded-2xl py-3.5 px-4"
-            >
-              <span className="bg-brand-700/80 rounded-lg px-2 py-0.5 text-sm font-bold min-w-[24px] text-center">{itemCount}</span>
-              <span className="font-bold text-sm">{t('menu.viewCart')}</span>
-              <span className="font-black text-sm">{c(total)}</span>
-            </button>
-          )}
+      {/* ── Category list (MENU button) ── */}
+      {menuSheet && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-end justify-center" onClick={() => setMenuSheet(false)}>
+          <div role="dialog" aria-modal="true" aria-label="Categories" className="w-full max-w-sm mb-36 mx-4 bg-gray-900 text-white rounded-2xl p-2 max-h-[55dvh] overflow-y-auto shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {sections.map((cat) => (
+              <button key={cat.id} type="button" onClick={() => { setMenuSheet(false); jumpTo(cat.id); }}
+                className={`w-full min-h-[44px] px-3 rounded-xl flex items-center justify-between text-sm ${activeSection === cat.id ? 'font-extrabold text-orange-300' : 'font-medium'}`}>
+                <span>{localized(cat, 'name', lang)}</span><span className="text-white/60">{cat.count}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
+
+      {/* ── Floating: MENU, track orders, cart ── */}
+      <div className="fixed left-0 right-0 px-3 z-30 max-w-2xl mx-auto flex flex-col gap-2 pointer-events-none" style={{ bottom: 'calc(60px + env(safe-area-inset-bottom) + 12px)' }}>
+        {!isSearching && sections.length > 1 && (
+          <button type="button" onClick={() => setMenuSheet(true)}
+            className="pointer-events-auto self-end min-h-[44px] px-4 rounded-full bg-gray-900 text-white text-xs font-extrabold tracking-wider shadow-lg flex items-center gap-2">
+            ☰ MENU
+          </button>
+        )}
+        {activeOrders.length > 0 && itemCount === 0 && (
+          <button type="button" onClick={() => navigate(`/cafe/${slug}/confirmation`)}
+            className="pointer-events-auto w-full bg-white border border-teal-200 text-teal-700 font-semibold text-sm min-h-[48px] rounded-2xl shadow-lg flex items-center justify-center gap-2">
+            📋 Track my orders
+            <span className="bg-teal-100 text-teal-700 text-xs font-bold px-2 py-0.5 rounded-full">{activeOrders.length}</span>
+          </button>
+        )}
+        {itemCount > 0 && (
+          <button type="button" onClick={() => navigate(`/cafe/${slug}/cart`)}
+            className="pointer-events-auto w-full bg-green-700 active:bg-green-800 text-white flex items-center justify-between shadow-xl rounded-2xl min-h-[56px] px-4">
+            <span className="text-left leading-tight">
+              <span className="block text-sm font-extrabold">{itemCount} item{itemCount !== 1 ? 's' : ''} · {c(total)}</span>
+              <span className="block text-[11px] text-white/80">Taxes &amp; charges at checkout</span>
+            </span>
+            <span className="font-extrabold text-sm">{t('menu.viewCart')} ›</span>
+          </button>
+        )}
+      </div>
 
       {/* ── Modifier Dialog ── */}
       {modifierDialog.isOpen && (
@@ -1026,114 +945,73 @@ export default function MenuPage() {
   );
 }
 
-/* ── MenuItemRow — horizontal list card optimised for large menus ── */
+/* ── MenuItemRow — dish card: details left, photo right with ADD on it ── */
 function MenuItemRow({ item, qty, categoryLabel, onAdd, onUpdateQty, onOpen, fetching, c }) {
   const { t, lang } = useT();
   const name = localized(item, 'name', lang);
   const description = localized(item, 'description', lang);
-  const hasImage = !!item.image_url;
+  const [imgOk, setImgOk] = useState(!!item.image_url);
   const isLowStock = item.track_stock && item.stock_quantity != null &&
     item.stock_quantity <= (item.low_stock_threshold ?? 5) && item.stock_quantity > 0;
 
+  const addControl = qty === 0 ? (
+    <button
+      type="button"
+      onClick={onAdd}
+      disabled={fetching}
+      aria-label={`${t('menu.add')} ${name}`}
+      className={`min-h-[40px] min-w-[96px] px-4 rounded-xl bg-white border border-gray-200 shadow-md text-sm font-extrabold tracking-wide touch-manipulation active:scale-95 transition ${
+        fetching ? 'text-gray-300 cursor-wait' : 'text-green-700'}`}
+    >
+      {fetching ? '…' : `${t('menu.add')} +`}
+    </button>
+  ) : (
+    <div className="bg-white rounded-xl shadow-md border border-gray-200 px-1">
+      <QuantityControl qty={qty} onDecrement={() => onUpdateQty(qty - 1)} onIncrement={onAdd} />
+    </div>
+  );
+
   return (
-    <div className={`bg-white mx-0 border-b border-gray-100 transition-colors ${qty > 0 ? 'bg-brand-50/30' : ''}`}>
-      <div className="flex items-start gap-3 px-4 py-3.5">
-
-        {/* Text content */}
-        <div className="flex-1 min-w-0">
-          {/* Top row: veg dot + category badge */}
-          <div className="flex items-center gap-2 mb-1">
-            <FoodDot isVeg={item.is_veg} />
-            {categoryLabel && (
-              <span className="text-[9px] font-bold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded-full uppercase tracking-wide">
-                {categoryLabel}
-              </span>
-            )}
-            {isLowStock && (
-              <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded-full">
-                Only {item.stock_quantity} left
-              </span>
-            )}
-          </div>
-
-          {/* Name */}
-          <button type="button" onClick={onOpen} className="block w-full text-left touch-manipulation" aria-haspopup="dialog">
-            <h4 className="font-semibold text-gray-900 text-[15px] leading-snug line-clamp-2">{name}</h4>
-          {description && (
-            <p className="text-[13px] text-gray-500 mt-0.5 line-clamp-2 leading-relaxed">{description}</p>
+    <div className="flex gap-4 px-4 py-4 border-b border-gray-100 last:border-b-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <FoodDot isVeg={item.is_veg} />
+          {isBestseller(item) && (
+            <span className="text-[10px] font-extrabold text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded">★ Bestseller</span>
           )}
-          </button>
-
-          {/* Description */}
-
-          {/* Tags */}
-          {item.tags && item.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-1.5">
-              {item.tags.slice(0, 3).map((tag) => (
-                <span key={tag} className="text-[11px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500 font-medium capitalize">
-                  {tag}
-                </span>
-              ))}
-            </div>
+          {categoryLabel && (
+            <span className="text-[10px] font-bold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">{categoryLabel}</span>
           )}
-
-          {/* Price row */}
-          <div className="flex items-center justify-between mt-2">
-            <span className="font-bold text-gray-900 text-[15px]">{c(item.price)}</span>
-            {/* Add / Quantity control */}
-            <div>
-              {qty === 0 ? (
-                <button
-                  onClick={onAdd}
-                  disabled={fetching}
-                  aria-label={`${t('menu.add')} ${name}`}
-                  className={`text-sm font-bold px-5 min-h-[44px] rounded-xl border-2 transition-all min-w-[76px] text-center touch-manipulation ${
-                    fetching
-                      ? 'border-brand-300 text-brand-300 cursor-wait'
-                      : 'border-brand-500 text-brand-600 hover:bg-brand-50 active:bg-brand-100 active:scale-95'
-                  }`}
-                >
-                  {fetching ? '…' : t('menu.add')}
-                </button>
-              ) : (
-                <QuantityControl
-                  qty={qty}
-                  onDecrement={() => onUpdateQty(qty - 1)}
-                  onIncrement={onAdd}
-                />
-              )}
-            </div>
-          </div>
+          {isLowStock && (
+            <span className="text-[10px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded">Only {item.stock_quantity} left</span>
+          )}
         </div>
-
-        {/* Image */}
-        {hasImage && (
-          <button type="button" onClick={onOpen} aria-label={name} className="relative flex-shrink-0 w-24 h-24 rounded-2xl overflow-hidden bg-gray-100 mt-0.5 touch-manipulation">
-            <img
-              src={item.image_url}
-              alt=""
-              className="w-full h-full object-cover"
-              loading="lazy"
-              onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }}
-            />
-            {qty > 0 && (
-              <div className="absolute inset-0 bg-brand-500/10" />
-            )}
-            {qty > 0 && (
-              <span className="absolute bottom-1.5 right-1.5 bg-brand-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
-                {qty}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* No image: show qty badge inline if in cart */}
-        {!hasImage && qty > 0 && (
-          <span className="flex-shrink-0 self-center bg-brand-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-sm mt-0.5">
-            {qty}
-          </span>
-        )}
+        <button type="button" onClick={onOpen} className="block w-full text-left mt-1 touch-manipulation" aria-haspopup="dialog">
+          <h4 className="font-bold text-gray-900 text-[16px] leading-snug">{name}</h4>
+          <p className="text-[15px] font-semibold text-gray-800 mt-0.5">{c(item.price)}</p>
+          {description && (
+            <p className="text-[13px] text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">{description}</p>
+          )}
+        </button>
       </div>
+
+      {/* No photo: ADD sits in the same right-hand column as photo cards */}
+      {!imgOk && (
+        <div className="flex-shrink-0 w-[118px] flex flex-col items-center justify-center gap-1">
+          {addControl}
+          {item.has_options && <span className="text-[10px] text-gray-400">Customisable</span>}
+        </div>
+      )}
+
+      {imgOk && (
+        <div className="relative flex-shrink-0 w-[118px] pb-5">
+          <button type="button" onClick={onOpen} aria-label={name} className="block w-[118px] h-[110px] rounded-2xl overflow-hidden bg-gray-100 touch-manipulation">
+            <img src={item.image_url} alt="" loading="lazy" className="w-full h-full object-cover" onError={() => setImgOk(false)} />
+          </button>
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-0">{addControl}</div>
+          {item.has_options && <p className="absolute -bottom-5 inset-x-0 text-center text-[10px] text-gray-400">Customisable</p>}
+        </div>
+      )}
     </div>
   );
 }

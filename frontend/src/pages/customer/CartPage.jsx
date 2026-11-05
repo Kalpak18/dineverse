@@ -3,7 +3,7 @@ import { useParams, useNavigate, Navigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { useCart } from '../../context/CartContext';
-import { placeOrder, getDeliveryQuote, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions, getPublicOffers } from '../../services/api';
+import { placeOrder, getCafeBySlug, getDeliveryQuote, previewOffer, validateCoupon, getCafeTables, getUpsellSuggestions, getPublicOffers } from '../../services/api';
 import { getApiError } from '../../utils/apiError';
 import { upsertOrder, loadOrders } from '../../utils/cafeOrderStorage';
 import { fmtCurrency } from '../../utils/formatters';
@@ -11,6 +11,7 @@ import PhoneInput from '../../components/PhoneInput';
 import toast from 'react-hot-toast';
 import QuantityControl from '../../components/QuantityControl';
 import { useT, localized } from '../../i18n';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 
 // Normalise "5"→"Table 5", "T5"→"Table 5"; prepend area if given
 function normTable(raw, areaName) {
@@ -57,6 +58,11 @@ export default function CartPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [tip, setTip] = useState(0);
   const [orderError, setOrderError] = useState(null);
+  // The order couldn't reach the café (no connection): send it again by
+  // itself once the connection is back — the same client_order_id can never
+  // create a second order
+  const [resendWhenOnline, setResendWhenOnline] = useState(false);
+  const net = useNetworkStatus();
   const [offerPreview, setOfferPreview] = useState(null); // { applied, offer_name, discount_amount, final_amount }
   const [allOffers, setAllOffers]       = useState([]);   // Zomato-style offer panel — all active public offers
   const offerDebounce = useRef(null);
@@ -402,6 +408,7 @@ export default function CartPage() {
         }
       }
     }
+    setResendWhenOnline(false);
     submittingRef.current = true;
     setLoading(true);
     setSlowNetwork(false);
@@ -462,7 +469,8 @@ export default function CartPage() {
         await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
       }
       try {
-        const { data } = await placeOrder(slug, orderPayload);
+        // A hung request on bad mobile data must not spin for ages
+        const { data } = await placeOrder(slug, orderPayload, { timeout: 12000 });
         if (data?.order) {
           upsertOrder(slug, data.order);
           if (data.party_secret) saveParty(slug, data.party_secret);
@@ -513,14 +521,47 @@ export default function CartPage() {
     submittingRef.current = false;
     const isNetworkErr = !lastErr?.response;
     const msg = isNetworkErr
-      ? 'Connection issue — your order is safe. Tap "Place Order" again to confirm; we won\'t create a duplicate.'
+      ? 'We couldn\'t reach the café — your order is NOT confirmed yet. It will be sent automatically when your connection is back (never twice), or tap Try again.'
       : getApiError(lastErr);
+    setResendWhenOnline(isNetworkErr);
     toast.error(msg, { duration: isNetworkErr ? 7000 : 4000 });
     setOrderError(msg);
   };
 
+  // Waiting to re-send on a "connected but nothing gets through" network: check
+  // the café every few seconds — the first answer marks the connection good
+  useEffect(() => {
+    if (!resendWhenOnline || net === 'offline') return undefined;
+    const id = setInterval(() => { getCafeBySlug(slug).catch(() => {}); }, 5000);
+    return () => clearInterval(id);
+  }, [resendWhenOnline, net, slug]);
+
+  // Connection back after a failed send: send it now (same order id → no duplicate)
+  const placeRef = useRef(null);
+  placeRef.current = handlePlaceOrder;
+  useEffect(() => {
+    if (!resendWhenOnline || net !== 'online' || loading || !items.length) return;
+    setResendWhenOnline(false);
+    toast('Connection is back — sending your order…', { icon: '📶' });
+    placeRef.current();
+  }, [net, resendWhenOnline, loading, items.length]);
+
+  const offline = net === 'offline';
+  const sendingText = submitAttempt > 1
+    ? `Slow connection — still trying (${submitAttempt}/3)…`
+    : slowNetwork ? 'Still sending — the connection is slow…' : 'Sending your order to the café…';
+
   return (
     <div className="max-w-2xl mx-auto bg-white min-h-screen" style={{ paddingBottom: 'calc(11rem + env(safe-area-inset-bottom))' }}>
+      {/* While the order is on its way nothing else can be tapped — no
+          half-sent orders, no double taps, no leaving mid-way */}
+      {loading && (
+        <div role="status" aria-live="polite" className="fixed inset-0 z-[9996] bg-white/95 flex flex-col items-center justify-center gap-4 px-8 text-center">
+          <span className="w-12 h-12 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin" aria-hidden="true" />
+          <p className="text-lg font-bold text-gray-900">{sendingText}</p>
+          <p className="text-sm text-gray-500">Please keep this screen open.</p>
+        </div>
+      )}
       <div className="sticky top-0 bg-white z-10 border-b border-gray-100">
         <div className="flex items-center gap-3 px-4 py-3.5">
           <button onClick={() => navigate(-1)} className="p-2 hover:bg-gray-100 rounded-lg text-sm">
@@ -944,18 +985,12 @@ export default function CartPage() {
               }
               setShowConfirm(true);
             }}
-            disabled={loading || !cafeOpen || (isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder)}
+            disabled={loading || offline || !cafeOpen || (isDelivery && deliveryMinOrder > 0 && total < deliveryMinOrder)}
             className="btn-primary w-full flex items-center justify-between disabled:opacity-50 disabled:cursor-not-allowed"
             title={!cafeOpen ? 'This café is currently closed' : undefined}
           >
             <span>
-              {slowNetwork && submitAttempt > 1
-                ? `Reconnecting… (${submitAttempt}/3)`
-                : slowNetwork
-                ? 'Still connecting…'
-                : loading
-                ? 'Placing order…'
-                : t('cart.placeOrder')}
+              {offline ? 'No internet — waiting…' : loading ? 'Sending…' : t('cart.placeOrder')}
             </span>
             <span>{c(grandTotal)}</span>
           </button>
@@ -1176,14 +1211,10 @@ export default function CartPage() {
               <div className="flex flex-col gap-2 pt-1">
                 <button
                   onClick={handlePlaceOrder}
-                  disabled={loading}
+                  disabled={loading || offline}
                   className="btn-primary w-full py-3 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {slowNetwork && submitAttempt > 1
-                    ? `Reconnecting… (${submitAttempt}/3)`
-                    : slowNetwork ? 'Still connecting…'
-                    : loading ? 'Placing…'
-                    : t('cart.confirmPlace')}
+                  {offline ? 'No internet — waiting…' : loading ? 'Sending…' : t('cart.confirmPlace')}
                 </button>
                 <button
                   onClick={() => setShowConfirm(false)}

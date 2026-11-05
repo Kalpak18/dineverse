@@ -20,19 +20,35 @@ const submit = async (page) => {
   await page.getByRole('button', { name: 'Yes, Place Order' }).click();
 };
 
-test('offline at checkout: clear message, cart kept, order goes through once back online', async ({ page, context }) => {
-  test.setTimeout(90_000);
+test('offline: ordering waits with a clear message, then works once back online', async ({ page, context }) => {
   const c = await seedCafe();
   await toCart(page, c);
   await context.setOffline(true);
-  await submit(page);
-  await expect(page.getByText(/Connection issue — your order is safe/).first()).toBeVisible({ timeout: 20_000 });
-  expect(await orderCount(c.cafe.id)).toBe(0);
+  await expect(page.getByRole('alert').filter({ hasText: /You’re offline/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /No internet — waiting/ })).toBeDisabled();
   await expect(page.getByText('Cold Coffee').first()).toBeVisible(); // cart kept
 
   await context.setOffline(false);
-  await page.getByRole('button', { name: 'Try again' }).click();
+  await expect(page.getByText('Back online')).toBeVisible();
+  await submit(page);
   await expect(page).toHaveURL(/\/confirmation/);
+  expect(await orderCount(c.cafe.id)).toBe(1);
+});
+
+test('connection drops while sending: honest "not confirmed", then sent by itself once it is back — exactly once', async ({ page }) => {
+  test.setTimeout(120_000);
+  const c = await seedCafe();
+  await toCart(page, c);
+  let down = true;
+  await page.route('**/api/**', (r) => (down ? r.abort('internetdisconnected') : r.continue()));
+  await submit(page);
+  await expect(page.getByRole('status').filter({ hasText: /Sending your order|still trying/ })).toBeVisible(); // nothing else tappable
+  await expect(page.getByText(/your order is NOT confirmed yet/).first()).toBeVisible({ timeout: 60_000 });
+  expect(await orderCount(c.cafe.id)).toBe(0);
+  await expect(page).not.toHaveURL(/\/confirmation/);
+
+  down = false; // connection comes back — no tap needed
+  await expect(page).toHaveURL(/\/confirmation/, { timeout: 30_000 });
   expect(await orderCount(c.cafe.id)).toBe(1);
 });
 
@@ -49,11 +65,11 @@ test('response lost after the server took the order: retrying never duplicates i
     await route.abort('connectionreset');
   });
   await submit(page);
-  await expect(page.getByText(/Connection issue — your order is safe/).first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/your order is NOT confirmed yet/).first()).toBeVisible({ timeout: 60_000 });
   expect(reached).toBe(3); // auto-retried with backoff
 
   await page.unroute('**/api/orders/cafe/*/orders');
-  await page.getByRole('button', { name: 'Try again' }).click();
+  // Sent again by itself once the connection checks out (same order id)
   await expect(page).toHaveURL(/\/confirmation/);
   expect(await orderCount(c.cafe.id)).toBe(1);
 });

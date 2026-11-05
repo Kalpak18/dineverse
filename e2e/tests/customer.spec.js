@@ -49,7 +49,7 @@ test('menu switches to Hindi and the choice sticks', async ({ page }) => {
   await expect(page.getByRole('button', { name: '📅 पहले से टेबल बुक करें' })).toBeVisible();
   await expect(page.getByRole('navigation').getByText('बुकिंग')).toBeVisible();
   await page.getByRole('button', { name: 'मेन्यू देखें →' }).click();
-  await expect(page.getByRole('button', { name: /शुद्ध शाकाहारी/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^शाकाहारी/ })).toBeVisible();
   await page.getByRole('textbox').first().fill('पनीर');
   await expect(page.getByText('पनीर टिक्का').first()).toBeVisible();
   await page.reload();
@@ -62,7 +62,7 @@ test('item details sheet opens from an empty cart and adds to cart', async ({ pa
   await page.goto(`/cafe/${c.slug}?table=1&t=${c.tables['1'].qr_token}`);
   await page.getByRole('button', { name: 'View Menu →' }).click();
   await page.getByRole('textbox', { name: /Search dishes/ }).fill('Paneer');
-  await page.getByRole('button', { name: /^Paneer Tikka Smoky/ }).click();
+  await page.getByRole('button', { name: /^Paneer Tikka ₹220/ }).click();
   const sheet = page.getByRole('dialog');
   await expect(sheet).toBeVisible();
   await expect(sheet).toContainText('Smoky cottage cheese from the tandoor');
