@@ -54,7 +54,7 @@
         },
         {
           "key": "Permissions-Policy",
-          "value": "microphone=(), payment=(self \"https://checkout.razorpay.com\" \"https://api.razorpay.com\"), geolocation=(self), usb=(), bluetooth=()"
+          "value": "microphone=(), payment=(self \"https://checkout.razorpay.com\" \"https://api.razorpay.com\"), geolocation=(self), usb=(self), bluetooth=(self), serial=(self)"
         },
         {
           "key": "Cross-Origin-Opener-Policy",

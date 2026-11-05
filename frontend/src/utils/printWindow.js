@@ -9,10 +9,12 @@ export const PRINT_EVENT = 'dv:print-preview';
 let previewMounted = false;
 export const setPreviewMounted = (mounted) => { previewMounted = mounted; };
 
-// share: { text, phone } — a plain-text copy for WhatsApp / the share sheet
-export function printDocument(html, { title = 'Print', share = null } = {}) {
+// share:   { text, phone } — a plain-text copy for WhatsApp / the share sheet
+// receipt: the same document as receipt lines (utils/escpos.js) for printing
+//          straight to a thermal printer
+export function printDocument(html, { title = 'Print', share = null, receipt = null } = {}) {
   if (!previewMounted) return printNow(html); // no preview host (shouldn't happen)
-  window.dispatchEvent(new CustomEvent(PRINT_EVENT, { detail: { html, title, share } }));
+  window.dispatchEvent(new CustomEvent(PRINT_EVENT, { detail: { html, title, share, receipt } }));
 }
 
 // Opens the browser's print dialog for the document, from this page: it goes

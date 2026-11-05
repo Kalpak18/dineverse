@@ -370,7 +370,43 @@ export function printBill({ cafe, bill, cashReceived = null, paymentMode = 'cash
     cafe?.bill_footer || 'Thank you for your visit!',
   ].join('\n').replace(/&#[0-9]+;|&[a-z]+;/g, (e) => ({ '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"' }[e] || e));
   const phone = bill.orders?.[0]?.customer_phone || bill.customerPhone || '';
-  printDocument(html, { title: isPending ? 'Bill' : 'Receipt', share: { text: shareText, phone } });
+  // The same bill as receipt lines, for a thermal printer (ESC/POS)
+  const money = (n) => `Rs.${fmt(n)}`;
+  const receipt = [
+    { text: cafe?.name || 'Bill', align: 'center', bold: true, big: true },
+    cafe?.address && { text: cafe.address, align: 'center' },
+    cafe?.phone && { text: `Ph: ${cafe.phone}`, align: 'center' },
+    cafe?.gst_number && { text: `GSTIN: ${cafe.gst_number.toUpperCase()}`, align: 'center' },
+    cafe?.fssai_number && { text: `FSSAI: ${cafe.fssai_number}`, align: 'center' },
+    { rule: '=' },
+    { text: hasGst ? 'TAX INVOICE' : 'RECEIPT', align: 'center', bold: true },
+    { left: 'Bill No', right: invoiceNo },
+    { left: 'Date', right: `${dateStr} ${timeStr}` },
+    { left: 'Order', right: `#${dailyNum} ${bill.isTakeaway ? 'Takeaway' : tableName(bill.table_number)}` },
+    customerName && { left: 'Customer', right: customerName },
+    { rule: '-' },
+    ...(bill.aggregatedItems || []).map((i) => ({ qty: i.qty, name: i.name, amount: fmt(i.total) })),
+    { rule: '-' },
+    hasBreakdown && subtotalAmt > 0 && { left: 'Subtotal', right: money(subtotalAmt) },
+    hasGst && { left: `CGST @ ${gstRate / 2}%`, right: money(cgst) },
+    hasGst && { left: `SGST @ ${gstRate / 2}%`, right: money(sgst) },
+    discountAmt > 0 && { left: 'Discount', right: `-${money(discountAmt)}` },
+    tipAmt > 0 && { left: 'Tip', right: money(tipAmt) },
+    deliveryFee > 0 && { left: 'Delivery fee', right: money(deliveryFee) },
+    platformFee > 0 && { left: `Platform charge${platformFeeRate > 0 ? ` (${platformFeeRate}%)` : ''}`, right: money(platformFee) },
+    { rule: '-' },
+    { left: 'TOTAL', right: money(total), bold: true },
+    cashReceived != null && { left: 'Cash received', right: money(cashReceived) },
+    cashReceived != null && { left: 'Change', right: money(change) },
+    { left: 'Payment', right: modeLabel },
+    ...(Array.isArray(splits) ? splits.map((sp, i) => ({ left: `  Share ${i + 1} (${sp.mode})`, right: money(sp.amount) })) : []),
+    { text: isPending ? '** PENDING **' : '** PAID **', align: 'center', bold: true },
+    { rule: '-' },
+    { text: cafe?.bill_footer || 'Thank you for your visit! See you again.', align: 'center' },
+    hasGst && { text: `Prices are GST ${taxInclusive ? 'inclusive' : 'exclusive'} (${gstRate}%)`, align: 'center' },
+  ].filter(Boolean);
+
+  printDocument(html, { title: isPending ? 'Bill' : 'Receipt', share: { text: shareText, phone }, receipt });
 }
 
 function fmt(n) {

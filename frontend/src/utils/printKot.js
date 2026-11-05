@@ -111,7 +111,15 @@ export function printKot({ cafe, item, orderToken, tableNumber, orderType }) {
 </body>
 </html>`;
 
-  printDocument(html, { title: 'KOT' });
+  const receipt = [
+    { text: cafe?.name || 'Kitchen', align: 'center', bold: true },
+    { text: 'KOT', align: 'center', bold: true, big: true },
+    { text: orderType === 'takeaway' ? 'TAKEAWAY' : `TABLE ${tableNumber || ''}`, align: 'center', bold: true, big: true },
+    { left: orderToken, right: `${dateStr} ${timeStr}` },
+    { rule: '-' },
+    { qty: item.quantity, name: item.item_name, note: details, bold: true },
+  ];
+  printDocument(html, { title: 'KOT', receipt });
 }
 
 /**
@@ -170,7 +178,16 @@ export function printFullKot(kot, cafeName) {
 </body>
 </html>`;
 
-  printDocument(html, { title: 'KOT' });
+  const receipt = [
+    { text: cafeName || 'Kitchen', align: 'center', bold: true },
+    { text: `KOT - SLIP #${kot.slip_number}`, align: 'center', bold: true },
+    { text: isTakeaway ? 'TAKEAWAY' : tableName(kot.table_number).toUpperCase(), align: 'center', bold: true, big: true },
+    kot.customer_name && { text: kot.customer_name, align: 'center' },
+    { left: dateStr, right: timeStr },
+    { rule: '-' },
+    ...items.map((i) => ({ qty: i.quantity, name: i.item_name, note: itemDetails(i), bold: true })),
+  ].filter(Boolean);
+  printDocument(html, { title: 'KOT', receipt });
 }
 
 function escHtml(str) {

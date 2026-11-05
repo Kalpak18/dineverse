@@ -87,7 +87,18 @@ function printKitchenToken(order, cafeName, servedItems = null) {
 </body>
 </html>`;
 
-  printDocument(html, { title: 'Serving slip' });
+  const receipt = [
+    { text: cafeName || 'Kitchen', align: 'center' },
+    { text: 'SERVING SLIP - READY', align: 'center', bold: true },
+    { text: isTakeaway ? `TK ${num}` : isDelivery ? `D ${num}` : `#${num}`, align: 'center', bold: true, big: true },
+    { text: isTakeaway ? 'TAKEAWAY' : isDelivery ? 'DELIVERY' : tableName(order.table_number).toUpperCase(), align: 'center', bold: true },
+    { left: order.customer_name || '', right: `${dateStr} ${timeStr}` },
+    { rule: '-' },
+    ...itemsToPrint.map((i) => ({ qty: i.quantity, name: i.item_name, note: itemDetails(i), bold: true })),
+    order.notes && { rule: '-' },
+    order.notes && { text: `NOTE: ${order.notes}`, bold: true },
+  ].filter(Boolean);
+  printDocument(html, { title: 'Serving slip', receipt });
 }
 
 const OVERDUE_MS = 20 * 60 * 1000;       // 20 min = overdue
