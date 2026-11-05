@@ -100,6 +100,9 @@ function Ticket({ order, lane, now, station, compact, selected, dimmed, getNext,
           {order.customer_name && (
             <span className={`${compact ? 'text-xs' : 'text-sm'} font-semibold opacity-90 truncate`}>· {order.customer_name}</span>
           )}
+          {order.added_to_order_id && (
+            <span className="flex-shrink-0 text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-gray-950">ADDED</span>
+          )}
         </div>
         <div className="mt-1 empty:hidden"><TableStatusBadge order={order} dark /></div>
         {hint && <div className="mt-1 text-[11px] font-bold uppercase tracking-wider opacity-80">{hint} →</div>}

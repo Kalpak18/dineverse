@@ -804,7 +804,7 @@ export default function OrderConfirmation() {
                 )}
 
                 {/* Paid online, waiting for staff to close the order */}
-                {order.payment_verified && order.status !== 'paid' && order.status !== 'cancelled' && (
+                {(order.payment_verified || parseFloat(order.amount_paid) >= parseFloat(order.final_amount || order.total_amount)) && order.status !== 'paid' && order.status !== 'cancelled' && (
                   <p role="status" className="rounded-xl bg-green-50 border border-green-200 text-green-700 text-sm font-semibold text-center px-3 py-2.5">
                     💳 {t('order.paidOnline')}
                   </p>
@@ -853,7 +853,7 @@ export default function OrderConfirmation() {
                 )}
 
                 {/* Counter payment — the default while online payment is off */}
-                {!canPayOnline && isAccepted && !order.payment_verified && (
+                {!canPayOnline && isAccepted && !order.payment_verified && !(parseFloat(order.amount_paid) >= parseFloat(order.final_amount || order.total_amount)) && (
                   <p className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-semibold text-center px-3 py-2.5">
                     💵 {t('order.payAtCounter', { amount: c(order.final_amount || order.total_amount) })}
                   </p>

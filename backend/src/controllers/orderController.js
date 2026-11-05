@@ -185,6 +185,10 @@ exports.createOrder = asyncHandler(async (req, res) => {
     delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
   } = req.body;
   const tip = Math.max(0, Math.min(parseFloat(tip_amount) || 0, 10000));
+  // Entered by staff at the counter (createStaffOrder / addItemsToOrder):
+  // { table, partyId, addedTo } — same pricing as a customer order, but the
+  // table is the one staff picked and the kitchen gets it already accepted
+  const staff = req.staffOrder || null;
   // Dine-in table is provisional (typed by the customer) until resolved from a
   // table QR token below — only then is the order allowed onto a table bill.
   let tableNum = (order_type === 'takeaway' || order_type === 'delivery') ? (order_type === 'delivery' ? 'Delivery' : 'Takeaway') : (table_number || '');
@@ -218,12 +222,12 @@ exports.createOrder = asyncHandler(async (req, res) => {
       return fail(res, 'Café not found', 404);
     }
     const cafe = cafeResult.rows[0];
-    if (cafe.is_open === false) {
+    if (cafe.is_open === false && !staff) {
       await client.query('ROLLBACK');
       return fail(res, 'This café is currently closed and not accepting orders', 403);
     }
     // Check time-based schedule (only when opening_hours are configured)
-    const scheduleReason = scheduleBlock(cafe.opening_hours, cafe.timezone);
+    const scheduleReason = staff ? null : scheduleBlock(cafe.opening_hours, cafe.timezone);
     if (scheduleReason) {
       await client.query('ROLLBACK');
       return fail(res, scheduleReason, 403);
@@ -541,8 +545,15 @@ exports.createOrder = asyncHandler(async (req, res) => {
         tableNum = qrTable.label;
         tableVerified = true;
       }
+      if (staff?.table) {
+        // Staff chose the table themselves — no QR needed
+        tableId = staff.table.id;
+        tableNum = staff.table.label;
+        tableVerified = staff.table.verified !== false;
+      }
+      if (staff?.partyId) partyId = staff.partyId; // a round added to an existing order
       // Party = this device's orders, identified by a server-issued secret
-      if (typeof req.body.party_secret === 'string' && req.body.party_secret) {
+      if (!partyId && typeof req.body.party_secret === 'string' && req.body.party_secret) {
         const p = await client.query('SELECT id, secret FROM dining_parties WHERE secret = $1 AND cafe_id = $2', [req.body.party_secret, cafeId]);
         if (p.rows.length) ({ id: partyId, secret: partySecret } = p.rows[0]);
       }
@@ -570,10 +581,11 @@ exports.createOrder = asyncHandler(async (req, res) => {
             delivery_phone, delivery_lat, delivery_lng, delivery_instructions,
             delivery_fee, delivery_status, reservation_id,
             platform_fee, platform_fee_rate, customer_token,
-            table_id, table_verified, party_id)
+            table_id, table_verified, party_id,
+            status, added_to_order_id, source)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
                  $15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,
-                 $31,$32,$33)
+                 $31,$32,$33,$34,$35,$36)
          RETURNING id, order_number, customer_name, customer_phone, table_number, order_type,
                    status, total_amount, discount_amount, tip_amount, final_amount,
                    tax_amount, tax_rate, notes, created_at,
@@ -599,7 +611,8 @@ exports.createOrder = asyncHandler(async (req, res) => {
          order_type === 'delivery' ? 'pending' : null,
          reservation_id ? parseInt(reservation_id) : null,
          platformFee, commissionRate, customerToken,
-         tableId, tableVerified, partyId]
+         tableId, tableVerified, partyId,
+         staff ? 'confirmed' : 'pending', staff?.addedTo || null, staff ? 'staff' : 'customer']
       );
     } catch (insertErr) {
       await client.query('ROLLBACK');
@@ -786,6 +799,196 @@ exports.createOrder = asyncHandler(async (req, res) => {
   }
 });
 
+// ─── Staff: enter an order at the counter ───────────────────────
+// POST /orders/staff  { order_type, table_id?, customer_name?, customer_phone?, items, notes? }
+// Walk-ins, phone orders, a table that orders from the waiter. Priced exactly
+// like a customer order (same createOrder), already accepted for the kitchen.
+// Runs before validateOrder + createOrder on the route.
+exports.prepareStaffOrder = asyncHandler(async (req, res, next) => {
+  const { rows: [cafe] } = await db.query('SELECT slug FROM cafes WHERE id = $1', [req.cafeId]);
+  if (!cafe) return fail(res, 'Café not found', 404);
+  const orderType = ['dine-in', 'takeaway'].includes(req.body.order_type) ? req.body.order_type : 'takeaway';
+  let table = null;
+  if (orderType === 'dine-in') {
+    if (!req.body.table_id) return fail(res, 'Choose a table for a dine-in order', 400);
+    const { rows: [t] } = await db.query(
+      'SELECT id, label FROM cafe_tables WHERE id = $1 AND cafe_id = $2 AND is_active = true', [req.body.table_id, req.cafeId]);
+    if (!t) return fail(res, 'Table not found', 404);
+    table = { id: t.id, label: canonicalTableLabel(t.label), verified: true };
+  }
+  req.params.slug = cafe.slug;
+  req.body = {
+    order_type: orderType,
+    customer_name: String(req.body.customer_name || '').trim().slice(0, 100) || (orderType === 'takeaway' ? 'Walk-in' : 'Table guest'),
+    customer_phone: req.body.customer_phone || undefined,
+    table_number: table?.label,
+    items: req.body.items,
+    notes: req.body.notes || undefined,
+    // retried taps reuse it: the server returns the order it already made
+    client_order_id: req.body.client_order_id || undefined,
+  };
+  req.staffOrder = { table, partyId: null, addedTo: null };
+  next();
+});
+
+// ─── Staff: add items to an existing order (a new round / KOT) ──
+// POST /orders/:id/add-items  { items, notes? }
+// The original order is never changed (it may already be paid): the items
+// go on a new order for the same table/customer, linked by added_to_order_id,
+// so the kitchen gets a new ticket and the bill shows what's still due.
+exports.prepareAddItems = asyncHandler(async (req, res, next) => {
+  const { rows: [base] } = await db.query(
+    `SELECT o.id, o.added_to_order_id, o.order_type, o.status, o.customer_name, o.customer_phone,
+            o.table_number, o.table_id, o.table_verified, o.party_id, c.slug
+       FROM orders o JOIN cafes c ON c.id = o.cafe_id
+      WHERE o.id = $1 AND o.cafe_id = $2`,
+    [req.params.id, req.cafeId]
+  );
+  if (!base) return fail(res, 'Order not found', 404);
+  if (base.status === 'cancelled') return fail(res, 'This order was cancelled — start a new order instead', 400);
+  if (base.order_type === 'delivery') return fail(res, 'For a delivery, place a new delivery order', 400);
+  req.params.slug = base.slug;
+  req.body = {
+    order_type: base.order_type,
+    customer_name: base.customer_name,
+    customer_phone: base.customer_phone || undefined,
+    table_number: base.order_type === 'dine-in' ? base.table_number : undefined,
+    items: req.body.items,
+    notes: req.body.notes || undefined,
+    // retried taps reuse it: the server returns the order it already made
+    client_order_id: req.body.client_order_id || undefined,
+  };
+  req.staffOrder = {
+    table: base.order_type === 'dine-in' && base.table_id
+      ? { id: base.table_id, label: base.table_number, verified: base.table_verified !== false }
+      : null,
+    partyId: base.party_id,
+    addedTo: base.added_to_order_id || base.id,
+  };
+  next();
+});
+
+// ─── Staff: take payment at any time ────────────────────────────
+// POST /orders/:id/payment  { payment_mode, cash_received?, payment_splits?, bill_total? }
+// Records that the customer paid this order's balance. A takeaway can pay
+// first and keep cooking; an order that is already Ready/Served is closed
+// (status 'paid') in the same step.
+exports.recordPayment = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { payment_mode, cash_received, payment_splits } = req.body;
+  if (!['cash', 'upi', 'card', 'split'].includes(payment_mode)) return fail(res, 'payment_mode must be cash, upi, card or split', 400);
+  let splits = null;
+  if (payment_mode === 'split') {
+    const ok_ = Array.isArray(payment_splits) && payment_splits.length >= 2 && payment_splits.length <= 20
+      && payment_splits.every((p) => ['cash', 'upi', 'card'].includes(p?.mode) && Number(p?.amount) > 0);
+    if (!ok_) return fail(res, 'payment_splits must be 2–20 shares, each { amount > 0, mode: cash|upi|card }', 400);
+    splits = JSON.stringify(payment_splits.map((p) => ({ amount: Math.round(Number(p.amount) * 100) / 100, mode: p.mode })));
+  }
+  const cash = cash_received != null && cash_received !== '' ? parseFloat(cash_received) : null;
+  if (cash != null && !(cash >= 0)) return fail(res, 'cash_received must be a positive amount', 400);
+  const billTotal = parseFloat(req.body.bill_total);
+
+  const client = await db.pool.connect();
+  let released = false;
+  try {
+    await client.query('BEGIN');
+    const { rows: [o] } = await client.query(
+      `SELECT status, payment_verified, amount_paid, COALESCE(final_amount, total_amount) AS due_total
+         FROM orders WHERE id = $1 AND cafe_id = $2 FOR UPDATE`,
+      [id, req.cafeId]
+    );
+    if (!o) { await client.query('ROLLBACK'); return fail(res, 'Order not found', 404); }
+    if (o.status === 'cancelled') { await client.query('ROLLBACK'); return fail(res, 'This order was cancelled', 400); }
+    const balance = parseFloat(o.due_total) - parseFloat(o.amount_paid);
+    if (o.payment_verified || balance <= 0.004) { await client.query('ROLLBACK'); return fail(res, 'This order is already paid', 409); }
+    const closes = ['ready', 'served'].includes(o.status);
+
+    await client.query(
+      `UPDATE orders SET
+          amount_paid  = COALESCE(final_amount, total_amount),
+          paid_at      = NOW(),
+          payment_mode = $2,
+          cash_received = $3,
+          change_amount = CASE WHEN $3::numeric IS NULL THEN NULL
+                               ELSE $3::numeric - COALESCE($4::numeric, COALESCE(final_amount, total_amount) - amount_paid) END,
+          payment_splits = COALESCE($5::jsonb, payment_splits),
+          -- DineVerse's fee: the café collected the money itself
+          commission_amount = COALESCE(platform_fee, 0),
+          commission_status = 'cash_due',
+          status = CASE WHEN status IN ('ready', 'served') THEN 'paid' ELSE status END,
+          updated_at = NOW()
+        WHERE id = $1`,
+      [id, payment_mode, cash, Number.isFinite(billTotal) && billTotal > 0 ? billTotal : null, splits]
+    );
+    if (closes) {
+      await client.query(
+        `UPDATE order_items SET item_status = 'served', served_at = COALESCE(served_at, NOW())
+          WHERE order_id = $1 AND item_status NOT IN ('cancelled', 'served')`, [id]);
+    }
+    await client.query('COMMIT');
+    client.release();
+    released = true;
+
+    db.query(
+      `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, o.status, closes ? 'paid' : o.status, req.role === 'STAFF' ? 'staff' : 'owner', req.staffId || req.cafeId, `payment:${payment_mode}`]
+    ).catch(() => {});
+    if (closes) onOrderClosed(req.cafeId, id);
+
+    const fullOrder = await getOrderWithItems(id, req.cafeId);
+    if (req.io) {
+      req.io.to(`cafe:${req.cafeId}`).emit('order_updated', fullOrder);
+      req.io.to(`order:${id}`).emit('order_updated', {
+        id, status: fullOrder.status, amount_paid: fullOrder.amount_paid, final_amount: fullOrder.final_amount, updated_at: fullOrder.updated_at,
+      });
+    }
+    ok(res, { order: fullOrder });
+  } catch (err) {
+    if (!released) await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    if (!released) client.release();
+  }
+});
+
+// ─── Staff: record a cash refund ─────────────────────────────────
+// POST /orders/:id/cash-refund — the customer paid more than the order now
+// costs (an item cancelled after paying, or the order cancelled): staff hand
+// the difference back and record it here.
+exports.recordCashRefund = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { rows: [o] } = await db.query(
+    `UPDATE orders SET
+        amount_paid = CASE WHEN status = 'cancelled' THEN 0 ELSE LEAST(amount_paid, COALESCE(final_amount, total_amount)) END,
+        updated_at = NOW()
+      WHERE id = $1 AND cafe_id = $2 AND NOT COALESCE(payment_verified, false)
+        AND amount_paid > CASE WHEN status = 'cancelled' THEN 0 ELSE COALESCE(final_amount, total_amount) END
+      RETURNING id`,
+    [id, req.cafeId]
+  );
+  if (!o) return fail(res, 'No refund is owed on this order', 409);
+  db.query(
+    `INSERT INTO order_events (order_id, from_status, to_status, actor_type, actor_id, actor_name)
+     SELECT id, status, status, $2, $3, 'cash_refund' FROM orders WHERE id = $1`,
+    [id, req.role === 'STAFF' ? 'staff' : 'owner', req.staffId || req.cafeId]
+  ).catch(() => {});
+  const fullOrder = await getOrderWithItems(id, req.cafeId);
+  req.io?.to(`cafe:${req.cafeId}`).emit('order_updated', fullOrder);
+  ok(res, { order: fullOrder });
+});
+
+// After an order is closed as paid: loyalty points (once — see earnPoints)
+function onOrderClosed(cafeId, id) {
+  db.query('SELECT customer_phone, final_amount, commission_amount, commission_status, payment_mode FROM orders WHERE id = $1', [id])
+    .then(({ rows: [o] }) => {
+      if (!o) return;
+      logger.info('Order %s paid: ₹%s commission — status=%s mode=%s', id, o.commission_amount, o.commission_status, o.payment_mode);
+      require('./loyaltyController').earnPoints(cafeId, id, o.customer_phone, o.final_amount);
+    })
+    .catch((e) => logger.warn('post-paid hooks failed for order %s: %s', id, e.message));
+}
+
 // ─── Owner/Staff: get all orders ──────────────────────────────
 exports.getOrders = asyncHandler(async (req, res) => {
   const { status, date, since, until, scope, page = 1 } = req.query;
@@ -821,7 +1024,8 @@ exports.getOrders = asyncHandler(async (req, res) => {
               o.platform_fee, o.platform_fee_rate, o.platform_discount_amount,
               o.payment_verified, o.cancellation_reason, o.payment_mode, o.cash_received, o.payment_splits,
               o.notes, o.created_at, o.updated_at,
-              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
+              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at,
+              o.amount_paid, o.paid_at, o.added_to_order_id, o.source
        FROM orders o ${whereClause}
        ORDER BY o.created_at DESC
        LIMIT $${idx} OFFSET $${idx + 1}`,
@@ -866,7 +1070,8 @@ exports.getKitchenOrders = asyncHandler(async (req, res) => {
             o.order_type, o.status, o.kitchen_mode, o.accepted,
             o.total_amount, o.final_amount, o.payment_verified,
             o.notes, o.created_at, o.updated_at,
-            o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
+            o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at,
+            o.amount_paid, o.paid_at, o.added_to_order_id, o.source
      FROM orders o
      WHERE o.cafe_id = $1 AND o.status = ANY($2)
      ORDER BY o.created_at ASC
@@ -946,8 +1151,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
 
   // Fetch current status + payment flag + transfer flag to set commission_status correctly
   const currentRow = await client.query(
-    `SELECT status, payment_verified, razorpay_transfer_id,
-            COALESCE(payment_mode, '') AS payment_mode
+    `SELECT status, razorpay_transfer_id,
+            COALESCE(payment_mode, '') AS payment_mode,
+            COALESCE(payment_verified, false) AS online_paid,
+            -- paid in full already (online, or at the counter earlier):
+            -- "complete" is then allowed from any active state
+            (COALESCE(payment_verified, false)
+              OR (amount_paid > 0 AND amount_paid >= COALESCE(final_amount, total_amount) - 0.004)) AS paid_in_full
      FROM orders WHERE id = $1 AND cafe_id = $2`,
     [id, req.cafeId]
   );
@@ -955,7 +1165,7 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     await client.query('ROLLBACK');
     return fail(res, 'Order not found', 404);
   }
-  const { status: currentStatus, payment_verified: isPrepaid,
+  const { status: currentStatus, paid_in_full: isPrepaid, online_paid: isOnlinePaid,
           razorpay_transfer_id: existingTransferId,
           payment_mode: existingPaymentMode } = currentRow.rows[0];
 
@@ -1005,6 +1215,17 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     params.push(payment_mode);
   } else if (status === 'paid') {
     setClauses.push(`payment_mode = COALESCE(payment_mode, 'cash')`);
+  }
+  if (status === 'paid') {
+    // Closing as paid: whatever was still due is received now
+    setClauses.push(
+      'amount_paid = GREATEST(amount_paid, COALESCE(final_amount, total_amount))',
+      'paid_at = COALESCE(paid_at, NOW())',
+    );
+  }
+  if (status === 'cancelled') {
+    // No sale, no platform fee (money already taken is shown as a refund owed)
+    setClauses.push('commission_amount = 0', "commission_status = 'pending'");
   }
   if (status === 'paid') {
     // DineVerse's fee is recorded in the same statement as the payment, so a
@@ -1112,21 +1333,13 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     req.io.to(`order:${id}`).emit('order_updated', updatedOrder);
   }
 
-  if (status === 'cancelled' && isPrepaid) {
+  // Only online payments go back through Razorpay; cash taken at the
+  // counter shows as a refund owed for staff to hand back
+  if (status === 'cancelled' && isOnlinePaid) {
     refundPrepaidOrder(id, cancellation_reason || 'Cancelled by café');
   }
 
-  if (status === 'paid' && fromStatus !== 'paid') {
-    db.query(
-      `SELECT customer_phone, final_amount, commission_amount, commission_status, payment_mode
-       FROM orders WHERE id = $1`, [id]
-    ).then(async (fullOrder) => {
-      if (!fullOrder.rows.length) return;
-      const { customer_phone, final_amount, commission_amount, commission_status, payment_mode: mode } = fullOrder.rows[0];
-      logger.info('Order %s paid: ₹%s commission — status=%s mode=%s', id, commission_amount, commission_status, mode);
-      require('./loyaltyController').earnPoints(req.cafeId, id, customer_phone, final_amount);
-    }).catch((e) => logger.warn('post-paid hooks failed for order %s: %s', id, e.message));
-  }
+  if (status === 'paid' && fromStatus !== 'paid') onOrderClosed(req.cafeId, id);
 
   ok(res, { order: staffOrder });
 
@@ -1190,7 +1403,7 @@ exports.getOrderStatus = asyncHandler(async (req, res) => {
             o.delivery_status, o.delivery_address, o.delivery_lat, o.delivery_lng,
             o.driver_name, o.driver_phone, o.driver_lat, o.driver_lng,
             o.driver_updated_at, o.delivered_at, o.delivery_failed_reason,
-            o.customer_token, o.refund_status, o.table_verified, o.payment_verified,
+            o.customer_token, o.refund_status, o.table_verified, o.payment_verified, o.amount_paid,
             c.latitude AS cafe_lat, c.longitude AS cafe_lng, c.name AS cafe_name
      FROM orders o
      JOIN cafes c ON o.cafe_id = c.id
@@ -1446,7 +1659,8 @@ async function getOrderWithItems(orderId, cafeId = null) {
               o.delivery_phone, o.delivery_instructions, o.delivery_status,
               o.driver_name, o.driver_phone, o.delivered_at, o.delivery_failed_reason,
               o.kitchen_mode, o.accepted,
-              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at
+              o.table_id, o.table_verified, o.party_id, o.moved_from_table, o.moved_at,
+              o.amount_paid, o.paid_at, o.added_to_order_id, o.source, o.change_amount
        FROM orders o WHERE o.id = $1${cafeFilter}`,
       params
     ),
@@ -1685,6 +1899,7 @@ async function settleFoodPayment({ id, slug, razorpayOrderId, paymentId, io }) {
       `UPDATE orders
        SET status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END,
            payment_id = $1, payment_verified = true,
+           amount_paid = COALESCE(final_amount, total_amount), paid_at = NOW(),
            payment_mode = 'online', updated_at = NOW()
        WHERE id = $2
        RETURNING id, order_number,

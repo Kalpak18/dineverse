@@ -206,6 +206,11 @@ export const deleteArea       = (id)           => api.delete(`/tables/areas/${id
 export const createTable      = (data)         => api.post('/tables', data);
 export const updateTable      = (id, data)     => api.patch(`/tables/${id}`, data);
 export const rotateTableQr    = (id)           => api.post(`/tables/${id}/rotate-qr`);
+// Counter / POS: staff enter orders, add rounds, take payment at any time
+export const createStaffOrder  = (data)          => api.post('/orders/staff', data);
+export const addItemsToOrder   = (orderId, data) => api.post(`/orders/${orderId}/add-items`, data);
+export const recordPayment     = (orderId, data) => api.post(`/orders/${orderId}/payment`, data);
+export const recordCashRefund  = (orderId)       => api.post(`/orders/${orderId}/cash-refund`);
 // Staff: confirm or move an order's table (whole party by default)
 export const setOrderTable    = (orderId, tableId) => api.patch(`/orders/${orderId}/table`, { table_id: tableId });
 export const deleteTable      = (id)           => api.delete(`/tables/${id}`);

@@ -17,6 +17,7 @@ const {
   cancelItem, reorderItems, generateKot, getKotHistory,
   updateDriverLocation, getDriverOrderInfo,
   remindBill,
+  prepareStaffOrder, prepareAddItems, recordPayment, recordCashRefund,
 } = require('../controllers/orderController');
 const {
   getCustomerMessages, postCustomerMessage,
@@ -54,6 +55,13 @@ router.get('/stats', authenticate, checkSubscription, requireRole('manager'), ge
 // All features available to every café — no premium gate
 router.get('/',                              authenticate, checkSubscription, getOrders);
 router.get('/kitchen',                       authenticate, checkSubscription, getKitchenOrders);
+// Counter / POS: staff enter orders, add rounds, take payment at any time
+const staffOnly = [authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter')];
+const tillOnly  = [authenticate, checkSubscription, requireRole('manager', 'cashier')];
+router.post('/staff',              ...staffOnly, prepareStaffOrder, validateOrder, createOrder);
+router.post('/:id/add-items',      ...staffOnly, prepareAddItems, validateOrder, createOrder);
+router.post('/:id/payment',        ...tillOnly, recordPayment);
+router.post('/:id/cash-refund',    ...tillOnly, recordCashRefund);
 // Call waiter / request bill (staff side). Must stay above '/:id'.
 router.get('/service-requests',              authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter'), svc.getServiceRequests);
 router.patch('/service-requests/:rid/ack',   authenticate, checkSubscription, requireRole('manager', 'cashier', 'waiter'), svc.acknowledgeServiceRequest);

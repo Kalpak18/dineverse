@@ -89,6 +89,10 @@ async function startServer({ noStub = false, ...overrides } = {}) {
     db,
     rzpCalls: () => fs.readFileSync(rzpLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)),
     async stop() {
+      // TEST_SHOW_LOG=1 prints the API's errors (debugging a 500)
+      if (process.env.TEST_SHOW_LOG) {
+        process.stderr.write(fs.readFileSync(serverLog, 'utf8').split('\n').filter((l) => /error|Error/.test(l)).slice(-20).join('\n') + '\n');
+      }
       child.kill();
       await db.end();
       const a = new Pool({ connectionString: ADMIN_URL });

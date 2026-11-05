@@ -3,12 +3,14 @@ import { io } from 'socket.io-client';
 import SOCKET_URL from '../../utils/socketUrl';
 import { ownerSocketAuth } from '../../utils/socketAuth';
 import { getOrders, updateOrderStatus, setKitchenMode, updateItemStatus, getOwnerMessages, postOwnerMessage, remindBill,
-  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot } from '../../services/api';
+  getRiders, assignRider, updateSelfDeliveryStatus, getDeliveryPlatforms, dispatchToPartner, generateOrderKot,
+  recordPayment, recordCashRefund } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
 import { useReliableAction, SavingPill, useLiveStatus, OfflineBanner } from '../../hooks/useReliableAction';
+import OrderPad from '../../components/OrderPad';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
@@ -71,6 +73,14 @@ function SearchInput({ value, onChange, placeholder }) {
   );
 }
 
+// Money on an order: paid in full (online or at the counter) and any refund
+// still owed to the customer (an item cancelled after paying, or the order
+// cancelled). final_amount is what the order costs now.
+const owed = (o) => parseFloat(o.final_amount || o.total_amount) || 0;
+const paidInFull = (o) => !!o.payment_verified || ((parseFloat(o.amount_paid) || 0) > 0 && (parseFloat(o.amount_paid) || 0) >= owed(o) - 0.004);
+const refundOwed = (o) => (o.payment_verified ? 0
+  : Math.max(0, (parseFloat(o.amount_paid) || 0) - (o.status === 'cancelled' ? 0 : owed(o))));
+
 export default function OrdersPage() {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
@@ -81,6 +91,8 @@ export default function OrdersPage() {
   const [search, setSearch] = useState('');
   const [detailOrderId, setDetailOrderId] = useState(null);
   const [activeTab, setActiveTab] = useState(TABS.ORDERS);
+  // Order pad: null | { addTo?: order } — a new counter order or more items
+  const [pad, setPad] = useState(null);
   // Cancel with reason
   const [cancelTarget, setCancelTarget] = useState(null);
   // Billing modal — lifted to top level so OrderCard can open it too
@@ -171,18 +183,18 @@ export default function OrdersPage() {
         name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
       orders: [order],
-      // Payment is taken once the food is ready or served; before that the
-      // sheet only prints a draft bill
-      canCollect: ['ready', 'served'].includes(order.status),
+      // Payment can be taken at any time (a takeaway often pays first)
+      canCollect: order.status !== 'cancelled' && !paidInFull(order),
     };
     setBillingModal({
       bill,
       onConfirm: (cashReceived, paymentMode, splits) =>
-        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode, splits, bill.total),
+        handlePayment(order.id, paymentMode, cashReceived, splits, bill.total),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const billingBill = billingModal?.bill || null;
+  const ordersById = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders]);
 
   // Resolves with the saved order; throws if the change didn't apply (the
   // caller — e.g. the billing sheet — then stays open instead of claiming success)
@@ -200,6 +212,33 @@ export default function OrdersPage() {
     } finally {
       inFlightRef.current.delete(orderId);
     }
+  };
+
+  // Takes payment for an order at any stage (closes it if already Ready/Served).
+  // Throws if it didn't save, so the billing sheet stays open.
+  const handlePayment = async (orderId, paymentMode, cashReceived = null, splits = null, billTotal = null) => {
+    if (inFlightRef.current.has(`pay:${orderId}`)) return null;
+    inFlightRef.current.add(`pay:${orderId}`);
+    try {
+      const data = await send(orderId,
+        () => recordPayment(orderId, {
+          payment_mode: paymentMode || 'cash',
+          cash_received: cashReceived,
+          payment_splits: splits,
+          bill_total: billTotal,
+        }),
+        (o) => paidInFull(o));
+      if (!data) throw new Error('Order not updated');
+      applyOrder(data.order);
+      return data.order;
+    } finally {
+      inFlightRef.current.delete(`pay:${orderId}`);
+    }
+  };
+
+  const handleCashRefund = async (order) => {
+    const data = await send(order.id, () => recordCashRefund(order.id), (o) => refundOwed(o) < 0.005);
+    if (data) { applyOrder(data.order); toast.success('Refund recorded'); }
   };
 
   const handleKitchenModeToggle = async (orderId, mode) => {
@@ -263,11 +302,13 @@ export default function OrdersPage() {
   // Dine-in "served" → Bills tab (Table Bills)
   const isOrdersTabVisible = (o) => {
     if (!o.status) return false;
+    if (o.status === 'paid' && refundOwed(o) > 0.004) return true;
     if (['paid', 'cancelled'].includes(o.status)) return false;
-    if (o.order_type === 'takeaway' && o.status === 'ready' && !o.payment_verified) return false;
+    if (o.status === 'cancelled' && refundOwed(o) > 0.004) return true; // hand the money back first
+    if (o.order_type === 'takeaway' && o.status === 'ready' && !paidInFull(o)) return false;
     // Served dine-in goes to its table's bill — except prepaid orders (Mark
     // Complete here) and unconfirmed tables (Confirm table here first)
-    if (o.order_type !== 'takeaway' && o.status === 'served' && !o.payment_verified && o.table_verified !== false) return false;
+    if (o.order_type !== 'takeaway' && o.status === 'served' && !paidInFull(o) && o.table_verified !== false) return false;
     return true;
   };
 
@@ -284,7 +325,7 @@ export default function OrdersPage() {
 
   // Bills tab: takeaway orders ready for pickup
   const takeawayPickups = useMemo(
-    () => orders.filter((o) => o.order_type === 'takeaway' && o.status === 'ready' && !o.payment_verified),
+    () => orders.filter((o) => o.order_type === 'takeaway' && o.status === 'ready' && !paidInFull(o)),
     [orders]
   );
 
@@ -295,8 +336,8 @@ export default function OrdersPage() {
     orders.forEach((o) => {
       if (o.status === 'cancelled' || o.status === 'paid') return;
       if (o.order_type === 'takeaway') return;
-      // Paid online already — completed from the Orders tab, never billed again
-      if (o.payment_verified) return;
+      // Paid already (online or earlier at the counter) — never billed again
+      if (paidInFull(o)) return;
       // Not on any table's bill until the table is confirmed (QR scan or staff)
       if (o.table_verified === false) return;
 
@@ -420,7 +461,10 @@ export default function OrdersPage() {
 
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-        <button onClick={loadOrders} className="btn-secondary text-sm">↻ Refresh</button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setPad({})} className="btn-primary text-sm min-h-[44px]">＋ New order</button>
+          <button onClick={loadOrders} className="btn-secondary text-sm min-h-[44px]">↻ Refresh</button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -512,6 +556,10 @@ export default function OrdersPage() {
                 <OrderCard
                   key={order.id}
                   order={order}
+                  onAddItems={(o) => setPad({ addTo: o })}
+                  onCashRefund={handleCashRefund}
+                  addedToToken={order.added_to_order_id && ordersById.get(order.added_to_order_id)
+                    ? fmtToken(ordersById.get(order.added_to_order_id).daily_order_number, order.order_type) : null}
                   onStatusUpdate={handleStatusUpdate}
                   onKitchenModeToggle={handleKitchenModeToggle}
                   onItemStatusUpdate={handleItemStatusUpdate}
@@ -555,6 +603,7 @@ export default function OrdersPage() {
           takeawayPickups={takeawayPickups}
           tableBills={tableBills}
           onStatusUpdate={handleStatusUpdate}
+          onPayment={handlePayment}
           onOpenBilling={(bill, onConfirm) => setBillingModal({ bill, onConfirm })}
           onRemind={async (tableNumber) => {
             try {
@@ -596,6 +645,19 @@ export default function OrdersPage() {
           bill={billingBill}
           onConfirm={billingModal.onConfirm}
           onClose={() => setBillingModal(null)}
+        />
+      )}
+
+      {/* ── Order pad: new counter order / add items ── */}
+      {pad && (
+        <OrderPad
+          addTo={pad.addTo || null}
+          onClose={() => setPad(null)}
+          onPlaced={(order, { pay }) => {
+            setPad(null);
+            applyOrder(order);
+            if (pay) openOrderBilling(order);
+          }}
         />
       )}
 
@@ -862,7 +924,7 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
   );
 }
 
-function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, onOpenDetail, chatOpen, chatUnread, chatMessages, chatMessagesLoading, onOrderUpdated }) {
+function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpdate, onCancelClick, onChatClick, onOpenBilling, onOpenDetail, onAddItems, onCashRefund, addedToToken, chatOpen, chatUnread, chatMessages, chatMessagesLoading, onOrderUpdated }) {
   const { cafe } = useAuth();
   const c = (n) => fmtCurrency(n, cafe?.currency);
   const [advancing, setAdvancing] = useState(false);
@@ -870,13 +932,17 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
   const statusCfg = STATUS_CONFIG[order.status] || {};
   const nextStatus = getNextStatus(order.status, order.order_type);
   const rawActionLabel = getActionLabel(order.status, order.order_type);
-  const actionLabel = order.payment_verified && (nextStatus === 'paid' || order.status === 'served')
+  const isPaid = paidInFull(order);
+  const refund = refundOwed(order);
+  const actionLabel = isPaid && (nextStatus === 'paid' || order.status === 'served')
     ? '✓ Mark Complete'
     : rawActionLabel;
   const isIndividual = order.kitchen_mode === 'individual';
 
   const handleAdvance = async () => {
     if (!nextStatus || advancing) return;
+    // Unpaid → the billing sheet takes the payment (never "paid" with no money)
+    if (nextStatus === 'paid' && !isPaid) { onOpenBilling(order); return; }
     setAdvancing(true);
     try { await onStatusUpdate(order.id, nextStatus); }
     catch { }
@@ -919,8 +985,15 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         </div>
         <div className="flex items-center gap-1.5">
           <p className="font-semibold text-gray-800 text-sm leading-tight">{order.customer_name}</p>
-          {order.payment_verified && order.status !== 'paid' && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">💳 Prepaid</span>
+          {isPaid && order.status !== 'paid' && order.status !== 'cancelled' && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+              ✓ Paid{order.payment_mode ? ` · ${PAYMENT_MODE_SHORT[order.payment_mode] || order.payment_mode}` : ''}
+            </span>
+          )}
+          {order.added_to_order_id && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 whitespace-nowrap">
+              ➕ Added{addedToToken ? ` to ${addedToToken}` : ''}
+            </span>
           )}
           {order.reservation_id && (
             <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">🔖 Reserved</span>
@@ -929,6 +1002,12 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         <p className="text-xs text-gray-400 mt-0.5">
           {order.order_type === 'takeaway' ? '🥡 Takeaway' : `🍽️ ${order.table_number}`}{' · '}{fmtTime(order.created_at)}
         </p>
+        {refund > 0.004 && (
+          <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-red-50 border border-red-200 px-2.5 py-1.5" role="alert">
+            <span className="text-xs font-bold text-red-700">↩ Refund {fmtCurrency(refund, cafe?.currency)} to the customer</span>
+            <button type="button" onClick={() => onCashRefund?.(order)} className="min-h-[36px] px-2.5 rounded-lg bg-red-600 text-white text-xs font-bold">Refunded</button>
+          </div>
+        )}
         {/* Item preview */}
         <div className="mt-2 space-y-0.5">
           {(order.items || []).slice(0, 3).map((item) => (
@@ -1002,17 +1081,16 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
         <button onClick={handleKotPrint} disabled={kotPrinting} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 transition-colors flex-shrink-0 flex items-center gap-1" title="Print KOT">
           📋 <span>KOT</span>
         </button>
-        {order.status === 'paid' ? (
+        {order.status === 'paid' || isPaid ? (
           <span className="px-2.5 py-1.5 rounded-xl border border-green-200 text-green-600 text-xs font-medium flex-shrink-0 flex items-center gap-1">✓ Paid</span>
-        ) : order.payment_verified ? (
-          <button onClick={async () => { setAdvancing(true); try { await onStatusUpdate(order.id, 'paid'); } catch { } finally { setAdvancing(false); } }}
-            disabled={advancing}
-            className="px-2.5 py-1.5 rounded-xl border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 disabled:opacity-60">
-            💳 <span>Mark Complete</span>
-          </button>
-        ) : (
+        ) : order.status !== 'cancelled' && (
           <button onClick={() => onOpenBilling(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-600 text-xs font-medium hover:bg-gray-50 active:bg-gray-100 transition-colors flex-shrink-0 flex items-center gap-1">
-            🖨️ <span>Bill</span>
+            💵 <span>Bill / Pay</span>
+          </button>
+        )}
+        {!['cancelled', 'paid'].includes(order.status) && order.order_type !== 'delivery' && onAddItems && (
+          <button onClick={() => onAddItems(order)} className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-gray-700 text-xs font-semibold hover:bg-gray-50 transition-colors flex-shrink-0 flex items-center gap-1">
+            ＋ <span>Add items</span>
           </button>
         )}
         <button onClick={() => onChatClick(order)} className={`relative px-2.5 py-1.5 rounded-xl border text-xs font-medium transition-colors flex-shrink-0 flex items-center gap-1 ${chatOpen ? 'bg-blue-50 border-blue-300 text-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
@@ -1118,7 +1196,7 @@ function ItemKotRow({ item, cafe, orderToken, tableNumber, orderType, onStatusUp
 
 // ─── Bills View (Takeaway Pickup + Table Bills) ────────────────────────────
 
-function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling, onRemind }) {
+function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onPayment, onOpenBilling, onRemind }) {
   const { cafe: _bv } = useAuth();
   const c = (n) => fmtCurrency(n, _bv?.currency);
   const [expandedTable, setExpandedTable] = useState(null);
@@ -1132,14 +1210,14 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
     const key = bill.isTakeaway ? bill.orders[0].id : bill.table_number;
     setCollecting(key);
     try {
-      const toPay = bill.orders.filter((o) => !o.payment_verified && ['ready', 'served'].includes(o.status));
-      if (!toPay.length) throw new Error('Nothing on this bill is ready to be paid');
+      const toPay = bill.orders.filter((o) => !paidInFull(o) && o.status !== 'cancelled');
+      if (!toPay.length) throw new Error('Nothing on this bill is left to pay');
       // Cash received + split shares are recorded once, on the first order,
       // against the whole bill (so change is worked out on the bill total)
       const [first, ...rest] = toPay;
-      await onStatusUpdate(first.id, 'paid', cashReceived, null, paymentMode, splits, bill.total);
+      await onPayment(first.id, paymentMode, cashReceived, splits, bill.total);
       const results = await Promise.allSettled(
-        rest.map((o) => onStatusUpdate(o.id, 'paid', null, null, paymentMode, null))
+        rest.map((o) => onPayment(o.id, paymentMode, null, null))
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed) throw new Error(`${failed} of ${toPay.length} orders on this bill were not marked paid — check the bill and collect again`);
@@ -1443,6 +1521,8 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
 }
 
 // ─── Billing Modal ────────────────────────────────────────────────────────
+
+const PAYMENT_MODE_SHORT = { cash: 'Cash', upi: 'UPI', card: 'Card', online: 'Online', split: 'Split' };
 
 const PAYMENT_MODES = [
   { value: 'cash',    label: '💵 Cash' },

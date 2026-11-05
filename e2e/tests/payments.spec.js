@@ -22,11 +22,11 @@ test('pays by UPI once served; the phone keeps showing it was paid', async ({ pa
   const { order, pay } = await servedOrder(page);
   await pay.click();
   await expect(page.getByText('Payment successful! 🎉')).toBeVisible();
-  await expect(page.getByText(/Paid online ✓/)).toBeVisible();
+  await expect(page.getByText(/Paid ✓/)).toBeVisible();
   await expect(pay).toBeHidden();
   const opened = await page.evaluate(() => window.__rzpOpened);
   await page.reload(); // still says so after the toast is gone
-  await expect(page.getByText(/Paid online ✓/)).toBeVisible();
+  await expect(page.getByText(/Paid ✓/)).toBeVisible();
 
   expect(opened).toMatchObject({ amount: 34680, key: 'rzp_test_e2e', method: 'upi' });
   expect(await row(order.id)).toMatchObject({ status: 'served', payment_verified: true });

@@ -16,6 +16,11 @@ import { tableName } from '../../utils/tableName';
 
 const KDS_TOAST = { background: '#1f2937', color: '#fff' };
 
+// A round added later to an order (staff "Add items" or the customer ordering more)
+const AddedTag = ({ order }) => (order.added_to_order_id
+  ? <span className="ml-1.5 inline-block text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-gray-950 align-middle">ADDED</span>
+  : null);
+
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function itemDetails(item) {
   const parts = [];
@@ -227,10 +232,11 @@ function CombinedTableCard({ group, status, now, onAdvance, onAdvanceAll, onItem
           {orderCount > 1 && (
             <p className="text-[11px] text-gray-500 mt-2 mb-1">
               {fmtToken(order.daily_order_number, order.order_type)} · {order.customer_name} · {fmtTime(order.created_at)}
+              <AddedTag order={order} />
             </p>
           )}
           {orderCount === 1 && (
-            <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}</p>
+            <p className="text-xs text-gray-500 mb-2">{order.customer_name} · {fmtTime(order.created_at)}<AddedTag order={order} /></p>
           )}
 
           <div className="space-y-1">
@@ -342,6 +348,7 @@ function RushCard({ order, now, onAdvance, onItemUpdate }) {
         <div className="flex items-center gap-1 flex-shrink-0">
           <span className="text-[9px] text-gray-500">
             {order.order_type === 'takeaway' ? '🥡' : order.order_type === 'delivery' ? '🚚' : `T${order.table_number}`}
+            <AddedTag order={order} />
           </span>
           <span className={`text-[9px] px-1 py-0.5 rounded ${tc}`}>{icon}{mins < 1 ? 'now' : `${mins}m`}</span>
         </div>
@@ -559,6 +566,7 @@ function KDSOrderCard({ order, status, now, selectedItems, onAdvance, onItemUpda
           </span>
           <span className="text-xs text-gray-400 truncate">
             {order.order_type === 'takeaway' ? '🥡' : order.order_type === 'delivery' ? '🚚 Delivery' : `🍽️ ${order.table_number}`}
+            <AddedTag order={order} />
           </span>
           {etaMins !== null && (
             <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${etaMins <= 0 ? 'bg-teal-600/80 text-white' : etaMins <= 3 ? 'bg-red-600/80 text-white animate-pulse' : 'bg-orange-600/60 text-orange-100'}`}>

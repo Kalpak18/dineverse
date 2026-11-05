@@ -33,7 +33,7 @@ test('a refused payment keeps the bill open and never says "collected"', async (
   await advance(token, order.id, 'served');
 
   await openBills(page, c.cafe.email);
-  await page.route('**/api/orders/*/status', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: '{"success":false,"message":"nope"}' }));
+  await page.route('**/api/orders/*/payment', (r) => r.fulfill({ status: 400, contentType: 'application/json', body: '{"success":false,"message":"nope"}' }));
   await page.getByRole('button', { name: '💵 Collect Payment' }).click();
   await page.getByRole('button', { name: 'Mark Paid' }).click();
   await expect(page.getByText(/Already changed on another device/).first()).toBeVisible();

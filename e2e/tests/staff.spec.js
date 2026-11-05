@@ -82,7 +82,7 @@ test('KOT and bill open an in-app preview: Print, WhatsApp, Back/Close stay in t
   await expect(page).toHaveURL(/\/owner\/orders/);
 
   // Bill: café is the headline; WhatsApp carries the bill text
-  await page.getByRole('button', { name: '🖨️ Bill' }).click(); // opens the billing sheet
+  await page.getByRole('button', { name: '💵 Bill / Pay' }).click(); // opens the billing sheet
   await page.getByRole('button', { name: '🖨️ Print Draft Bill' }).click();
   const bill = page.getByRole('dialog', { name: 'Bill preview' });
   const doc = bill.frameLocator('iframe');
