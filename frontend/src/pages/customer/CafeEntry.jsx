@@ -191,6 +191,8 @@ export default function CafeEntry() {
       return { customer_name: '', customer_phone: '', area_id: '', table_id: '', table_number: tableFromUrl, order_type: 'dine-in' };
     }
   });
+  // Optional details start folded unless remembered from an earlier visit
+  const [showDetails, setShowDetails] = useState(() => !!(form.customer_name || form.customer_phone));
   const [errors, setErrors] = useState({});
   const [reservationHint, setReservationHint] = useState(null);
 
@@ -554,6 +556,14 @@ export default function CafeEntry() {
               </div>
             </div>
 
+            {/* Name + phone are optional here (asked at checkout anyway): kept
+                out of the way so the menu is one tap from the QR scan */}
+            {!showDetails ? (
+              <button type="button" onClick={() => setShowDetails(true)}
+                className="w-full min-h-[44px] text-sm font-semibold text-gray-600 text-left underline decoration-dotted underline-offset-4">
+                + Add your name &amp; number (optional)
+              </button>
+            ) : (<>
             {/* Name */}
             <div>
               <label className="label" htmlFor="entry-name">
@@ -594,6 +604,7 @@ export default function CafeEntry() {
                 </div>
               )}
             </div>
+            </>)}
 
             {/* Table selection — dine-in only */}
             {form.order_type === 'dine-in' && form.table_token ? (

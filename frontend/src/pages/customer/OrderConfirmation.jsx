@@ -24,6 +24,40 @@ const STATUS_LABELS = {
   cancelled: { label: 'Cancelled',      color: 'text-red-600 bg-red-50',      icon: '❌' },
 };
 
+// Swiggy-style tracker: where the order is, at a glance
+const PROGRESS_STEPS = {
+  'dine-in':  [['pending', 'Placed'], ['confirmed', 'Accepted'], ['preparing', 'Cooking'], ['ready', 'Ready'], ['served', 'Served']],
+  takeaway:   [['pending', 'Placed'], ['confirmed', 'Accepted'], ['preparing', 'Cooking'], ['ready', 'Ready for pickup']],
+  delivery:   [['pending', 'Placed'], ['confirmed', 'Accepted'], ['preparing', 'Cooking'], ['ready', 'Packed'], ['served', 'Delivered']],
+};
+const STEP_RANK = { pending: 0, confirmed: 1, preparing: 2, ready: 3, served: 4, paid: 5 };
+
+function OrderProgress({ order }) {
+  if (order.status === 'cancelled') return null;
+  const steps = PROGRESS_STEPS[order.order_type] || PROGRESS_STEPS['dine-in'];
+  const rank = STEP_RANK[order.status] ?? 0;
+  const doneAll = order.status === 'paid';
+  return (
+    <ol className="flex items-start mb-4" aria-label="Order progress">
+      {steps.map(([key, label], i) => {
+        const r = STEP_RANK[key];
+        const done = doneAll || rank > r;
+        const current = !doneAll && rank === r;
+        return (
+          <li key={key} className="flex-1 flex flex-col items-center text-center relative" aria-current={current ? 'step' : undefined}>
+            {i > 0 && <span className={`absolute top-3 right-1/2 w-full h-0.5 ${done || current ? 'bg-green-500' : 'bg-gray-200'}`} aria-hidden="true" />}
+            <span className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${
+              done ? 'bg-green-500 text-white' : current ? 'bg-white border-2 border-green-500 text-green-600 animate-pulse' : 'bg-gray-200 text-gray-400'}`}>
+              {done ? '✓' : i + 1}
+            </span>
+            <span className={`mt-1 text-[10px] leading-tight ${current ? 'font-extrabold text-gray-900' : done ? 'text-gray-600' : 'text-gray-400'}`}>{label}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 const ITEM_STATUS_LABELS = {
   pending:   { label: 'Queued',    color: 'bg-gray-100 text-gray-500',         icon: '⏳' },
   preparing: { label: 'Preparing', color: 'bg-orange-100 text-orange-700',     icon: '👨‍🍳' },
@@ -58,6 +92,7 @@ export default function OrderConfirmation() {
   const [initialized, setInitialized] = useState(false);
   const [showSuccessFlash, setShowSuccessFlash] = useState(!!location.state?.order);
   const [lostConnection, setLostConnection] = useState(false); // socket gave up reconnecting
+  const [live, setLive] = useState(false); // live updates actually connected right now
   const [driverPositions, setDriverPositions] = useState({});  // orderId → { lat, lng }
   const [rated, setRated] = useState(() => {           // set of order IDs already rated
     try { return new Set(JSON.parse(localStorage.getItem('dv_rated') || '[]')); }
@@ -136,9 +171,12 @@ export default function OrderConfirmation() {
     // 4. On connect / reconnect — re-join all tracked rooms
     const onConnect = () => {
       setLostConnection(false);
+      setLive(true);
       trackedIds.current.forEach((id) => joinOrderRoom(socket, id));
     };
     socket.on('connect', onConnect);
+    socket.on('disconnect', () => setLive(false));
+    socket.on('connect_error', () => setLive(false));
 
     // If socket exhausts all reconnection attempts, show stale-data warning and stop interval
     socket.on('reconnect_failed', () => {
@@ -520,7 +558,10 @@ export default function OrderConfirmation() {
               <div className="text-5xl mb-2">🎉</div>
               <h1 className="text-xl font-bold text-gray-900">{t('order.title')}</h1>
               <p className="text-gray-500 text-sm mt-1">
-                {activeCount} active order{activeCount !== 1 ? 's' : ''} — live updates on
+                {activeCount} active order{activeCount !== 1 ? 's' : ''} ·{' '}
+                {live
+                  ? <span className="text-green-700 font-semibold"><span className="inline-block w-2 h-2 rounded-full bg-green-500 mr-1 align-middle animate-pulse" aria-hidden="true" />Live updates on</span>
+                  : <span className="text-amber-700 font-semibold">Reconnecting — showing last known status</span>}
               </p>
               {hasDineIn && (
                 <button
@@ -575,6 +616,8 @@ export default function OrderConfirmation() {
                   {statusInfo.icon} {statusText}
                 </span>
               </div>
+
+              <OrderProgress order={order} />
 
               {/* Meta */}
               <div className="flex gap-4 text-xs text-gray-600 mb-3 pb-3 border-b border-dashed border-gray-200">

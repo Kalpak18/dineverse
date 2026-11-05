@@ -604,8 +604,16 @@ export default function CartPage() {
       <div className="px-4 py-4 space-y-3">
         {items.map((item) => (
           <div key={item.id} className="flex items-center gap-3 border border-gray-100 rounded-xl p-3">
-            <div className="flex-1">
-              <p className="font-semibold text-gray-900 text-sm">{localized(item, 'name', lang)}</p>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
+                {item.is_veg != null && (
+                  <span className={`flex-shrink-0 w-3.5 h-3.5 border-2 rounded-sm flex items-center justify-center ${item.is_veg ? 'border-green-600' : 'border-red-600'}`}
+                    aria-label={item.is_veg ? 'Vegetarian' : 'Non-vegetarian'}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${item.is_veg ? 'bg-green-600' : 'bg-red-600'}`} />
+                  </span>
+                )}
+                <span className="truncate">{localized(item, 'name', lang)}</span>
+              </p>
               <div className="text-xs text-gray-400 mt-1 space-y-1">
                 <p>{c(parseFloat(item.price))} each</p>
                 {item.variant_name && <p>Variant: {item.variant_name}</p>}
@@ -626,6 +634,10 @@ export default function CartPage() {
             </span>
           </div>
         ))}
+        <button type="button" onClick={() => navigate(`/cafe/${slug}/menu`)}
+          className="w-full min-h-[44px] rounded-xl border border-dashed border-gray-300 text-sm font-semibold text-gray-700">
+          ＋ Add more items
+        </button>
       </div>
 
       {/* Upsell suggestions */}
