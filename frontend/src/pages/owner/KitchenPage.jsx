@@ -5,6 +5,7 @@ import { itemRemainingMins, orderEtaMins, orderHasPrepTime, fmtMins } from '../.
 import { useAuth } from '../../context/AuthContext';
 import { useSocketIO, playNotificationSound, SOUND_PREF_KEY, soundIsLocked, unlockSound } from '../../hooks/useSocketIO';
 import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
+import { useReliableAction, SavingPill } from '../../hooks/useReliableAction';
 import { printDocument } from '../../utils/printWindow';
 import { fmtToken, fmtTime } from '../../utils/formatters';
 import { STATUS_CONFIG, getNextStatus, getActionLabel } from '../../constants/statusConfig';
@@ -12,6 +13,8 @@ import { getApiError } from '../../utils/apiError';
 import TicketRail, { itemOnStation } from '../../components/kds/TicketRail';
 import toast from 'react-hot-toast';
 import { tableName } from '../../utils/tableName';
+
+const KDS_TOAST = { background: '#1f2937', color: '#fff' };
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function itemDetails(item) {
@@ -853,8 +856,6 @@ export default function KitchenPage() {
   // Reliability: when the screen last heard from the server, and kitchen
   // actions still waiting for it (retried until they land)
   const [lastSync, setLastSync]           = useState(() => Date.now());
-  const [saving, setSaving]               = useState(0);
-  const [retrying, setRetrying]           = useState(false);
   const [online, setOnline]               = useState(() => navigator.onLine !== false);
   const [soundLocked, setSoundLocked]     = useState(() => soundIsLocked());
   const [showOffline, setShowOffline]     = useState(false);
@@ -914,48 +915,12 @@ export default function KitchenPage() {
     });
   }, []);
 
-  // Every kitchen action goes through here so a tap is never lost:
-  // - no answer (Wi-Fi blip, server restarting): keep retrying, shown as "Saving…"
-  // - the server refuses (another screen moved it first, or our earlier try
-  //   did land): look at the order — if it is already where this tap wanted
-  //   it, that's success; otherwise show the latest state with a short note
-  const send = useCallback(async (orderId, call, isDone) => {
-    setSaving((n) => n + 1);
-    try {
-      for (let attempt = 0; ; attempt++) {
-        try {
-          const { data } = await call();
-          setLastSync(Date.now());
-          return data;
-        } catch (err) {
-          const status = err?.response?.status;
-          if (status && status < 500 && status !== 408 && status !== 429) {
-            const fresh = await getOrderById(orderId).then((r) => r.data.order).catch(() => null);
-            if (fresh) applyOrder(fresh);
-            if (fresh && isDone?.(fresh)) return { order: fresh };
-            toast(fresh ? 'Already changed on another screen — showing the latest' : getApiError(err),
-              { icon: '↻', style: { background: '#1f2937', color: '#fff' } });
-            if (!fresh) fetchOrders();
-            return null;
-          }
-          setRetrying(true);
-          await new Promise((r) => setTimeout(r, Math.min(1000 * 2 ** attempt, 5000)));
-        }
-      }
-    } finally {
-      setSaving((n) => n - 1);
-    }
-  }, [applyOrder, fetchOrders]);
-
-  useEffect(() => { if (!saving) setRetrying(false); }, [saving]);
-
-  // Closing the tab while a change is still being saved would lose it
-  useEffect(() => {
-    if (!saving) return undefined;
-    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
-    window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [saving]);
+  // Every kitchen action is retried until it lands; a clash with another
+  // screen shows the latest state instead of an error (see useReliableAction)
+  const markSynced = useCallback(() => setLastSync(Date.now()), []);
+  const { send, saving, retrying } = useReliableAction({
+    applyOrder, refetch: fetchOrders, onSuccess: markSynced, toastStyle: KDS_TOAST,
+  });
 
   const { connected } = useSocketIO(
     cafe?.id,
@@ -1030,11 +995,7 @@ export default function KitchenPage() {
           🔇 Sound is off until you tap the screen — tap here to hear new orders
         </button>
       )}
-      {saving > 0 && (
-        <div role="status" className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-sm font-bold shadow-lg ${retrying ? 'bg-red-600 text-white' : 'bg-gray-700 text-gray-100'}`}>
-          {retrying ? '⏳ Not saved yet — retrying…' : '⏳ Saving…'}
-        </div>
-      )}
+      <SavingPill saving={saving} retrying={retrying} />
     </>
   );
 

@@ -788,19 +788,27 @@ exports.createOrder = asyncHandler(async (req, res) => {
 
 // ─── Owner/Staff: get all orders ──────────────────────────────
 exports.getOrders = asyncHandler(async (req, res) => {
-  const { status, date, page = 1 } = req.query;
-  const limit  = Math.min(parseInt(req.query.limit) || 50, 200);
+  const { status, date, since, until, scope, page = 1 } = req.query;
+  // scope=open: the manager's live list — EVERY order not yet paid/cancelled,
+  // however old (a capped "latest N" feed let unpaid orders drop off a busy
+  // day), plus what finished in the last 18 h for today's view
+  const open = scope === 'open';
+  const limit  = open ? 1000 : Math.min(parseInt(req.query.limit) || 50, 1000);
   const offset = (Math.max(parseInt(page), 1) - 1) * limit;
 
   let whereClause = 'WHERE o.cafe_id = $1';
   const params = [req.cafeId];
   let idx = 2;
 
+  if (open)   whereClause += ` AND (o.status NOT IN ('paid', 'cancelled') OR o.updated_at >= NOW() - INTERVAL '18 hours')`;
   if (status) { whereClause += ` AND o.status = $${idx++}`; params.push(status); }
   if (date)   { whereClause += ` AND DATE(o.created_at) = $${idx++}`; params.push(date); }
+  if (since && !Number.isNaN(Date.parse(since))) { whereClause += ` AND o.created_at >= $${idx++}`; params.push(new Date(since)); }
+  if (until && !Number.isNaN(Date.parse(until))) { whereClause += ` AND o.created_at < $${idx++}`; params.push(new Date(until)); }
 
   const [countResult, ordersResult] = await Promise.all([
-    db.query(`SELECT COUNT(*) FROM orders o ${whereClause}`, params),
+    // revenue: the true total for the filter, even when the page is capped
+    db.query(`SELECT COUNT(*), COALESCE(SUM(COALESCE(o.final_amount, o.total_amount)), 0) AS revenue FROM orders o ${whereClause}`, params),
     db.query(
       `SELECT o.id, o.order_number,
               COALESCE(o.daily_order_number, o.order_number) AS daily_order_number,
@@ -840,6 +848,7 @@ exports.getOrders = asyncHandler(async (req, res) => {
   ok(res, {
     orders,
     total: parseInt(countResult.rows[0].count),
+    revenue: parseFloat(countResult.rows[0].revenue),
     page: parseInt(page),
     limit,
   });
@@ -957,7 +966,9 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     confirmed: ['preparing', 'cancelled', ...(isPrepaid ? ['paid'] : [])],
     // One step back = the KDS "Recall" (undo an accidental bump)
     preparing: ['ready',    'cancelled', 'confirmed', ...(isPrepaid ? ['paid'] : [])],
-    ready:     ['served',   'preparing',              ...(isPrepaid ? ['paid'] : [])],
+    // Paying at pickup / at the counter: a ready order can be paid without a
+    // separate "served" step (takeaway lives in Ready until collected)
+    ready:     ['served',   'preparing', 'paid'],
     served:    ['paid',     'ready'],
     paid:      [],
     cancelled: [],
@@ -977,8 +988,16 @@ exports.updateOrderStatus = asyncHandler(async (req, res) => {
     params.push(cancellation_reason.trim().slice(0, 500));
   }
   if (status === 'paid' && cash_received != null) {
-    setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1} - total_amount`);
-    params.push(cash_received);
+    // Change is against what was billed: the whole table's bill when the
+    // cash covers several orders (bill_total), else this order's final amount
+    const billTotal = parseFloat(req.body.bill_total);
+    if (Number.isFinite(billTotal) && billTotal > 0) {
+      setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1}::numeric - $${idx++}::numeric`);
+      params.push(cash_received, billTotal);
+    } else {
+      setClauses.push(`cash_received = $${idx++}`, `change_amount = $${idx - 1}::numeric - COALESCE(final_amount, total_amount)`);
+      params.push(cash_received);
+    }
   }
   const validModes = ['cash', 'upi', 'card', 'online', 'split'];
   if (status === 'paid' && payment_mode && validModes.includes(payment_mode)) {
@@ -1952,7 +1971,56 @@ exports.acceptOrder = asyncHandler(async (req, res) => {
 // After an item is cancelled/rejected: if nothing is left the order is
 // cancelled and whatever was prepaid is refunded; otherwise a prepaid order
 // gets that item refunded. (Both refunds are no-ops for unpaid orders.)
+// Re-price an order from the items still on it, exactly as createOrder priced
+// it (tax inclusive/exclusive → discount → tip + delivery → platform fee).
+// Without this a cancelled or rejected item stayed on the customer's bill.
+// Prepaid orders are left as charged: their money is returned by refunds.
+async function recalcOrderTotals(orderId) {
+  const { rows: [o] } = await db.query(
+    `SELECT total_amount, discount_amount, tip_amount, delivery_fee, tax_rate, platform_fee_rate,
+            platform_discount_amount, payment_verified, status,
+            (SELECT COALESCE(SUM(subtotal), 0) FROM order_items WHERE order_id = $1) AS all_items,
+            (SELECT COALESCE(SUM(subtotal), 0) FROM order_items WHERE order_id = $1 AND item_status <> 'cancelled') AS live_items
+     FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  if (!o || o.payment_verified || ['paid', 'cancelled'].includes(o.status)) return;
+  const r2 = (n) => parseFloat(Number(n).toFixed(2));
+  const live = parseFloat(o.live_items);
+  if (live <= 0) return; // nothing left — the order is cancelled instead
+  const rate = parseInt(o.tax_rate || 0, 10);
+  // Prices included GST if the stored total equals the item sum
+  const inclusive = rate > 0 && Math.abs(parseFloat(o.total_amount) - parseFloat(o.all_items)) < 0.01;
+  const discount = Math.min(parseFloat(o.discount_amount || 0), live);
+  const extras = parseFloat(o.tip_amount || 0) + parseFloat(o.delivery_fee || 0);
+
+  let totalAmount = live;
+  let taxAmount = 0;
+  let final;
+  if (rate > 0 && inclusive) {
+    taxAmount = r2(live * rate / (100 + rate));
+    final = live - discount + extras;
+  } else if (rate > 0) {
+    totalAmount = live + r2(live * rate / 100);
+    taxAmount = r2((live - discount) * rate / 100);
+    final = live - discount + taxAmount + extras;
+  } else {
+    final = live - discount + extras;
+  }
+  const platformFee = r2(final * parseFloat(o.platform_fee_rate || 0) / 100);
+  final = r2(final + platformFee);
+
+  await db.query(
+    `UPDATE orders
+        SET total_amount = $2, discount_amount = $3, tax_amount = $4, platform_fee = $5, final_amount = $6,
+            platform_discount_amount = LEAST(COALESCE(platform_discount_amount, 0), $3), updated_at = NOW()
+      WHERE id = $1 AND status NOT IN ('paid', 'cancelled') AND NOT COALESCE(payment_verified, false)`,
+    [orderId, r2(totalAmount), r2(discount), taxAmount, platformFee, final]
+  );
+}
+
 async function settleItemRemoval(orderId, itemId, reason) {
+  await recalcOrderTotals(orderId);
   const left = await db.query(
     `SELECT COUNT(*)::int AS n FROM order_items WHERE order_id = $1 AND item_status <> 'cancelled'`,
     [orderId]

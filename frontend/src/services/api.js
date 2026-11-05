@@ -268,13 +268,16 @@ export const getPresignedUrl = (contentType, size, uploadType) =>
 export const getOrders = (params) => api.get('/orders', { params });
 export const getKitchenOrders = () => api.get('/orders/kitchen');
 export const getOrderById = (id) => api.get(`/orders/${id}`);
-export const updateOrderStatus = (id, status, cash_received = null, cancellation_reason = null, payment_mode = null, payment_splits = null) =>
+// bill_total: the whole bill the cash was handed over for (a table's bill
+// spans several orders) — the server works out change from it
+export const updateOrderStatus = (id, status, cash_received = null, cancellation_reason = null, payment_mode = null, payment_splits = null, bill_total = null) =>
   api.patch(`/orders/${id}/status`, {
     status,
     ...(cash_received != null && { cash_received }),
     ...(cancellation_reason && { cancellation_reason }),
     ...(payment_mode && { payment_mode }),
     ...(payment_splits && { payment_splits }),
+    ...(bill_total != null && { bill_total }),
   });
 export const setKitchenMode   = (id, mode)             => api.patch(`/orders/${id}/kitchen-mode`, { mode });
 export const updateItemStatus = (id, itemId, status)   => api.patch(`/orders/${id}/items/${itemId}/status`, { status });

@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useBadges } from '../../context/BadgeContext';
 import { useSocketIO } from '../../hooks/useSocketIO';
 import { useLatestRequest, isStale } from '../../hooks/useLatestRequest';
+import { useReliableAction, SavingPill, useLiveStatus, OfflineBanner } from '../../hooks/useReliableAction';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import DeliveryMap from '../../components/DeliveryMap';
 import PageHint from '../../components/PageHint';
@@ -97,7 +98,9 @@ export default function OrdersPage() {
   const latest = useLatestRequest();
   const loadOrders = useCallback(async () => {
     try {
-      const { data } = await latest(getOrders({ limit: 200 }));
+      // Every order not yet paid/cancelled (plus today's finished ones) — a
+      // "latest 200" feed let unpaid orders drop off on a busy day
+      const { data } = await latest(getOrders({ scope: 'open' }));
       setOrders(data.orders || []);
     } catch (err) {
       if (!isStale(err)) toast.error('Could not load orders — check your connection and refresh.');
@@ -108,7 +111,20 @@ export default function OrdersPage() {
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
-  useSocketIO(
+  // Show the server's copy of an order. Partial updates (table moves, rider
+  // events) merge; a full order we didn't have yet is added.
+  const applyOrder = useCallback((order) => {
+    if (!order?.id) return;
+    setOrders((prev) => (prev.some((o) => o.id === order.id)
+      ? prev.map((o) => (o.id === order.id ? { ...o, ...order } : o))
+      : (order.status && order.items ? [order, ...prev] : prev)));
+  }, []);
+
+  // Order actions are retried until they land; a clash with another device
+  // shows the latest state instead of an error
+  const { send, saving, retrying } = useReliableAction({ applyOrder, refetch: loadOrders });
+
+  const { connected } = useSocketIO(
     cafe?.id,
     (order) => {
       // A catch-up refetch may already have brought this order in
@@ -121,14 +137,11 @@ export default function OrdersPage() {
         `${order.customer_name} · ${order.order_type === 'takeaway' ? 'Takeaway' : tableName(order.table_number)}`
       );
     },
-    (updated) => {
-      setOrders((prev) =>
-        prev.map((o) => o.id === updated.id ? { ...o, ...updated } : o)
-      );
-    },
+    applyOrder,
     null,
     { onReconnect: loadOrders } // catch up on anything missed while not connected
   );
+  const { showOffline } = useLiveStatus(connected, loadOrders);
 
   // Opens BillingModal — builds bill object at click-time so the modal opens
   // immediately (no dependency on a separate orders.find() pass that could fail
@@ -154,47 +167,48 @@ export default function OrdersPage() {
       platformFee:     parseFloat(order.platform_fee) || 0,
       platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
       total:           parseFloat(order.final_amount || order.total_amount) || 0,
-      aggregatedItems: (order.items || []).map((i) => ({
+      aggregatedItems: (order.items || []).filter((i) => i.item_status !== 'cancelled').map((i) => ({
         name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
       orders: [order],
+      // Payment is taken once the food is ready or served; before that the
+      // sheet only prints a draft bill
+      canCollect: ['ready', 'served'].includes(order.status),
     };
     setBillingModal({
       bill,
       onConfirm: (cashReceived, paymentMode, splits) =>
-        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode, splits),
+        handleStatusUpdate(order.id, 'paid', cashReceived, null, paymentMode, splits, bill.total),
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const billingBill = billingModal?.bill || null;
 
-  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null, paymentSplits = null) => {
-    if (inFlightRef.current.has(orderId)) return;
+  // Resolves with the saved order; throws if the change didn't apply (the
+  // caller — e.g. the billing sheet — then stays open instead of claiming success)
+  const handleStatusUpdate = async (orderId, newStatus, cashReceived = null, cancellationReason = null, paymentMode = null, paymentSplits = null, billTotal = null) => {
+    if (inFlightRef.current.has(orderId)) return null; // same tap twice
     inFlightRef.current.add(orderId);
     try {
-      await updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode, paymentSplits);
-      setOrders((prev) =>
-        prev.map((o) => o.id === orderId
-          ? { ...o, status: newStatus, cancellation_reason: cancellationReason || o.cancellation_reason }
-          : o)
-      );
+      const data = await send(orderId,
+        () => updateOrderStatus(orderId, newStatus, cashReceived, cancellationReason, paymentMode, paymentSplits, billTotal),
+        (o) => o.status === newStatus);
+      if (!data) throw new Error('Order not updated');
+      applyOrder(data.order);
       toast.success(`Order marked as ${newStatus}`);
-    } catch (err) {
-      toast.error(getApiError(err));
-      throw err;
+      return data.order;
     } finally {
       inFlightRef.current.delete(orderId);
     }
   };
 
   const handleKitchenModeToggle = async (orderId, mode) => {
+    if (orders.find((o) => o.id === orderId)?.kitchen_mode === mode) return; // already that mode
     if (inFlightRef.current.has(`km:${orderId}`)) return;
     inFlightRef.current.add(`km:${orderId}`);
     try {
-      const { data } = await setKitchenMode(orderId, mode);
-      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
-    } catch (err) {
-      toast.error(getApiError(err));
+      const data = await send(orderId, () => setKitchenMode(orderId, mode), (o) => o.kitchen_mode === mode);
+      if (data) applyOrder(data.order);
     } finally {
       inFlightRef.current.delete(`km:${orderId}`);
     }
@@ -205,10 +219,9 @@ export default function OrdersPage() {
     if (inFlightRef.current.has(key)) return;
     inFlightRef.current.add(key);
     try {
-      const { data } = await updateItemStatus(orderId, itemId, status);
-      setOrders((prev) => prev.map((o) => o.id === orderId ? { ...o, ...data.order } : o));
-    } catch (err) {
-      toast.error(getApiError(err));
+      const data = await send(orderId, () => updateItemStatus(orderId, itemId, status),
+        (o) => (o.items || []).some((i) => i.id === itemId && i.item_status === status));
+      if (data) applyOrder(data.order);
     } finally {
       inFlightRef.current.delete(key);
     }
@@ -251,8 +264,10 @@ export default function OrdersPage() {
   const isOrdersTabVisible = (o) => {
     if (!o.status) return false;
     if (['paid', 'cancelled'].includes(o.status)) return false;
-    if (o.order_type === 'takeaway' && o.status === 'ready') return false;
-    if (o.order_type !== 'takeaway' && o.status === 'served') return false;
+    if (o.order_type === 'takeaway' && o.status === 'ready' && !o.payment_verified) return false;
+    // Served dine-in goes to its table's bill — except prepaid orders (Mark
+    // Complete here) and unconfirmed tables (Confirm table here first)
+    if (o.order_type !== 'takeaway' && o.status === 'served' && !o.payment_verified && o.table_verified !== false) return false;
     return true;
   };
 
@@ -269,24 +284,27 @@ export default function OrdersPage() {
 
   // Bills tab: takeaway orders ready for pickup
   const takeawayPickups = useMemo(
-    () => orders.filter((o) => o.order_type === 'takeaway' && o.status === 'ready'),
+    () => orders.filter((o) => o.order_type === 'takeaway' && o.status === 'ready' && !o.payment_verified),
     [orders]
   );
 
   // Bills tab: dine-in tables with ≥1 served order
   const tableBills = useMemo(() => {
-    const todayStr = new Date().toDateString();
     const tableMap = {};
 
     orders.forEach((o) => {
       if (o.status === 'cancelled' || o.status === 'paid') return;
       if (o.order_type === 'takeaway') return;
+      // Paid online already — completed from the Orders tab, never billed again
+      if (o.payment_verified) return;
       // Not on any table's bill until the table is confirmed (QR scan or staff)
       if (o.table_verified === false) return;
-      if (new Date(o.created_at).toDateString() !== todayStr) return;
 
-      if (!tableMap[o.table_number]) {
-        tableMap[o.table_number] = {
+      // One bill per dine-in table; a delivery is billed on its own (all
+      // deliveries share the label "Delivery" and must not be merged)
+      const key = o.order_type === 'dine-in' ? o.table_number : `order:${o.id}`;
+      if (!tableMap[key]) {
+        tableMap[key] = {
           table_number: o.table_number,
           customer_name: o.customer_name,
           orders: [],
@@ -296,7 +314,7 @@ export default function OrdersPage() {
           itemMap: {},
         };
       }
-      const bill   = tableMap[o.table_number];
+      const bill   = tableMap[key];
       const taxAmt = parseFloat(o.tax_amount) || 0;
       const tot    = parseFloat(o.total_amount) || 0;
       bill.orders.push(o);
@@ -311,6 +329,7 @@ export default function OrdersPage() {
       bill.platformFee    += parseFloat(o.platform_fee)    || 0;
       bill.total          += parseFloat(o.final_amount || o.total_amount) || 0;
       o.items?.forEach((item) => {
+        if (item.item_status === 'cancelled') return; // not charged
         const displayName = itemDisplayName(item);
         if (!bill.itemMap[displayName]) {
           bill.itemMap[displayName] = { name: displayName, qty: 0, total: 0 };
@@ -328,9 +347,30 @@ export default function OrdersPage() {
 
   const billsCount = tableBills.length + takeawayPickups.length;
 
-  const paidOrders = useMemo(() => orders.filter((o) => o.status === 'paid'), [orders]);
-
   const [historyDateRange, setHistoryDateRange] = useState('today');
+
+  // History: paid orders for the chosen range come from the server (the live
+  // list only holds what's open or finished today); live payments merge in
+  const [historyServer, setHistoryServer] = useState([]);
+  useEffect(() => {
+    if (activeTab !== TABS.HISTORY) return;
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const since = {
+      today: dayStart,
+      yesterday: new Date(dayStart.getTime() - 86400000),
+      '7d': new Date(Date.now() - 7 * 86400000),
+      '30d': new Date(Date.now() - 30 * 86400000),
+    }[historyDateRange];
+    getOrders({ status: 'paid', limit: 1000, ...(since && { since: since.toISOString() }) })
+      .then(({ data }) => setHistoryServer(data.orders || []))
+      .catch(() => toast.error('Could not load order history — check your connection'));
+  }, [activeTab, historyDateRange]);
+
+  const paidOrders = useMemo(() => {
+    const byId = new Map(historyServer.map((o) => [o.id, o]));
+    orders.forEach((o) => { if (o.status === 'paid') byId.set(o.id, { ...byId.get(o.id), ...o }); });
+    return [...byId.values()].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }, [orders, historyServer]);
 
   const historyFilteredCount = useMemo(() => {
     if (historyDateRange === 'all') return paidOrders.length;
@@ -348,7 +388,7 @@ export default function OrdersPage() {
 
   const statusCounts = useMemo(() => {
     const counts = {};
-    orders.forEach((o) => { counts[o.status] = (counts[o.status] || 0) + 1; });
+    orders.filter(isOrdersTabVisible).forEach((o) => { counts[o.status] = (counts[o.status] || 0) + 1; });
     return counts;
   }, [orders]);
 
@@ -362,6 +402,8 @@ export default function OrdersPage() {
 
   return (
     <div className="max-w-4xl space-y-5 pb-32">
+      <OfflineBanner show={showOffline} onRetry={loadOrders} />
+      <SavingPill saving={saving} retrying={retrying} />
       <PageHint
         storageKey="dv_hint_orders"
         title="Orders — manage every order from receipt to payment"
@@ -561,9 +603,11 @@ export default function OrdersPage() {
       {cancelTarget && (
         <CancelReasonModal
           order={cancelTarget}
-          onConfirm={(reason) => {
-            handleStatusUpdate(cancelTarget.id, 'cancelled', null, reason);
-            setCancelTarget(null);
+          onConfirm={async (reason) => {
+            try {
+              await handleStatusUpdate(cancelTarget.id, 'cancelled', null, reason);
+              setCancelTarget(null);
+            } catch { /* not cancelled — the sheet stays open */ }
           }}
           onClose={() => setCancelTarget(null)}
         />
@@ -588,6 +632,17 @@ const DELIVERY_NEXT_STATUS = {
 
 const PLATFORM_LABELS = { dunzo: 'Dunzo', porter: 'Porter', shadowfax: 'Shadowfax', wefast: 'Wefast' };
 
+// One fetch shared by every delivery card on the page (was 2 requests per
+// card, again on every tab switch); refreshed after a minute
+const sharedCache = new Map();
+function sharedFetch(key, load) {
+  const hit = sharedCache.get(key);
+  if (hit && Date.now() - hit.at < 60_000) return hit.promise;
+  const promise = load().catch((err) => { sharedCache.delete(key); throw err; });
+  sharedCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
 function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
   const { cafe } = useAuth();
   const [riders, setRiders]           = useState([]);
@@ -600,10 +655,10 @@ function DeliveryPanel({ order, cafeDeliveryMode, onOrderUpdated }) {
 
   useEffect(() => {
     if (['self', 'both'].includes(cafeDeliveryMode)) {
-      getRiders().then(r => setRiders(r.data.riders.filter(x => x.is_active))).catch(() => {});
+      sharedFetch('riders', () => getRiders().then(r => r.data.riders.filter(x => x.is_active))).then(setRiders).catch(() => {});
     }
     if (['third_party', 'both'].includes(cafeDeliveryMode)) {
-      getDeliveryPlatforms().then(r => setPlatforms(r.data.platforms.filter(x => x.is_active && x.has_api_key))).catch(() => {});
+      sharedFetch('platforms', () => getDeliveryPlatforms().then(r => r.data.platforms.filter(x => x.is_active && x.has_api_key))).then(setPlatforms).catch(() => {});
     }
   }, [cafeDeliveryMode]);
 
@@ -964,9 +1019,11 @@ function OrderCard({ order, onStatusUpdate, onKitchenModeToggle, onItemStatusUpd
           💬 <span>Chat</span>
           {chatUnread > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">{chatUnread}</span>}
         </button>
-        <button onClick={() => onCancelClick(order)} className="px-2.5 py-1.5 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors flex-shrink-0 flex items-center gap-1">
-          ✕
-        </button>
+        {['pending', 'confirmed', 'preparing'].includes(order.status) && (
+          <button onClick={() => onCancelClick(order)} aria-label="Cancel order" className="px-2.5 py-1.5 rounded-xl border border-red-200 text-red-500 text-xs font-medium hover:bg-red-50 transition-colors flex-shrink-0 flex items-center gap-1">
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Delivery panel */}
@@ -1069,29 +1126,31 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
   const [collecting, setCollecting] = useState(null); // orderId or tableNumber being paid
   const [reminding, setReminding] = useState(null);
 
+  // Pays every order on the bill. Throws if any order wasn't marked paid, so
+  // the billing sheet stays open and says so instead of "Payment Collected!"
   const handleCollect = async (bill, cashReceived, paymentMode = null, splits = null) => {
     const key = bill.isTakeaway ? bill.orders[0].id : bill.table_number;
     setCollecting(key);
     try {
-      const toPay = bill.orders.filter((o) =>
-        bill.isTakeaway ? o.status === 'ready' : o.status === 'served'
-      );
+      const toPay = bill.orders.filter((o) => !o.payment_verified && ['ready', 'served'].includes(o.status));
+      if (!toPay.length) throw new Error('Nothing on this bill is ready to be paid');
+      // Cash received + split shares are recorded once, on the first order,
+      // against the whole bill (so change is worked out on the bill total)
+      const [first, ...rest] = toPay;
+      await onStatusUpdate(first.id, 'paid', cashReceived, null, paymentMode, splits, bill.total);
       const results = await Promise.allSettled(
-        // Cash received + split shares are recorded once, on the first order of the bill
-        toPay.map((o, i) => onStatusUpdate(o.id, 'paid', i === 0 ? cashReceived : null, null, paymentMode, i === 0 ? splits : null))
+        rest.map((o) => onStatusUpdate(o.id, 'paid', null, null, paymentMode, null))
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
-      if (failed === 0) {
-        toast.success(
-          bill.isTakeaway
-            ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
-            : `${tableName(bill.table_number)} — payment collected!`
-        );
-      } else if (failed < toPay.length) {
-        toast.error(`${failed} order(s) could not be marked paid — please retry`);
-      }
+      if (failed) throw new Error(`${failed} of ${toPay.length} orders on this bill were not marked paid — check the bill and collect again`);
+      toast.success(
+        bill.isTakeaway
+          ? `${fmtToken(bill.orders[0].daily_order_number, 'takeaway')} — payment collected!`
+          : `${tableName(bill.table_number)} — payment collected!`
+      );
     } catch (err) {
-      toast.error('Failed to collect payment — please try again');
+      if (err?.message && err.message !== 'Order not updated') toast.error(err.message);
+      throw err;
     } finally {
       setCollecting(null);
     }
@@ -1115,7 +1174,7 @@ function BillsView({ takeawayPickups, tableBills, onStatusUpdate, onOpenBilling,
       platformFee:     parseFloat(order.platform_fee) || 0,
       platformFeeRate: parseFloat(order.platform_fee_rate) || 0,
       total:           parseFloat(order.final_amount || order.total_amount) || 0,
-      aggregatedItems: (order.items || []).map((i) => ({
+      aggregatedItems: (order.items || []).filter((i) => i.item_status !== 'cancelled').map((i) => ({
         name: itemDisplayName(i), qty: i.quantity, total: parseFloat(i.subtotal),
       })),
       orders: [order],
@@ -1437,6 +1496,8 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
       setPaidCash(cashVal);
       setPaidSplits(splits);
       setStep('receipt');
+    } catch {
+      // Not saved (the reason was already shown) — stay here to retry
     } finally {
       setConfirming(false);
     }
@@ -1726,13 +1787,18 @@ function BillingModal({ bill, onConfirm, onClose, initialStep = 'collect' }) {
       )}
 
       <div className="flex flex-col gap-2 pt-1">
-        <button
+        {bill.canCollect === false && (
+          <p className="text-xs text-center text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
+            Payment can be taken once the order is Ready or Served — you can print a draft bill now.
+          </p>
+        )}
+        {bill.canCollect !== false && <button
           onClick={handleMarkPaid}
           disabled={confirming || (splitOn ? !sharesValid : (isCash && cashInput !== '' && !isValid))}
           className="w-full py-3 rounded-xl bg-green-500 hover:bg-green-600 disabled:opacity-50 text-white font-bold text-sm transition-colors"
         >
           {confirming ? 'Processing…' : isCash && cashInput ? 'Confirm & Mark Paid' : 'Mark Paid'}
-        </button>
+        </button>}
         <button
           onClick={() => doPrint(paymentMode, isCash && cashInput ? parseFloat(cashInput) : null, false)}
           className="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-bold text-sm transition-colors"
@@ -1963,16 +2029,8 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
 
   const dateLabel = HISTORY_DATE_PRESETS.find((p) => p.key === dateRange)?.label ?? 'Period';
 
-  if (orders.length === 0) {
-    return (
-      <div className="card text-center py-16 text-gray-400">
-        <p className="text-4xl mb-2">💜</p>
-        <p>No paid orders yet.</p>
-        <p className="text-xs mt-1">Orders marked as Paid will appear here.</p>
-      </div>
-    );
-  }
-
+  // No early "nothing yet" screen: the date filters must stay reachable when
+  // the chosen period is empty (the list below says so)
   return (
     <div className="space-y-4">
       {/* Date filter pills */}
@@ -2073,6 +2131,8 @@ function HistoryView({ orders, dateRange, onDateRangeChange }) {
                     onClick={() => printBill({
                       cafe,
                       isPaid: true,
+                      paymentMode: order.payment_mode || 'cash',
+                      splits: Array.isArray(order.payment_splits) ? order.payment_splits : null,
                       bill: {
                         isTakeaway: order.order_type === 'takeaway',
                         customerName: order.customer_name,
@@ -2131,8 +2191,9 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
   const isIndividual = order.kitchen_mode === 'individual';
   const showNextBtn = nextStatus && (!isIndividual || ['pending', 'served'].includes(order.status));
 
-  const subtotal       = parseFloat(order.total_amount)    || 0;
   const taxAmount      = parseFloat(order.tax_amount)      || 0;
+  // Food before tax (total_amount already includes the tax shown below)
+  const subtotal       = Math.max(0, (parseFloat(order.total_amount) || 0) - taxAmount);
   const discountAmount = parseFloat(order.discount_amount) || 0;
   const tipAmount      = parseFloat(order.tip_amount)      || 0;
   const deliveryFee    = parseFloat(order.delivery_fee)    || 0;
@@ -2239,9 +2300,11 @@ function OrderDetailModal({ order, cafe, onClose, onStatusUpdate, onOpenBilling,
             <button onClick={() => { onClose(); onOpenBilling(order); }} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-700 text-sm font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5">
               🖨️ Print Bill
             </button>
-            <button onClick={() => onCancelClick(order)} className="px-4 py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">
-              ✕ Cancel
-            </button>
+            {['pending', 'confirmed', 'preparing'].includes(order.status) && (
+              <button onClick={() => onCancelClick(order)} className="px-4 py-2.5 rounded-xl border border-red-200 text-red-500 text-sm font-medium hover:bg-red-50 transition-colors">
+                ✕ Cancel
+              </button>
+            )}
           </div>
         </div>
       </div>
