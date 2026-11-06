@@ -6,6 +6,7 @@ const cron = require('node-cron');
 const https = require('https');
 const db = require('../config/database');
 const logger = require('../utils/logger');
+const { appUrl } = require('../utils/appUrl');
 
 function resendSend(to, subject, html) {
   return new Promise((resolve, reject) => {
@@ -241,7 +242,7 @@ async function sendReportForCafe(cafe, dateStr) {
             <p style="margin:0;font-weight:600;color:#111827;font-size:13px">Unconfirmed Orders</p>
             <p style="margin:2px 0 0;font-size:12px;color:#6b7280">${pendingOrders} order${pendingOrders !== 1 ? 's' : ''} waiting for confirmation</p>
           </div>
-          <a href="${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/orders"
+          <a href="${appUrl()}/owner/orders"
              style="background:#f97316;color:white;font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;text-decoration:none">
             Confirm →
           </a>
@@ -252,7 +253,7 @@ async function sendReportForCafe(cafe, dateStr) {
             <p style="margin:0;font-weight:600;color:#111827;font-size:13px">Unconfirmed Reservations</p>
             <p style="margin:2px 0 0;font-size:12px;color:#6b7280">${pendingReservations} reservation${pendingReservations !== 1 ? 's' : ''} need your response</p>
           </div>
-          <a href="${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/reservations"
+          <a href="${appUrl()}/owner/reservations"
              style="background:#f97316;color:white;font-size:12px;font-weight:700;padding:8px 16px;border-radius:8px;text-decoration:none">
             Review →
           </a>
@@ -265,7 +266,7 @@ async function sendReportForCafe(cafe, dateStr) {
               <span style="font-size:12px;color:#374151">${item.name}</span>
               <span style="font-size:12px;font-weight:700;color:${item.stock_quantity <= 0 ? '#dc2626' : '#d97706'}">${item.stock_quantity <= 0 ? 'Sold out' : `${item.stock_quantity} left`}</span>
             </div>`).join('')}
-          <a href="${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/inventory"
+          <a href="${appUrl()}/owner/inventory"
              style="display:inline-block;margin-top:8px;font-size:12px;color:#f97316;text-decoration:none;font-weight:600">
             Restock items →
           </a>
@@ -274,7 +275,7 @@ async function sendReportForCafe(cafe, dateStr) {
 
       <!-- CTA -->
       <div style="text-align:center;margin-bottom:24px">
-        <a href="${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/analytics"
+        <a href="${appUrl()}/owner/analytics"
            style="display:inline-block;background:#f97316;color:white;font-weight:700;font-size:14px;padding:12px 28px;border-radius:10px;text-decoration:none">
           View Full Analytics →
         </a>
@@ -305,7 +306,7 @@ async function sendExpiryReminders() {
     try {
       const planLabel = cafe.plan_tier === 'premium' ? 'Kitchen Pro' : 'Essential';
       const expiryStr = new Date(cafe.plan_expiry_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
-      const billingUrl = `${(process.env.CLIENT_URL || 'https://dine-verse.com').split(',')[0].trim()}/owner/billing`;
+      const billingUrl = `${appUrl()}/owner/billing`;
       const html = `
       <!DOCTYPE html>
       <html><head><meta charset="UTF-8"></head>
